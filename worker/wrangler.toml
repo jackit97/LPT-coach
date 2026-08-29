@@ -1,0 +1,23 @@
+name = "lpt-worker"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Set these with `wrangler secret put <NAME>` (never commit real values):
+#   DATABASE_URL   -> Neon (or any) Postgres connection string (postgresql://...sslmode=require)
+#   JWT_SECRET     -> random long string used to sign auth tokens
+#
+# Alternative to DATABASE_URL (same convention as the old Express backend):
+# set PGHOST / PGDATABASE / PGUSER / PGPASSWORD / PGPORT / PGSSL individually
+# and the worker will build the connection string for you.
+#
+# The worker boots and responds even if none of these are set yet (routes that
+# touch the DB return a clean 503 instead of crashing) - same tolerant startup
+# behaviour as the old backend's DB_ALLOW_START_WITHOUT_DB.
+#
+# vars below are non-secret defaults, override per environment as needed.
+[vars]
+CORS_ORIGIN = "*"
+
+[observability]
+enabled = true

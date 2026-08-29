@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "LPT Coach",
+    "slug": "lpt-coach",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "lptcoach",
+    "ios": {
+      "bundleIdentifier": "com.lptcoach.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.lptcoach.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1220"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
+  }
+}
