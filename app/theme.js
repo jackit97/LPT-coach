@@ -24,6 +24,10 @@ export const workoutTypeColors = {
   mobilita: '#9333EA',
   test: '#F59E0B',
   riposo: '#9CA3AF',
+  dieta: '#DB2777',
+  scheda: '#7C3AED',
+  pagamento: '#EA580C',
+  funzionale: '#0D9488',
 };
 
 export const statusColors = {

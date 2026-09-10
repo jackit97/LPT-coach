@@ -1,7 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
 import WorkoutBadge from '../components/WorkoutBadge';
 import { colors, spacing, radius, typography } from '../theme';
+
+function formatDuration(workout) {
+  const seconds = Number(workout.durata_secondi ?? (Number(workout.durata_minuti) || 0) * 60);
+  if (!seconds) return '—';
+  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+}
 
 export default function DayWorkoutsScreen({ route, navigation }) {
   const { date, workouts } = route.params;
@@ -16,10 +22,12 @@ export default function DayWorkoutsScreen({ route, navigation }) {
         renderItem={({ item }) => (
           <Pressable
             style={styles.card}
-            onPress={() => navigation.navigate('WorkoutDetail', { workoutId: item.workout_id })}
+            onPress={() => ['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pagamento'].includes(item.tipo)
+              ? Alert.alert(item.titolo, item.descrizione || 'Evento calendario')
+              : navigation.navigate('WorkoutDetail', { workoutId: item.workout_id })}
           >
             <WorkoutBadge workout={item} />
-            {!!item.durata_minuti && <Text style={styles.meta}>{item.durata_minuti} min</Text>}
+            {!!(item.durata_secondi || item.durata_minuti) && <Text style={styles.meta}>{formatDuration(item)}</Text>}
           </Pressable>
         )}
       />

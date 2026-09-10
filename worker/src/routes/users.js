@@ -9,8 +9,52 @@ app.use('*', authenticate());
 app.get('/me', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
-  const rows = await sql`SELECT utenteid, nome, email, ruolo, dataregistrazione FROM utenti WHERE utenteid = ${user.userId}`;
+  const rows = await sql`
+    SELECT u.utenteid, u.nome, u.email, u.ruolo, u.dataregistrazione, u.endurance_enabled,
+           p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
+           p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness,
+           p.datanascita, p.sesso
+    FROM utenti u LEFT JOIN profiloutente p ON p.utenteid = u.utenteid
+    WHERE u.utenteid = ${user.userId}
+  `;
   if (!rows[0]) return c.json({ message: 'Not found' }, 404);
+  const row = rows[0];
+  let enduranceVisible = !!row.endurance_enabled;
+  if (row.ruolo === 'cliente') {
+    const coachRows = await sql`
+      SELECT u.endurance_enabled FROM pt_clienti pc
+      JOIN utenti u ON u.utenteid = pc.pt_userid
+      WHERE pc.cliente_userid = ${user.userId} AND pc.attivo = 1
+    `;
+    enduranceVisible = coachRows.length ? coachRows.every((coach) => coach.endurance_enabled) : true;
+  }
+  return c.json({ ...row, endurance_visible: enduranceVisible });
+});
+
+// Coach: toggle visibility of endurance sections for themselves and their athletes
+app.put('/me/endurance-settings', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const { enabled } = await c.req.json();
+  const sql = db(c.env);
+  await sql`UPDATE utenti SET endurance_enabled = ${!!enabled} WHERE utenteid = ${user.userId}`;
+  return c.json({ endurance_enabled: !!enabled });
+});
+
+app.put('/me/profile', async (c) => {
+  const user = c.get('user');
+  const { nome, cognome, pesokg, altezzacm, obiettivoallenamento, durataAllenamentoMinuti, giorniAllenamento, livellofitness, datanascita, sesso } = await c.req.json();
+  const sql = db(c.env);
+  if (nome?.trim()) await sql`UPDATE utenti SET nome = ${nome.trim()} WHERE utenteid = ${user.userId}`;
+  const rows = await sql`
+    INSERT INTO profiloutente (utenteid, cognome, pesokg, altezzacm, obiettivoallenamento, durata_allenamento_minuti, giorni_allenamento, livellofitness, datanascita, sesso)
+    VALUES (${user.userId}, ${cognome || null}, ${pesokg || null}, ${altezzacm || null}, ${obiettivoallenamento || null}, ${durataAllenamentoMinuti || null}, ${giorniAllenamento || null}, ${livellofitness || null}, ${datanascita || null}, ${sesso || null})
+    ON CONFLICT (utenteid) DO UPDATE SET
+      cognome = EXCLUDED.cognome, pesokg = EXCLUDED.pesokg, altezzacm = EXCLUDED.altezzacm,
+      obiettivoallenamento = EXCLUDED.obiettivoallenamento, durata_allenamento_minuti = EXCLUDED.durata_allenamento_minuti,
+      giorni_allenamento = EXCLUDED.giorni_allenamento, livellofitness = EXCLUDED.livellofitness
+      , datanascita = EXCLUDED.datanascita, sesso = EXCLUDED.sesso
+    RETURNING *
+  `;
   return c.json(rows[0]);
 });
 
@@ -19,9 +63,13 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-    SELECT u.utenteid, u.nome, u.email, u.dataregistrazione
+        SELECT u.utenteid, u.nome, u.email, u.dataregistrazione,
+          p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
+          p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness
+           , p.datanascita, p.sesso
     FROM pt_clienti pc
     JOIN utenti u ON u.utenteid = pc.cliente_userid
+        LEFT JOIN profiloutente p ON p.utenteid = u.utenteid
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1
     ORDER BY u.nome ASC
   `;

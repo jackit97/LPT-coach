@@ -2,11 +2,14 @@
 -- LPT Coach - Consolidated Neon Postgres schema
 -- Same table names/columns as the legacy LPTapp DB (Postgres dialect), plus
 -- the new calendar-first workout model that powers the redesigned app.
+-- Objects are created explicitly in the lptapp schema.
 -- Safe to run multiple times (IF NOT EXISTS everywhere).
 -- ============================================================================
 
+CREATE SCHEMA IF NOT EXISTS lptapp;
+
 -- ---------- Core users ----------
-CREATE TABLE IF NOT EXISTS utenti (
+CREATE TABLE IF NOT EXISTS lptapp.utenti (
   utenteid SERIAL PRIMARY KEY,
   nome VARCHAR(100) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
@@ -15,9 +18,12 @@ CREATE TABLE IF NOT EXISTS utenti (
   dataregistrazione TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS profiloutente (
+-- Coach-level switch: when disabled, hides endurance sections/fields for the coach and their athletes
+ALTER TABLE lptapp.utenti ADD COLUMN IF NOT EXISTS endurance_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE TABLE IF NOT EXISTS lptapp.profiloutente (
   profiloid SERIAL PRIMARY KEY,
-  utenteid INT NOT NULL UNIQUE REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  utenteid INT NOT NULL UNIQUE REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   sesso VARCHAR(10),
   datanascita DATE,
   altezzacm INT,
@@ -29,20 +35,24 @@ CREATE TABLE IF NOT EXISTS profiloutente (
   noteaggiuntive TEXT
 );
 
+ALTER TABLE lptapp.profiloutente ADD COLUMN IF NOT EXISTS cognome VARCHAR(100);
+ALTER TABLE lptapp.profiloutente ADD COLUMN IF NOT EXISTS durata_allenamento_minuti INT;
+ALTER TABLE lptapp.profiloutente ADD COLUMN IF NOT EXISTS giorni_allenamento TEXT;
+
 -- Coach <-> athlete relationship (who trains whom)
-CREATE TABLE IF NOT EXISTS pt_clienti (
+CREATE TABLE IF NOT EXISTS lptapp.pt_clienti (
   pt_cliente_id SERIAL PRIMARY KEY,
-  pt_userid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
-  cliente_userid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  pt_userid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
+  cliente_userid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   attivo INT NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(pt_userid, cliente_userid)
 );
 
 -- ---------- Legacy strength workout model (kept for compatibility) ----------
-CREATE TABLE IF NOT EXISTS schedeallenamento (
+CREATE TABLE IF NOT EXISTS lptapp.schedeallenamento (
   schedaid SERIAL PRIMARY KEY,
-  utenteid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  utenteid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   nomescheda VARCHAR(100),
   datainizio DATE,
   datafine DATE,
@@ -50,9 +60,9 @@ CREATE TABLE IF NOT EXISTS schedeallenamento (
   notegenerali TEXT
 );
 
-CREATE TABLE IF NOT EXISTS esercizischeda (
+CREATE TABLE IF NOT EXISTS lptapp.esercizischeda (
   esercizioid SERIAL PRIMARY KEY,
-  schedaid INT NOT NULL REFERENCES schedeallenamento(schedaid) ON DELETE CASCADE,
+  schedaid INT NOT NULL REFERENCES lptapp.schedeallenamento(schedaid) ON DELETE CASCADE,
   nomeesercizio VARCHAR(100),
   serie INT,
   ripetizioni VARCHAR(50),
@@ -62,18 +72,18 @@ CREATE TABLE IF NOT EXISTS esercizischeda (
   noteutente TEXT
 );
 
-CREATE TABLE IF NOT EXISTS workouttemplates (
+CREATE TABLE IF NOT EXISTS lptapp.workouttemplates (
   templateid SERIAL PRIMARY KEY,
-  ptuserid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  ptuserid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   nometemplate VARCHAR(150) NOT NULL,
   notegenerali TEXT,
   createdat TIMESTAMP DEFAULT NOW(),
   updatedat TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS workouttemplateexercises (
+CREATE TABLE IF NOT EXISTS lptapp.workouttemplateexercises (
   templateexerciseid SERIAL PRIMARY KEY,
-  templateid INT NOT NULL REFERENCES workouttemplates(templateid) ON DELETE CASCADE,
+  templateid INT NOT NULL REFERENCES lptapp.workouttemplates(templateid) ON DELETE CASCADE,
   nomeesercizio VARCHAR(100) NOT NULL,
   serie INT,
   ripetizioni VARCHAR(50),
@@ -83,39 +93,40 @@ CREATE TABLE IF NOT EXISTS workouttemplateexercises (
   orderindex INT
 );
 
-CREATE TABLE IF NOT EXISTS esercizifull (
+CREATE TABLE IF NOT EXISTS lptapp.esercizifull (
   esercizioid SERIAL PRIMARY KEY,
   nomeesercizio VARCHAR(150) NOT NULL
 );
 
 -- ---------- NEW: calendar-first workout model (core of the redesign) ----------
 -- One row = one workout shown on a single calendar day, for one athlete.
-CREATE TABLE IF NOT EXISTS calendar_workouts (
+CREATE TABLE IF NOT EXISTS lptapp.calendar_workouts (
   workout_id SERIAL PRIMARY KEY,
-  utenteid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
-  coach_userid INT REFERENCES utenti(utenteid) ON DELETE SET NULL,
+  utenteid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
+  coach_userid INT REFERENCES lptapp.utenti(utenteid) ON DELETE SET NULL,
   data DATE NOT NULL,
   tipo VARCHAR(30) NOT NULL DEFAULT 'forza', -- forza | endurance | riposo | test | mobilita
   titolo VARCHAR(200) NOT NULL,
   descrizione TEXT,
   durata_minuti INT,
+  durata_secondi INT,
   rpe_pianificato SMALLINT,
   colore VARCHAR(20),
   stato VARCHAR(20) NOT NULL DEFAULT 'pianificato', -- pianificato | completato | saltato
-  schedaid INT REFERENCES schedeallenamento(schedaid) ON DELETE SET NULL,
+  schedaid INT REFERENCES lptapp.schedeallenamento(schedaid) ON DELETE SET NULL,
   endurance_session_id INT,
   order_index INT DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_calendar_workouts_utente_data ON calendar_workouts(utenteid, data);
-CREATE INDEX IF NOT EXISTS idx_calendar_workouts_coach ON calendar_workouts(coach_userid, data);
+CREATE INDEX IF NOT EXISTS idx_calendar_workouts_utente_data ON lptapp.calendar_workouts(utenteid, data);
+CREATE INDEX IF NOT EXISTS idx_calendar_workouts_coach ON lptapp.calendar_workouts(coach_userid, data);
 
 -- Exercises attached directly to a calendar workout (simple strength blocks)
-CREATE TABLE IF NOT EXISTS calendar_workout_exercises (
+CREATE TABLE IF NOT EXISTS lptapp.calendar_workout_exercises (
   exercise_id SERIAL PRIMARY KEY,
-  workout_id INT NOT NULL REFERENCES calendar_workouts(workout_id) ON DELETE CASCADE,
+  workout_id INT NOT NULL REFERENCES lptapp.calendar_workouts(workout_id) ON DELETE CASCADE,
   nome VARCHAR(150) NOT NULL,
   serie INT,
   ripetizioni VARCHAR(50),
@@ -126,13 +137,13 @@ CREATE TABLE IF NOT EXISTS calendar_workout_exercises (
   order_index INT DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_calendar_workout_exercises_workout ON calendar_workout_exercises(workout_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_workout_exercises_workout ON lptapp.calendar_workout_exercises(workout_id);
 
 -- Athlete feedback for a specific calendar workout
-CREATE TABLE IF NOT EXISTS workout_feedback (
+CREATE TABLE IF NOT EXISTS lptapp.workout_feedback (
   feedback_id SERIAL PRIMARY KEY,
-  workout_id INT NOT NULL REFERENCES calendar_workouts(workout_id) ON DELETE CASCADE,
-  utenteid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  workout_id INT NOT NULL REFERENCES lptapp.calendar_workouts(workout_id) ON DELETE CASCADE,
+  utenteid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   completato INT NOT NULL DEFAULT 0,
   rpe SMALLINT,
   sensazione VARCHAR(20), -- ottimo | buono | normale | difficile | pessimo
@@ -144,9 +155,9 @@ CREATE TABLE IF NOT EXISTS workout_feedback (
 );
 
 -- ---------- Diets (kept, minimal) ----------
-CREATE TABLE IF NOT EXISTS diete (
+CREATE TABLE IF NOT EXISTS lptapp.diete (
   dietaid SERIAL PRIMARY KEY,
-  utenteid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  utenteid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   datainizio DATE,
   datafine DATE,
   attiva INT NOT NULL DEFAULT 1,
@@ -155,39 +166,42 @@ CREATE TABLE IF NOT EXISTS diete (
   nome VARCHAR(120)
 );
 
-CREATE TABLE IF NOT EXISTS pastidieta (
+CREATE TABLE IF NOT EXISTS lptapp.pastidieta (
   pastoid SERIAL PRIMARY KEY,
-  dietaid INT NOT NULL REFERENCES diete(dietaid) ON DELETE CASCADE,
+  dietaid INT NOT NULL REFERENCES lptapp.diete(dietaid) ON DELETE CASCADE,
+  giorno_settimana VARCHAR(20) DEFAULT 'Lunedi',
   tipopasto VARCHAR(50),
   descrizione TEXT
 );
 
+ALTER TABLE lptapp.pastidieta ADD COLUMN IF NOT EXISTS giorno_settimana VARCHAR(20) DEFAULT 'Lunedi';
+
 -- ---------- Videos ----------
-CREATE TABLE IF NOT EXISTS videotutorial (
+CREATE TABLE IF NOT EXISTS lptapp.videotutorial (
   videoid SERIAL PRIMARY KEY,
   titolo VARCHAR(100),
   esercizioid INT,
   descrizione TEXT,
   videourl VARCHAR(255),
-  creatodaid INT REFERENCES utenti(utenteid),
+  creatodaid INT REFERENCES lptapp.utenti(utenteid),
   datacaricamento TIMESTAMP DEFAULT NOW()
 );
 
 -- ---------- Payments ----------
-CREATE TABLE IF NOT EXISTS pagamenti (
+CREATE TABLE IF NOT EXISTS lptapp.pagamenti (
   pagamentoid SERIAL PRIMARY KEY,
-  utenteid INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  utenteid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   datapagamento TIMESTAMP,
   importo NUMERIC(10,2) NOT NULL,
   scadenza DATE,
   causale VARCHAR(255),
-  creatodaid INT REFERENCES utenti(utenteid),
+  creatodaid INT REFERENCES lptapp.utenti(utenteid),
   datacreazione TIMESTAMP DEFAULT NOW(),
   stato VARCHAR(30) DEFAULT 'In sospeso'
 );
 
 -- ---------- Nutrition reference data ----------
-CREATE TABLE IF NOT EXISTS foodcompositionraw (
+CREATE TABLE IF NOT EXISTS lptapp.foodcompositionraw (
   food_code VARCHAR(50) PRIMARY KEY,
   name VARCHAR(255),
   category VARCHAR(255),
@@ -199,7 +213,7 @@ CREATE TABLE IF NOT EXISTS foodcompositionraw (
   total_fiber NUMERIC(10,3)
 );
 
-CREATE TABLE IF NOT EXISTS food_and_nutritional_value (
+CREATE TABLE IF NOT EXISTS lptapp.food_and_nutritional_value (
   code VARCHAR(50) PRIMARY KEY,
   product_name VARCHAR(255),
   brands VARCHAR(255),
@@ -215,9 +229,9 @@ CREATE TABLE IF NOT EXISTS food_and_nutritional_value (
 );
 
 -- ---------- Endurance module (kept, unchanged) ----------
-CREATE TABLE IF NOT EXISTS endurance_plans (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_plans (
   plan_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   title VARCHAR(200) NOT NULL,
   block VARCHAR(20) NOT NULL,
   start_date DATE NOT NULL,
@@ -239,14 +253,15 @@ CREATE TABLE IF NOT EXISTS endurance_plans (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_sessions (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_sessions (
   session_id SERIAL PRIMARY KEY,
-  plan_id INT NOT NULL REFERENCES endurance_plans(plan_id) ON DELETE CASCADE,
+  plan_id INT NOT NULL REFERENCES lptapp.endurance_plans(plan_id) ON DELETE CASCADE,
   day_of_week SMALLINT,
   "date" DATE,
   title VARCHAR(200) NOT NULL,
   zone VARCHAR(10),
   duration_minutes INT NOT NULL,
+  duration_seconds INT,
   target VARCHAR(100),
   description TEXT,
   order_index INT,
@@ -257,10 +272,10 @@ CREATE TABLE IF NOT EXISTS endurance_sessions (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_checkins (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_checkins (
   checkin_id SERIAL PRIMARY KEY,
-  session_id INT NOT NULL REFERENCES endurance_sessions(session_id) ON DELETE CASCADE,
-  user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  session_id INT NOT NULL REFERENCES lptapp.endurance_sessions(session_id) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   completed INT NOT NULL DEFAULT 0,
   performed_duration_minutes INT,
   distance_km NUMERIC(6,2),
@@ -271,15 +286,15 @@ CREATE TABLE IF NOT EXISTS endurance_checkins (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_zones (
-  user_id INT PRIMARY KEY REFERENCES utenti(utenteid) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS lptapp.endurance_zones (
+  user_id INT PRIMARY KEY REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   zones_json TEXT,
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_metrics_weekly (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_metrics_weekly (
   id SERIAL PRIMARY KEY,
-  plan_id INT NOT NULL REFERENCES endurance_plans(plan_id) ON DELETE CASCADE,
+  plan_id INT NOT NULL REFERENCES lptapp.endurance_plans(plan_id) ON DELETE CASCADE,
   week_start DATE NOT NULL,
   planned_minutes INT,
   completed_minutes INT,
@@ -290,9 +305,9 @@ CREATE TABLE IF NOT EXISTS endurance_metrics_weekly (
   tsb NUMERIC(10,2)
 );
 
-CREATE TABLE IF NOT EXISTS endurance_goals (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_goals (
   goal_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   title VARCHAR(200) NOT NULL,
   goal_date DATE NOT NULL,
   goal_type VARCHAR(100),
@@ -301,16 +316,16 @@ CREATE TABLE IF NOT EXISTS endurance_goals (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_notifications (
-  user_id INT PRIMARY KEY REFERENCES utenti(utenteid) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS lptapp.endurance_notifications (
+  user_id INT PRIMARY KEY REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   enabled INT NOT NULL DEFAULT 1,
   preferences_json TEXT,
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_activities (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_activities (
   activity_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   provider VARCHAR(20),
   external_id VARCHAR(100),
   "date" DATE,
@@ -322,9 +337,9 @@ CREATE TABLE IF NOT EXISTS endurance_activities (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_integrations (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_integrations (
   integration_id SERIAL PRIMARY KEY,
-  user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   provider VARCHAR(20) NOT NULL,
   connected INT NOT NULL DEFAULT 0,
   data_json TEXT,
@@ -332,9 +347,9 @@ CREATE TABLE IF NOT EXISTS endurance_integrations (
   UNIQUE(user_id, provider)
 );
 
-CREATE TABLE IF NOT EXISTS endurance_plan_templates (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_plan_templates (
   template_id SERIAL PRIMARY KEY,
-  pt_user_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
+  pt_user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   title VARCHAR(200) NOT NULL,
   block VARCHAR(20) NOT NULL,
   weeks INT NOT NULL,
@@ -353,9 +368,9 @@ CREATE TABLE IF NOT EXISTS endurance_plan_templates (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS endurance_plan_template_sessions (
+CREATE TABLE IF NOT EXISTS lptapp.endurance_plan_template_sessions (
   template_session_id SERIAL PRIMARY KEY,
-  template_id INT NOT NULL REFERENCES endurance_plan_templates(template_id) ON DELETE CASCADE,
+  template_id INT NOT NULL REFERENCES lptapp.endurance_plan_templates(template_id) ON DELETE CASCADE,
   day_of_week SMALLINT,
   title VARCHAR(200) NOT NULL,
   zone VARCHAR(10),
@@ -370,14 +385,47 @@ CREATE TABLE IF NOT EXISTS endurance_plan_template_sessions (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- ---------- Test & training zones ----------
-CREATE TABLE IF NOT EXISTS training_zone_sets (
-  zone_set_id SERIAL PRIMARY KEY,
-  athlete_id INT NOT NULL REFERENCES utenti(utenteid) ON DELETE CASCADE,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  zones JSONB,
+-- ---------- Tests & training zones ----------
+CREATE TABLE IF NOT EXISTS lptapp.test_types (
+  test_type_id SERIAL PRIMARY KEY,
+  sport VARCHAR(20) NOT NULL,
+  code VARCHAR(80) NOT NULL,
+  label VARCHAR(150) NOT NULL,
+  result_unit VARCHAR(30) NOT NULL,
+  result_label VARCHAR(100),
+  zone_calc_method VARCHAR(80),
+  description TEXT,
+  warmup_protocol TEXT,
+  test_instructions TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_training_zone_sets_athlete ON training_zone_sets(athlete_id);
+CREATE TABLE IF NOT EXISTS lptapp.athlete_test_results (
+  test_result_id SERIAL PRIMARY KEY,
+  athlete_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
+  test_type_id INT NOT NULL REFERENCES lptapp.test_types(test_type_id) ON DELETE CASCADE,
+  test_date DATE NOT NULL,
+  raw_result VARCHAR(100) NOT NULL,
+  notes TEXT,
+  computed_zones JSONB,
+  computed_efficiency_zones JSONB,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ---------- Training zones ----------
+CREATE TABLE IF NOT EXISTS lptapp.training_zone_sets (
+  zone_set_id SERIAL PRIMARY KEY,
+  athlete_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
+  sport VARCHAR(20),
+  source_test_result_id INT REFERENCES lptapp.athlete_test_results(test_result_id) ON DELETE SET NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  zones JSONB,
+  efficiency_zones JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_zone_sets_athlete ON lptapp.training_zone_sets(athlete_id);

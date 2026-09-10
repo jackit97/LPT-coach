@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
+import DateField from '../components/DateField';
 import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
@@ -108,7 +109,7 @@ export default function PaymentsScreen({ navigation }) {
             <Text style={styles.fieldLabel}>Importo (€)</Text>
             <TextInput value={importo} onChangeText={setImporto} keyboardType="numeric" style={styles.input} placeholder="59.99" />
             <Text style={styles.fieldLabel}>Scadenza (YYYY-MM-DD)</Text>
-            <TextInput value={scadenza} onChangeText={setScadenza} style={styles.input} placeholder="2026-09-30" />
+            <DateField value={scadenza} onChange={setScadenza} style={styles.dateField} />
             <Text style={styles.fieldLabel}>Causale</Text>
             <TextInput value={causale} onChangeText={setCausale} style={styles.input} placeholder="Abbonamento mensile" />
             <View style={styles.modalActions}>

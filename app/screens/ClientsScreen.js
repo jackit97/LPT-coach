@@ -52,7 +52,15 @@ export default function ClientsScreen({ navigation }) {
               onPress={() => { setSelectedAthlete(item); navigation.goBack(); }}
             >
               <Text style={typography.h3}>{item.nome}</Text>
+              {!!item.cognome && <Text style={styles.detail}>Cognome: {item.cognome}</Text>}
               <Text style={typography.caption}>{item.email}</Text>
+              {!!item.datanascita && <Text style={styles.detail}>Data di nascita: {String(item.datanascita).slice(0, 10)}</Text>}
+              {!!item.sesso && <Text style={styles.detail}>Sesso: {item.sesso}</Text>}
+              {(item.pesokg || item.altezzacm) && <Text style={styles.detail}>Peso: {item.pesokg || '—'} kg · Altezza: {item.altezzacm || '—'} cm</Text>}
+              {!!item.obiettivoallenamento && <Text style={styles.detail}>Obiettivo: {item.obiettivoallenamento}</Text>}
+              {!!item.durata_allenamento_minuti && <Text style={styles.detail}>Durata: {item.durata_allenamento_minuti} min</Text>}
+              {!!item.giorni_allenamento && <Text style={styles.detail}>Giorni: {item.giorni_allenamento}</Text>}
+              {!!item.livellofitness && <Text style={styles.detail}>Livello: {item.livellofitness}</Text>}
             </Pressable>
           )}
         />
@@ -69,5 +77,6 @@ const styles = StyleSheet.create({
   addBtnText: { color: colors.textInverse, fontWeight: '700' },
   card: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   cardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  detail: { ...typography.caption, marginTop: spacing.xs },
   empty: { ...typography.caption, textAlign: 'center', marginTop: spacing.xl },
 });

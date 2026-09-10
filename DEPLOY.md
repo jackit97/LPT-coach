@@ -4,7 +4,8 @@
 
 1. Crea un progetto su https://neon.tech e copia la connection string (`DATABASE_URL`,
    deve includere `sslmode=require`).
-2. Esegui lo schema e (opzionale) il seed demo con `psql`:
+2. Esegui lo schema e (opzionale) il seed demo con `psql`. Lo schema crea le tabelle
+   dentro `lptapp`, quindi configura anche il Worker con `DB_SCHEMA=lptapp`:
 
    ```bash
    psql "$DATABASE_URL" -f db/schema.sql
@@ -21,6 +22,30 @@ npx wrangler secret put DATABASE_URL   # incolla la connection string Neon
 npx wrangler secret put JWT_SECRET     # stringa lunga e casuale
 npm run deploy
 ```
+
+Per riusare lo stesso database/schema del progetto `LPTapp` senza passare da
+Render, imposta anche lo schema usato dal vecchio backend:
+
+```toml
+# worker/wrangler.toml
+[vars]
+CORS_ORIGIN = "*"
+DB_SCHEMA = "lptapp"
+```
+
+In alternativa puoi aggiungere `DB_SCHEMA=lptapp` dalle variabili del Worker
+nella dashboard Cloudflare.
+
+In locale puoi ottenere lo stesso effetto creando `worker/.dev.vars` con:
+
+```env
+DATABASE_URL=postgresql://...
+JWT_SECRET=change_this_secret
+DB_SCHEMA=lptapp
+```
+
+Poi avvia il backend diretto su Cloudflare Worker con `npm run dev` oppure
+pubblicalo con `npm run deploy`.
 
 In alternativa a `DATABASE_URL` puoi impostare singolarmente `PGHOST`, `PGDATABASE`,
 `PGUSER`, `PGPASSWORD`, `PGPORT`, `PGSSL` (stessa convenzione del vecchio backend
@@ -121,4 +146,5 @@ expo.dev) cosi' le build puntano al Worker di produzione.
 |---|---|---|
 | Worker (secret) | `DATABASE_URL` | connection string Neon |
 | Worker (secret) | `JWT_SECRET` | stringa casuale lunga |
+| Worker (var) | `DB_SCHEMA` | `lptapp` |
 | Pages / EAS | `EXPO_PUBLIC_API_BASE` | URL pubblico del Worker |

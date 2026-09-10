@@ -10,10 +10,12 @@
     "start": "node src/server.js"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.9.5",
     "@hono/node-server": "^1.13.7",
+    "@markw65/fit-file-writer": "^0.1.10",
+    "@neondatabase/serverless": "^0.9.5",
     "bcryptjs": "^2.4.3",
-    "hono": "^4.6.9"
+    "hono": "^4.6.9",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "wrangler": "^3.90.0"

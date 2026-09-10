@@ -9,6 +9,14 @@ const USER_KEY = 'lptcoach_user';
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [enduranceEnabled, setEnduranceEnabled] = useState(true);
+
+  const refreshEnduranceSetting = useCallback(async () => {
+    try {
+      const { data } = await api.get('/users/me');
+      setEnduranceEnabled(data?.endurance_visible !== false);
+    } catch { /* keep previous value on failure */ }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -17,6 +25,8 @@ export function AuthProvider({ children }) {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => { if (user) refreshEnduranceSetting(); }, [user, refreshEnduranceSetting]);
 
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
@@ -38,9 +48,13 @@ export function AuthProvider({ children }) {
     await AsyncStorage.removeItem(TOKEN_KEY);
     await AsyncStorage.removeItem(USER_KEY);
     setUser(null);
+    setEnduranceEnabled(true);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer' }), [user, loading, login, register, logout]);
+  const value = useMemo(() => ({
+    user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer',
+    enduranceEnabled, setEnduranceEnabled, refreshEnduranceSetting,
+  }), [user, loading, login, register, logout, enduranceEnabled, refreshEnduranceSetting]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

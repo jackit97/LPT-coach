@@ -6,6 +6,35 @@ import { resolveTargetUserId, assertAccessToAthlete } from '../utils.js';
 const app = new Hono();
 app.use('*', authenticate());
 
+app.get('/foods/search', async (c) => {
+  const query = (c.req.query('q') || '').trim();
+  if (query.length < 2) return c.json([]);
+  const sql = db(c.env);
+  const rows = await sql`
+      SELECT DISTINCT ON (LOWER(product_name)) * FROM (
+        SELECT code::text, product_name::text, brands::text, energy_kcal_100g::text,
+          carbohydrates_100g::text, fat_100g::text, proteins_100g::text,
+          sugars_100g::text, fiber_100g::text, sodium_100g::text
+        FROM food_and_nutritional_value
+        WHERE product_name ILIKE ${`%${query}%`}
+        UNION ALL
+        SELECT food_code AS code, name AS product_name, category AS brands,
+          energy_kcal::text AS energy_kcal_100g,
+          available_carbohydrates AS carbohydrates_100g,
+          lipids AS fat_100g,
+          proteins AS proteins_100g,
+          soluble_sugars AS sugars_100g,
+          total_fiber AS fiber_100g,
+          sodium
+        FROM foodcompositionraw
+        WHERE name ILIKE ${`%${query}%`} OR english_name ILIKE ${`%${query}%`}
+      ) foods
+      ORDER BY LOWER(product_name), CASE WHEN product_name ILIKE ${`${query}%`} THEN 0 ELSE 1 END, product_name ASC
+    LIMIT 30
+  `;
+  return c.json(rows);
+});
+
 // GET /diets?utenteId= - list diets for an athlete
 app.get('/', async (c) => {
   const user = c.get('user');
@@ -36,7 +65,7 @@ app.get('/:id', async (c) => {
   const ok = await assertAccessToAthlete(sql, user, diet.utenteid);
   if (!ok) return c.json({ message: 'Accesso negato' }, 403);
 
-  const pasti = await sql`SELECT * FROM pastidieta WHERE dietaid = ${id} ORDER BY pastoid ASC`;
+  const pasti = await sql`SELECT * FROM pastidieta WHERE dietaid = ${id} ORDER BY giorno_settimana ASC, pastoid ASC`;
   return c.json({ ...diet, pasti });
 });
 
@@ -57,8 +86,8 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
     for (const pasto of pasti) {
       if (!pasto?.tipopasto) continue;
       await sql`
-        INSERT INTO pastidieta (dietaid, tipopasto, descrizione)
-        VALUES (${diet.dietaid}, ${pasto.tipopasto}, ${pasto.descrizione || null})
+        INSERT INTO pastidieta (dietaid, giorno_settimana, tipopasto, descrizione)
+          VALUES (${diet.dietaid}, ${pasto.giorno_settimana || 'Lunedi'}, ${pasto.tipopasto}, ${pasto.descrizione || null})
       `;
     }
   }
@@ -97,11 +126,11 @@ app.put('/:id/meals', roleCheck('personal_trainer'), async (c) => {
   for (const pasto of pasti) {
     if (!pasto?.tipopasto) continue;
     await sql`
-      INSERT INTO pastidieta (dietaid, tipopasto, descrizione)
-      VALUES (${id}, ${pasto.tipopasto}, ${pasto.descrizione || null})
+      INSERT INTO pastidieta (dietaid, giorno_settimana, tipopasto, descrizione)
+        VALUES (${id}, ${pasto.giorno_settimana || 'Lunedi'}, ${pasto.tipopasto}, ${pasto.descrizione || null})
     `;
   }
-  const rows = await sql`SELECT * FROM pastidieta WHERE dietaid = ${id} ORDER BY pastoid ASC`;
+  const rows = await sql`SELECT * FROM pastidieta WHERE dietaid = ${id} ORDER BY giorno_settimana ASC, pastoid ASC`;
   return c.json(rows);
 });
 

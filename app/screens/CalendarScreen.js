@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -20,7 +20,7 @@ function monthRange(year, month) {
 }
 
 export default function CalendarScreen({ navigation }) {
-  const { isCoach } = useAuth();
+  const { isCoach, enduranceEnabled } = useAuth();
   const { selectedAthlete, targetUserId } = useAthlete();
 
   const [cursor, setCursor] = useState(() => new Date());
@@ -40,14 +40,14 @@ export default function CalendarScreen({ navigation }) {
     const { from, to } = monthRange(year, month);
     try {
       const { data } = await api.get('/calendar', { params: { utenteId: targetUserId, from, to } });
-      setWorkouts(data || []);
+      setWorkouts(enduranceEnabled ? (data || []) : (data || []).filter((w) => w.tipo !== 'endurance'));
     } catch (e) {
       // keep silent, show empty calendar
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [targetUserId, year, month]);
+  }, [targetUserId, year, month, enduranceEnabled]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -61,7 +61,13 @@ export default function CalendarScreen({ navigation }) {
     return map;
   }, [workouts]);
 
-  const goToDetail = (workout) => navigation.navigate('WorkoutDetail', { workoutId: workout.workout_id });
+  const goToDetail = (workout) => {
+    if (['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pagamento'].includes(workout.tipo)) {
+      Alert.alert(workout.titolo, workout.descrizione || 'Evento calendario');
+      return;
+    }
+    navigation.navigate('WorkoutDetail', { workoutId: workout.workout_id });
+  };
 
   const onDayPress = (iso, dayWorkouts) => {
     if (dayWorkouts.length === 1) {
@@ -69,7 +75,7 @@ export default function CalendarScreen({ navigation }) {
     } else if (dayWorkouts.length > 1) {
       navigation.navigate('DayWorkouts', { date: iso, workouts: dayWorkouts });
     } else if (isCoach && targetUserId) {
-      navigation.navigate('WorkoutEditor', { date: iso, utenteId: targetUserId });
+          navigation.navigate('NewActivity', { date: iso, utenteId: targetUserId });
     }
   };
 
@@ -122,7 +128,7 @@ export default function CalendarScreen({ navigation }) {
       {isCoach && targetUserId && (
         <Pressable
           style={styles.fab}
-          onPress={() => navigation.navigate('WorkoutEditor', { date: new Date().toISOString().slice(0, 10), utenteId: targetUserId })}
+          onPress={() => navigation.navigate('NewActivity', { date: new Date().toISOString().slice(0, 10), utenteId: targetUserId })}
         >
           <Text style={styles.fabText}>+</Text>
         </Pressable>

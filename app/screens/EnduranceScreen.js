@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -7,46 +7,31 @@ import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
 import { colors, spacing, radius, typography } from '../theme';
 
+function formatDuration(workout) {
+  const seconds = Number(workout.durata_secondi ?? (Number(workout.durata_minuti) || 0) * 60);
+  if (!seconds) return '—';
+  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+}
+
 export default function EnduranceScreen({ navigation }) {
   const { isCoach } = useAuth();
   const { selectedAthlete, targetUserId } = useAthlete();
-  const [plans, setPlans] = useState([]);
+  const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [block, setBlock] = useState('base');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [weeks, setWeeks] = useState('4');
-  const [saving, setSaving] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
 
   const load = useCallback(async () => {
-    if (!targetUserId) { setPlans([]); setLoading(false); return; }
+    if (!targetUserId) { setWorkouts([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const { data } = await api.get('/endurance/plans', { params: { utenteId: targetUserId } });
-      setPlans(data || []);
+      const { data } = await api.get('/calendar', { params: { utenteId: targetUserId, from: '1970-01-01', to: '2999-12-31' } });
+      setWorkouts((data || []).filter((workout) => workout.tipo === 'endurance'));
     } finally {
       setLoading(false);
     }
   }, [targetUserId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const createPlan = async () => {
-    if (!title || !startDate || !endDate) return Alert.alert('Errore', 'Titolo e date sono richiesti');
-    setSaving(true);
-    try {
-      await api.post('/endurance/plans', { utenteId: targetUserId, title, block, startDate, endDate, weeks: Number(weeks) });
-      setModalOpen(false);
-      setTitle(''); setStartDate(''); setEndDate('');
-      await load();
-    } catch (e) {
-      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile creare il piano');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (isCoach && !selectedAthlete) {
     return (
@@ -66,66 +51,59 @@ export default function EnduranceScreen({ navigation }) {
         <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.primary} />
       ) : (
         <FlatList
-          data={plans}
-          keyExtractor={(item) => String(item.plan_id)}
+          data={workouts}
+          keyExtractor={(item) => String(item.workout_id)}
           contentContainerStyle={{ padding: spacing.lg }}
-          ListEmptyComponent={<Text style={styles.empty}>Nessun piano endurance ancora.</Text>}
+          ListHeaderComponent={<Text style={styles.heading}>Allenamenti endurance</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>Nessun allenamento endurance ancora.</Text>}
           renderItem={({ item }) => (
-            <Pressable style={styles.card} onPress={() => navigation.navigate('EndurancePlanDetail', { planId: item.plan_id })}>
-              <Text style={typography.h3}>{item.title}</Text>
-              <Text style={typography.caption}>
-                {item.block} · {item.weeks} settimane · {String(item.start_date).slice(0, 10)} → {String(item.end_date).slice(0, 10)}
-              </Text>
+            <Pressable style={styles.card} onPress={() => navigation.navigate('WorkoutDetail', { workoutId: item.workout_id })}>
+              <Text style={typography.h3}>{item.titolo}</Text>
+              <Text style={typography.caption}>{String(item.data).slice(0, 10)} · {formatDuration(item)}</Text>
+              {!!item.descrizione && <Text style={styles.description}>{item.descrizione}</Text>}
             </Pressable>
           )}
         />
       )}
 
       {isCoach && targetUserId && (
-        <Pressable style={styles.fab} onPress={() => setModalOpen(true)}>
+        <Pressable style={styles.fab} onPress={() => setCreateMenuOpen(true)}>
           <Text style={styles.fabText}>+</Text>
         </Pressable>
       )}
 
-      <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={typography.h2}>Nuovo piano endurance</Text>
-            <Text style={styles.fieldLabel}>Titolo</Text>
-            <TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Piano 10K" />
-            <Text style={styles.fieldLabel}>Blocco</Text>
-            <TextInput value={block} onChangeText={setBlock} style={styles.input} placeholder="base" />
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Inizio</Text>
-                <TextInput value={startDate} onChangeText={setStartDate} style={styles.input} placeholder="2026-09-01" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Fine</Text>
-                <TextInput value={endDate} onChangeText={setEndDate} style={styles.input} placeholder="2026-09-28" />
-              </View>
-            </View>
-            <Text style={styles.fieldLabel}>Settimane</Text>
-            <TextInput value={weeks} onChangeText={setWeeks} keyboardType="numeric" style={styles.input} />
-            <View style={styles.modalActions}>
-              <Pressable style={styles.secondaryButton} onPress={() => setModalOpen(false)}>
-                <Text style={styles.secondaryButtonText}>Annulla</Text>
-              </Pressable>
-              <Pressable style={styles.primaryButton} onPress={createPlan} disabled={saving}>
-                {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={styles.primaryButtonText}>Crea</Text>}
-              </Pressable>
-            </View>
+      <Modal visible={createMenuOpen} transparent animationType="fade" onRequestClose={() => setCreateMenuOpen(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setCreateMenuOpen(false)}>
+          <View style={styles.menuCard}>
+            <Text style={typography.h2}>Nuovo allenamento</Text>
+            <Pressable style={styles.menuOption} onPress={() => { setCreateMenuOpen(false); navigation.navigate('EnduranceWorkoutEditor'); }}>
+              <Text style={styles.menuTitle}>Endurance</Text><Text style={styles.menuText}>Fasi, metri, chilometri, zone e tempi stimati.</Text>
+            </Pressable>
+            <Pressable style={styles.menuOption} onPress={() => { setCreateMenuOpen(false); navigation.navigate('FunctionalWorkoutEditor'); }}>
+              <Text style={styles.menuTitle}>Funzionale</Text><Text style={styles.menuText}>Esercizi dal catalogo con ripetizioni, metri o minuti.</Text>
+            </Pressable>
+            <Pressable style={styles.menuCancel} onPress={() => setCreateMenuOpen(false)}><Text style={styles.menuCancelText}>Annulla</Text></Pressable>
           </View>
-        </View>
+        </Pressable>
       </Modal>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  heading: { ...typography.h2, marginBottom: spacing.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   card: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
+  description: { ...typography.caption, marginTop: spacing.xs },
+  menuOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end' },
+  menuCard: { backgroundColor: colors.surface, padding: spacing.xl, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  menuOption: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  menuTitle: { ...typography.h3, color: colors.primary },
+  menuText: { ...typography.caption, marginTop: spacing.xs },
+  menuCancel: { alignItems: 'center', padding: spacing.md, marginTop: spacing.sm, backgroundColor: colors.surfaceAlt, borderRadius: radius.md },
+  menuCancelText: { color: colors.text, fontWeight: '700' },
   empty: { ...typography.caption, textAlign: 'center', marginTop: spacing.xl },
   fab: { position: 'absolute', right: spacing.xl, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', elevation: 4 },
   fabText: { color: colors.textInverse, fontSize: 28, fontWeight: '700', marginTop: -2 },

@@ -6,6 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # Set these with `wrangler secret put <NAME>` (never commit real values):
 #   DATABASE_URL   -> Neon (or any) Postgres connection string (postgresql://...sslmode=require)
 #   JWT_SECRET     -> random long string used to sign auth tokens
+#   DB_SCHEMA      -> optional Postgres schema (set to "lptapp" to reuse the old LPTapp schema)
 #
 # Alternative to DATABASE_URL (same convention as the old Express backend):
 # set PGHOST / PGDATABASE / PGUSER / PGPASSWORD / PGPORT / PGSSL individually
@@ -18,6 +19,7 @@ compatibility_flags = ["nodejs_compat"]
 # vars below are non-secret defaults, override per environment as needed.
 [vars]
 CORS_ORIGIN = "*"
+DB_SCHEMA = "lptapp"
 
 [observability]
 enabled = true

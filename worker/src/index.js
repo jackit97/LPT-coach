@@ -10,6 +10,7 @@ import videosRoutes from './routes/videos.js';
 import exercisesRoutes from './routes/exercises.js';
 import workoutsRoutes from './routes/workouts.js';
 import ptRoutes from './routes/pt.js';
+import zonesRoutes from './routes/zones.js';
 import { isDbConfigured, DbNotConfiguredError } from './db.js';
 
 const app = new Hono();
@@ -32,6 +33,7 @@ app.route('/videos', videosRoutes);
 app.route('/exercises', exercisesRoutes);
 app.route('/workouts', workoutsRoutes);
 app.route('/pt', ptRoutes);
+app.route('/zones', zonesRoutes);
 
 app.notFound((c) => c.json({ message: 'Not found' }, 404));
 app.onError((err, c) => {

@@ -4,5 +4,6 @@ dist/
 out/
 .env
 .env.local
+worker/.dev.vars
 worker/.neon-connection
 *.log
