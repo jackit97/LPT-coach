@@ -1,0 +1,87 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Android project (Expo prebuild)
+        run: npx expo prebuild --platform android --clean --non-interactive
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Locate and rename APK
+        id: apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk/debug -maxdepth 1 -name "*.apk" | head -n1)
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found in outputs/apk/debug" >&2
+            find android/app/build/outputs -maxdepth 4 -type f -name "*.apk" || true
+            exit 1
+          fi
+          mkdir -p build
+          cp "$APK_PATH" build/LPT-coach-debug.apk
+          echo "filename=LPT-coach-debug.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with APK asset
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.run_number }}
+          name: "Android build #${{ github.run_number }}"
+          body: "Build automatica dal commit ${{ github.sha }}. APK di debug installabile direttamente su Android (abilita 'Origini sconosciute')."
+          files: app/build/LPT-coach-debug.apk
+
+      - name: Generate QR code for download link
+        run: |
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/android-${{ github.run_number }}/${{ steps.apk.outputs.filename }}"
+          echo "APK download URL: $DOWNLOAD_URL"
+          npx --yes qrcode "$DOWNLOAD_URL" -o build/apk-qrcode.png
+          {
+            echo "### APK Android pronto"
+            echo ""
+            echo "**URL diretto:** $DOWNLOAD_URL"
+            echo ""
+            echo "Scansiona il QR code allegato (artifact \`apk-qrcode\`) per scaricare l'APK sul telefono."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload QR code artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-qrcode
+          path: app/build/apk-qrcode.png

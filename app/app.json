@@ -7,6 +7,12 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "lptcoach",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "bundleIdentifier": "com.lptcoach.app",
       "supportsTablet": true
@@ -14,12 +20,14 @@
     "android": {
       "package": "com.lptcoach.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0B1220"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       }
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker"
