@@ -1,0 +1,202 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-ios-ipa:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate iOS project (Expo prebuild)
+        run: npx expo prebuild --platform ios --clean --non-interactive
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Detect workspace and scheme
+        id: iosmeta
+        run: |
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name "*.xcworkspace" | head -n1)
+          PROJECT_PATH=$(find ios -maxdepth 1 -name "*.xcodeproj" | head -n1)
+          if [ -z "$WORKSPACE_PATH" ]; then
+            echo "No .xcworkspace found in app/ios" >&2
+            exit 1
+          fi
+          if [ -z "$PROJECT_PATH" ]; then
+            echo "No .xcodeproj found in app/ios" >&2
+            exit 1
+          fi
+
+          SCHEME_LIST=$(xcodebuild -list -json -project "$PROJECT_PATH" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); schemes=((d.get("project") or {}).get("schemes") or []); print("\n".join(schemes))')
+          if [ -z "$SCHEME_LIST" ]; then
+            echo "No schemes found in project" >&2
+            xcodebuild -list -workspace "$WORKSPACE_PATH" || true
+            exit 1
+          fi
+
+          echo "Available project schemes:"
+          echo "$SCHEME_LIST"
+
+          SCHEME_NAME=""
+          while IFS= read -r SCHEME; do
+            [ -z "$SCHEME" ] && continue
+            if echo "$SCHEME" | grep -Eqi 'tests?$'; then
+              continue
+            fi
+            if xcodebuild -showBuildSettings -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" 2>/dev/null | grep -q 'WRAPPER_EXTENSION = app'; then
+              SCHEME_NAME="$SCHEME"
+              break
+            fi
+          done <<< "$SCHEME_LIST"
+
+          if [ -z "$SCHEME_NAME" ]; then
+            SCHEME_NAME=$(echo "$SCHEME_LIST" | grep -Eiv 'tests?$' | head -n1)
+          fi
+
+          if [ -z "$SCHEME_NAME" ]; then
+            echo "No Xcode scheme found in workspace" >&2
+            exit 1
+          fi
+
+          echo "Selected scheme: $SCHEME_NAME"
+          echo "workspace=$WORKSPACE_PATH" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned iOS app
+        run: |
+          set -o pipefail
+          rm -rf build
+          mkdir -p build
+          export NODE_BINARY="$(command -v node)"
+          echo "Using NODE_BINARY=$NODE_BINARY"
+          xcodebuild build \
+            -workspace "${{ steps.iosmeta.outputs.workspace }}" \
+            -scheme "${{ steps.iosmeta.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "build/DerivedData" \
+            -resultBundlePath "build/Build.xcresult" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            PROVISIONING_PROFILE="" \
+            NODE_BINARY="$NODE_BINARY" \
+            | tee build/xcodebuild.log
+
+      - name: Show xcodebuild errors on failure
+        if: failure()
+        run: |
+          echo "---- Last 200 lines of xcodebuild.log ----"
+          tail -n 200 build/xcodebuild.log || true
+          echo "---- First 50 matching error lines ----"
+          grep -n "error:\|fatal error:\|PhaseScriptExecution\|Command PhaseScriptExecution failed" build/xcodebuild.log | head -n 50 || true
+
+      - name: Extract xcresult issues on failure
+        if: failure()
+        run: |
+          if [ ! -d build/Build.xcresult ]; then
+            echo "No xcresult bundle found."
+            exit 0
+          fi
+
+          # Xcode 16+ requires the explicit subcommand and --legacy for this invocation.
+          # Keep this diagnostic step non-blocking so it never hides the real xcodebuild error.
+          xcrun xcresulttool get object --legacy --path build/Build.xcresult --format json > build/xcresult.json || {
+            echo "xcresulttool parsing failed; continuing with raw xcodebuild log only."
+            exit 0
+          }
+
+          /usr/bin/python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('build/xcresult.json')
+          if not path.exists():
+              print('xcresult.json not found')
+              raise SystemExit(0)
+
+          data = json.loads(path.read_text(encoding='utf-8'))
+          messages = []
+
+          def walk(node):
+              if isinstance(node, dict):
+                  t = node.get('_type', '')
+                  if 'IssueSummary' in t:
+                      msg = (node.get('message') or {}).get('_value')
+                      if msg:
+                          messages.append(msg)
+                  for v in node.values():
+                      walk(v)
+              elif isinstance(node, list):
+                  for item in node:
+                      walk(item)
+
+          walk(data)
+
+          if not messages:
+              print('No IssueSummary messages extracted from xcresult.')
+          else:
+              print('---- xcresult extracted issues (first 40) ----')
+              for i, m in enumerate(messages[:40], 1):
+                  print(f'{i:02d}. {m}')
+          PY
+
+      - name: Create unsigned IPA
+        run: |
+          APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in Release-iphoneos output" >&2
+            echo "Debug tree (build/DerivedData/Build/Products):"
+            find build/DerivedData/Build/Products -maxdepth 3 -type d | sort || true
+            exit 1
+          fi
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          cd build
+          /usr/bin/zip -r LPT-coach-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LPT-coach-ipa-unsigned
+          path: app/build/LPT-coach-unsigned.ipa
+
+      - name: Upload xcodebuild log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: app/build/xcodebuild.log
+
+      - name: Upload xcresult bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-xcresult
+          path: app/build/Build.xcresult
