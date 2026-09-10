@@ -21,13 +21,14 @@
       "bundler": "metro",
       "output": "single"
     },
-    "extra": {
-      "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
-      }
-    },
     "plugins": [
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d6ba70d8-9979-4ec6-8b5e-17fedf87fed2"
+      }
+    },
+    "owner": "giacomocavallini1"
   }
 }
