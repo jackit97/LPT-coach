@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
 
 export default function ProfileScreen() {
-  const { user, logout, isCoach, enduranceEnabled, setEnduranceEnabled } = useAuth();
+  const { user, logout, isCoach, enduranceEnabled, setEnduranceEnabled, profileComplete, refreshAccountStatus } = useAuth();
   const isAthlete = user?.ruolo === 'cliente';
   const [profile, setProfile] = useState(user || {});
   const [saving, setSaving] = useState(false);
@@ -19,7 +19,7 @@ export default function ProfileScreen() {
   const update = (key, value) => setProfile((current) => ({ ...current, [key]: value }));
   const save = async () => {
     setSaving(true);
-    try { await api.put('/users/me/profile', { nome: profile.nome, cognome: profile.cognome, pesokg: profile.pesokg, altezzacm: profile.altezzacm, obiettivoallenamento: profile.obiettivoallenamento, durataAllenamentoMinuti: profile.durata_allenamento_minuti, giorniAllenamento: days.join(', '), livellofitness: profile.livellofitness, datanascita: profile.datanascita || null, sesso: profile.sesso || null }); Alert.alert('Profilo salvato', 'I dati sono visibili al coach.'); }
+    try { await api.put('/users/me/profile', { nome: profile.nome, cognome: profile.cognome, pesokg: profile.pesokg, altezzacm: profile.altezzacm, obiettivoallenamento: profile.obiettivoallenamento, durataAllenamentoMinuti: profile.durata_allenamento_minuti, giorniAllenamento: days.join(', '), livellofitness: profile.livellofitness, datanascita: profile.datanascita || null, sesso: profile.sesso || null }); await refreshAccountStatus(); Alert.alert('Profilo salvato', 'I dati sono visibili al coach.'); }
     catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare il profilo'); }
     finally { setSaving(false); }
   };
@@ -50,6 +50,12 @@ export default function ProfileScreen() {
         </View>
       )}
 
+      {isAthlete && !profileComplete && (
+        <View style={styles.warningBox}>
+          <Text style={styles.warningText}>Completa il profilo qui sotto: una volta salvato verrai aggiunto automaticamente tra gli atleti del coach.</Text>
+        </View>
+      )}
+
       {isAthlete && <View style={styles.form}>
         <Text style={styles.sectionTitle}>Dati allenamento</Text>
         <Text style={styles.label}>Nome</Text><TextInput value={profile.nome || ''} onChangeText={(value) => update('nome', value)} style={styles.input} />
@@ -77,6 +83,8 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.textInverse, fontSize: 32, fontWeight: '700' },
   role: { ...typography.caption, marginTop: spacing.sm, backgroundColor: colors.primaryLight, color: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill },
   enduranceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
+  warningText: { color: '#92400E', fontWeight: '600' },
   logoutBtn: { marginTop: spacing.xxl, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xxl },
   logoutText: { color: colors.danger, fontWeight: '700' },
   form: { width: '100%', maxWidth: 620, marginTop: spacing.xl }, sectionTitle: { ...typography.h3, marginBottom: spacing.sm }, label: { ...typography.caption, marginTop: spacing.sm, marginBottom: spacing.xs }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface, marginBottom: spacing.xs }, area: { minHeight: 60, textAlignVertical: 'top' }, row: { flexDirection: 'row', gap: spacing.sm }, half: { flex: 1 }, sexRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm }, sexChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }, sexChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, sexText: { color: colors.textMuted, fontSize: 14 }, sexTextActive: { color: colors.primary, fontWeight: '700' }, days: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, day: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }, dayActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, dayText: { color: colors.textMuted }, dayTextActive: { color: colors.primary, fontWeight: '700' }, saveButton: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.lg }, saveText: { color: '#fff', fontWeight: '700' },

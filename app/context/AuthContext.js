@@ -5,16 +5,19 @@ import api, { TOKEN_KEY } from '../api/client';
 const AuthContext = createContext(null);
 
 const USER_KEY = 'lptcoach_user';
+const REQUIRED_ATHLETE_FIELDS = ['cognome', 'datanascita', 'sesso', 'pesokg', 'altezzacm', 'obiettivoallenamento'];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [enduranceEnabled, setEnduranceEnabled] = useState(true);
+  const [profileComplete, setProfileComplete] = useState(true);
 
-  const refreshEnduranceSetting = useCallback(async () => {
+  const refreshAccountStatus = useCallback(async () => {
     try {
       const { data } = await api.get('/users/me');
       setEnduranceEnabled(data?.endurance_visible !== false);
+      setProfileComplete(data?.ruolo !== 'cliente' || REQUIRED_ATHLETE_FIELDS.every((field) => data?.[field] !== null && data?.[field] !== undefined && String(data[field]).trim() !== ''));
     } catch { /* keep previous value on failure */ }
   }, []);
 
@@ -26,7 +29,7 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  useEffect(() => { if (user) refreshEnduranceSetting(); }, [user, refreshEnduranceSetting]);
+  useEffect(() => { if (user) refreshAccountStatus(); }, [user, refreshAccountStatus]);
 
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
@@ -49,12 +52,13 @@ export function AuthProvider({ children }) {
     await AsyncStorage.removeItem(USER_KEY);
     setUser(null);
     setEnduranceEnabled(true);
+    setProfileComplete(true);
   }, []);
 
   const value = useMemo(() => ({
     user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer',
-    enduranceEnabled, setEnduranceEnabled, refreshEnduranceSetting,
-  }), [user, loading, login, register, logout, enduranceEnabled, refreshEnduranceSetting]);
+    enduranceEnabled, setEnduranceEnabled, profileComplete, refreshAccountStatus,
+  }), [user, loading, login, register, logout, enduranceEnabled, profileComplete, refreshAccountStatus]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

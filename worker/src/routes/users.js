@@ -21,11 +21,8 @@ app.get('/me', async (c) => {
   const row = rows[0];
   let enduranceVisible = !!row.endurance_enabled;
   if (row.ruolo === 'cliente') {
-    const coachRows = await sql`
-      SELECT u.endurance_enabled FROM pt_clienti pc
-      JOIN utenti u ON u.utenteid = pc.pt_userid
-      WHERE pc.cliente_userid = ${user.userId} AND pc.attivo = 1
-    `;
+    // Single-coach app: any athlete follows the (unique) coach's endurance setting, linked or not
+    const coachRows = await sql`SELECT endurance_enabled FROM utenti WHERE ruolo = 'personal_trainer' ORDER BY utenteid ASC`;
     enduranceVisible = coachRows.length ? coachRows.every((coach) => coach.endurance_enabled) : true;
   }
   return c.json({ ...row, endurance_visible: enduranceVisible });
@@ -55,6 +52,17 @@ app.put('/me/profile', async (c) => {
       , datanascita = EXCLUDED.datanascita, sesso = EXCLUDED.sesso
     RETURNING *
   `;
+  if (user.ruolo === 'cliente') {
+    // Single-coach app: auto-attach the athlete to the (unique) coach once they save their profile
+    const coachRows = await sql`SELECT utenteid FROM utenti WHERE ruolo = 'personal_trainer' ORDER BY utenteid ASC LIMIT 1`;
+    if (coachRows[0]) {
+      await sql`
+        INSERT INTO pt_clienti (pt_userid, cliente_userid, attivo)
+        VALUES (${coachRows[0].utenteid}, ${user.userId}, 1)
+        ON CONFLICT (pt_userid, cliente_userid) DO UPDATE SET attivo = 1
+      `;
+    }
+  }
   return c.json(rows[0]);
 });
 

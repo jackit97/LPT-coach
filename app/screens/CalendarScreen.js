@@ -20,7 +20,7 @@ function monthRange(year, month) {
 }
 
 export default function CalendarScreen({ navigation }) {
-  const { isCoach, enduranceEnabled } = useAuth();
+  const { isCoach, enduranceEnabled, profileComplete } = useAuth();
   const { selectedAthlete, targetUserId } = useAthlete();
 
   const [cursor, setCursor] = useState(() => new Date());
@@ -96,6 +96,11 @@ export default function CalendarScreen({ navigation }) {
   return (
     <View style={styles.screen}>
       {isCoach && <AthletePicker />}
+      {!isCoach && !profileComplete && (
+        <Pressable style={styles.profileWarning} onPress={() => navigation.navigate('Profile')}>
+          <Text style={styles.profileWarningText}>Completa il tuo profilo per essere aggiunto tra gli atleti del coach. Tocca qui.</Text>
+        </Pressable>
+      )}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>{isCoach ? selectedAthlete?.nome : 'Il mio calendario'}</Text>
@@ -140,6 +145,8 @@ export default function CalendarScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  profileWarning: { backgroundColor: '#FEF3C7', borderBottomWidth: 1, borderBottomColor: '#F59E0B', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  profileWarningText: { color: '#92400E', fontWeight: '600' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
