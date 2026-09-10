@@ -3,10 +3,21 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, ActivityIndicator, Pressable, Text, useWindowDimensions } from 'react-native';
+import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindowDimensions } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AthleteProvider } from './context/AthleteContext';
 import { colors } from './theme';
+
+// Avoid white-on-white inputs: some Android/Chrome auto-dark modes invert unstyled text fields.
+TextInput.defaultProps = TextInput.defaultProps || {};
+TextInput.defaultProps.placeholderTextColor = colors.textMuted;
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const meta = document.createElement('meta');
+  meta.name = 'color-scheme';
+  meta.content = 'light';
+  document.head.appendChild(meta);
+  document.documentElement.style.colorScheme = 'light';
+}
 
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';

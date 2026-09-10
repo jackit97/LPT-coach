@@ -8,6 +8,7 @@ export default function RegisterScreen({ navigation }) {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [ruolo, setRuolo] = useState('cliente');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,13 +32,18 @@ export default function RegisterScreen({ navigation }) {
       <View style={{ height: spacing.lg }} />
 
       <Text style={styles.fieldLabel}>Nome</Text>
-      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Mario Rossi" />
+      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Mario Rossi" placeholderTextColor={colors.textMuted} />
 
       <Text style={styles.fieldLabel}>Email</Text>
-      <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="nome@esempio.it" />
+      <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="nome@esempio.it" placeholderTextColor={colors.textMuted} />
 
       <Text style={styles.fieldLabel}>Password</Text>
-      <TextInput value={password} onChangeText={setPassword} secureTextEntry style={styles.input} placeholder="••••••••" />
+      <View style={styles.passwordRow}>
+        <TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={[styles.input, styles.passwordInput]} placeholder="••••••••" placeholderTextColor={colors.textMuted} />
+        <Pressable style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}>
+          <Text style={styles.passwordToggleText}>{showPassword ? 'Nascondi' : 'Mostra'}</Text>
+        </Pressable>
+      </View>
 
       <Text style={styles.fieldLabel}>Ruolo</Text>
       <View style={styles.roleRow}>
@@ -73,8 +79,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
     fontSize: 15,
+    color: colors.text,
     backgroundColor: colors.surfaceAlt,
   },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  passwordInput: { flex: 1 },
+  passwordToggle: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  passwordToggleText: { color: colors.accent, fontWeight: '600', fontSize: 13 },
   roleRow: { flexDirection: 'row', gap: spacing.sm },
   roleChip: {
     flex: 1,

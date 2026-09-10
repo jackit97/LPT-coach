@@ -7,6 +7,7 @@ export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -41,17 +42,24 @@ export default function LoginScreen({ navigation }) {
           autoCapitalize="none"
           keyboardType="email-address"
           placeholder="nome@esempio.it"
+          placeholderTextColor={colors.textMuted}
           style={styles.input}
         />
 
         <Text style={styles.fieldLabel}>Password</Text>
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholder="••••••••"
-          style={styles.input}
-        />
+        <View style={styles.passwordRow}>
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            placeholder="••••••••"
+            placeholderTextColor={colors.textMuted}
+            style={[styles.input, styles.passwordInput]}
+          />
+          <Pressable style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}>
+            <Text style={styles.passwordToggleText}>{showPassword ? 'Nascondi' : 'Mostra'}</Text>
+          </Pressable>
+        </View>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
 
@@ -87,8 +95,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
     fontSize: 15,
+    color: colors.text,
     backgroundColor: colors.surfaceAlt,
   },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  passwordInput: { flex: 1 },
+  passwordToggle: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  passwordToggleText: { color: colors.accent, fontWeight: '600', fontSize: 13 },
   error: { color: colors.danger, marginTop: spacing.md },
   primaryButton: {
     backgroundColor: colors.primary,
