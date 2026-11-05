@@ -7,7 +7,6 @@ import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindo
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AthleteProvider } from './context/AthleteContext';
 import { colors } from './theme';
-import { Platform } from 'react-native';
 import { useEffect } from 'react';
 
 // Avoid white-on-white inputs: some Android/Chrome auto-dark modes invert unstyled text fields.
