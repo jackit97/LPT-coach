@@ -7,6 +7,8 @@ import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindo
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AthleteProvider } from './context/AthleteContext';
 import { colors } from './theme';
+import { Platform } from 'react-native';
+import { useEffect } from 'react';
 
 // Avoid white-on-white inputs: some Android/Chrome auto-dark modes invert unstyled text fields.
 TextInput.defaultProps = TextInput.defaultProps || {};
@@ -251,3 +253,17 @@ export default function App() {
     </AuthProvider>
   );
 }
+
+useEffect(() => {
+  if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then((registration) => {
+          console.log('ServiceWorker registrato con successo:', registration.scope);
+        })
+        .catch((error) => {
+          console.log('Registrazione ServiceWorker fallita:', error);
+        });
+    });
+  }
+}, []);
