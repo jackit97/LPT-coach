@@ -39,7 +39,8 @@
       "meta": {
         "apple-mobile-web-app-capable": "yes",
         "apple-mobile-web-app-status-bar-style": "default",
-        "apple-mobile-web-app-title": "LPT Coach"
+        "apple-mobile-web-app-title": "LPT Coach",
+        "apple-touch-icon": "./assets/icon.png"
       }
     },
     "plugins": [
