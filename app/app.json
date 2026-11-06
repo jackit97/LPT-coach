@@ -27,7 +27,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/icon.png",
       "name": "LPT Coach",
       "short_name": "LPTCoach",
       "lang": "it",
@@ -39,8 +39,7 @@
       "meta": {
         "apple-mobile-web-app-capable": "yes",
         "apple-mobile-web-app-status-bar-style": "default",
-        "apple-mobile-web-app-title": "LPT Coach",
-        "apple-touch-icon": "./assets/icon.png"
+        "apple-mobile-web-app-title": "LPT Coach"
       }
     },
     "plugins": [

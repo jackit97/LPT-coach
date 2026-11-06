@@ -17,6 +17,10 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
   meta.name = 'color-scheme';
   meta.content = 'light';
   document.head.appendChild(meta);
+  const appleTouchIcon = document.createElement('link');
+  appleTouchIcon.rel = 'apple-touch-icon';
+  appleTouchIcon.href = '/apple-touch-icon.png';
+  document.head.appendChild(appleTouchIcon);
   document.documentElement.style.colorScheme = 'light';
 }
 
