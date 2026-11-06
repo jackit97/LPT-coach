@@ -27,7 +27,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/icon.png",
       "name": "LPT Coach",
       "short_name": "LPTCoach",
       "lang": "it",
