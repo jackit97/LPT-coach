@@ -17,10 +17,6 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
   meta.name = 'color-scheme';
   meta.content = 'light';
   document.head.appendChild(meta);
-  const appleTouchIcon = document.createElement('link');
-  appleTouchIcon.rel = 'apple-touch-icon';
-  appleTouchIcon.href = '/apple-touch-icon.png';
-  document.head.appendChild(appleTouchIcon);
   document.documentElement.style.colorScheme = 'light';
 }
 
@@ -46,6 +42,7 @@ import StrengthScreen from './screens/StrengthScreen';
 import StrengthSheetDetailScreen from './screens/StrengthSheetDetailScreen';
 import StrengthSheetEditorScreen from './screens/StrengthSheetEditorScreen';
 import TemplatesScreen from './screens/TemplatesScreen';
+import WorkoutLibraryScreen from './screens/WorkoutLibraryScreen';
 import TemplateDetailScreen from './screens/TemplateDetailScreen';
 import ZonesScreen from './screens/ZonesScreen';
 
@@ -97,7 +94,17 @@ function CalendarStack() {
       <Stack.Screen name="DayWorkouts" component={DayWorkoutsScreen} options={{ title: 'Workout del giorno' }} />
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ title: 'Dettaglio workout' }} />
       {isCoach && <Stack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ title: 'Editor workout' }} />}
+      {isCoach && <Stack.Screen name="WorkoutLibrary" component={WorkoutLibraryScreen} options={{ title: 'Libreria allenamenti' }} />}
       {isCoach && <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />}
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
+function LibraryStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="LibraryHome" component={WorkoutLibraryScreen} options={{ title: 'Libreria allenamenti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
     </Stack.Navigator>
   );
@@ -212,6 +219,7 @@ function MainTabs() {
       {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={tabOptions('Endurance', 'Endur.', '➤', compact)} />}
       <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'Pesi', '⚑', compact)} />
       {enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'Zone', '◈', compact)} />}
+      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'Libr.', '▤', compact)} />}
       {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={tabOptions('Template', 'Templ.', '▦', compact)} />}
       {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={tabOptions('Video tutorial', 'Video', '▶', compact)} />}
       {isCoach && <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'Atleti', '♙', compact)} />}

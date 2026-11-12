@@ -18,6 +18,7 @@ export default function NewActivityScreen({ route, navigation }) {
       <Text style={styles.athlete}>{selectedAthlete?.nome || 'Atleta selezionato'}</Text>
       {!!date && <Text style={styles.date}>Data selezionata: {date}</Text>}
       <Text style={styles.heading}>Scegli cosa vuoi creare</Text>
+      <Pressable style={styles.action} onPress={() => navigation.navigate('WorkoutLibrary', { date, utenteId: athleteId })}><Text style={styles.actionTitle}>Dalla libreria</Text><Text style={styles.actionText}>Scegli un allenamento salvato e assegnalo a questo giorno.</Text></Pressable>
       <Pressable style={styles.action} onPress={() => go('StrengthTab', 'StrengthSheetEditor')}><Text style={styles.actionTitle}>Pesistica</Text><Text style={styles.actionText}>Crea una scheda fino a 7 giorni con esercizi, serie e recuperi.</Text></Pressable>
       {enduranceEnabled && <Pressable style={styles.action} onPress={() => go('EnduranceTab', 'EnduranceWorkoutEditor')}><Text style={styles.actionTitle}>Endurance</Text><Text style={styles.actionText}>Crea un allenamento con fasi, metri, ripetizioni, durata e zone.</Text></Pressable>}
       <Pressable style={styles.action} onPress={() => go('EnduranceTab', 'FunctionalWorkoutEditor')}><Text style={styles.actionTitle}>Funzionale</Text><Text style={styles.actionText}>Crea un circuito con esercizi, ripetizioni, metri o minuti.</Text></Pressable>

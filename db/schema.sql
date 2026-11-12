@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS lptapp.workouttemplates (
   ptuserid INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
   nometemplate VARCHAR(150) NOT NULL,
   notegenerali TEXT,
+  tipo VARCHAR(30) NOT NULL DEFAULT 'forza',
+  durata_minuti INT,
+  durata_secondi INT,
+  endurance_json TEXT,
   createdat TIMESTAMP DEFAULT NOW(),
   updatedat TIMESTAMP
 );
@@ -90,6 +94,7 @@ CREATE TABLE IF NOT EXISTS lptapp.workouttemplateexercises (
   descrizione TEXT,
   videourl VARCHAR(255),
   recupero VARCHAR(50),
+  carico VARCHAR(50),
   orderindex INT
 );
 

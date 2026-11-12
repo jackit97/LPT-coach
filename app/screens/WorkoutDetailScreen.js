@@ -70,6 +70,15 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     }
   };
 
+  const saveToLibrary = async () => {
+    try {
+      await api.post(`/workouts/templates/from-workout/${workoutId}`, {});
+      Alert.alert('Libreria', 'Allenamento salvato in libreria');
+    } catch (error) {
+      Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare in libreria');
+    }
+  };
+
   const deleteWorkout = () => {
     Alert.alert('Elimina workout', 'Sei sicuro?', [
       { text: 'Annulla', style: 'cancel' },
@@ -193,6 +202,9 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         <View style={styles.coachActions}>
           <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate(workout.tipo === 'endurance' ? 'EnduranceWorkoutEditor' : 'WorkoutEditor', { workoutId: workout.workout_id })}>
             <Text style={styles.secondaryButtonText}>Modifica</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButton} onPress={saveToLibrary}>
+            <Text style={styles.secondaryButtonText}>Salva in libreria</Text>
           </Pressable>
           <Pressable style={styles.dangerButton} onPress={deleteWorkout}>
             <Text style={styles.dangerButtonText}>Elimina</Text>
