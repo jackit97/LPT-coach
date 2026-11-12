@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lpt-coach-v2';
+const CACHE_NAME = 'lpt-coach-v3';
 const urlsToCache = [
   '/',
   '/index.html'
