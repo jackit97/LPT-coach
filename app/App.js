@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindowDimensions, Alert, Linking } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AthleteProvider } from './context/AthleteContext';
 import { colors } from './theme';
@@ -45,41 +46,57 @@ import TemplatesScreen from './screens/TemplatesScreen';
 import WorkoutLibraryScreen from './screens/WorkoutLibraryScreen';
 import TemplateDetailScreen from './screens/TemplateDetailScreen';
 import ZonesScreen from './screens/ZonesScreen';
+import MoreScreen from './screens/MoreScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function BackButton({ navigation }) {
-  if (!navigation.canGoBack()) return null;
+function BackButton({ navigation, route }) {
+  // Le sezioni aperte da "Altro" non hanno uno schermo precedente nel proprio stack: tornano ad "Altro"
+  const fromMore = !navigation.canGoBack() && route?.params?.fromMore;
+  if (!navigation.canGoBack() && !fromMore) return null;
   return (
-    <Pressable onPress={() => navigation.goBack()} style={{ paddingRight: 10, paddingVertical: 8, minWidth: 28 }}>
-      <Text style={{ color: colors.textInverse, fontSize: 14, fontWeight: '700' }}>‹</Text>
+    <Pressable
+      onPress={() => (fromMore ? navigation.navigate('MoreTab') : navigation.goBack())}
+      style={{ paddingRight: 12, paddingVertical: 6 }}
+      hitSlop={8}
+    >
+      <Ionicons name="chevron-back" size={24} color={colors.textInverse} />
     </Pressable>
   );
 }
 
-const screenOptions = ({ navigation }) => ({
+const screenOptions = ({ navigation, route }) => ({
   headerStyle: { backgroundColor: colors.primary },
   headerTintColor: colors.textInverse,
-  headerTitleStyle: { fontWeight: '700' },
+  headerTitleStyle: { fontWeight: '700', fontSize: 18 },
   headerTitleAlign: 'left',
+  headerShadowVisible: false,
   headerRight: () => <ProfileButton navigation={navigation} />,
-  headerLeft: () => <BackButton navigation={navigation} />,
+  headerLeft: () => <BackButton navigation={navigation} route={route} />,
 });
 
 function ProfileButton({ navigation }) {
   return (
-    <Pressable onPress={() => navigation.navigate('Profile')} style={{ paddingHorizontal: 8 }}>
-      <Text style={{ color: colors.textInverse, fontWeight: '700' }}>Profilo</Text>
+    <Pressable onPress={() => navigation.navigate('Profile')} style={{ paddingHorizontal: 8 }} hitSlop={8} accessibilityLabel="Profilo">
+      <Ionicons name="person-circle-outline" size={28} color={colors.textInverse} />
     </Pressable>
   );
 }
 
-const tabOptions = (fullLabel, shortLabel, icon, compact) => ({
-  title: fullLabel,
-  tabBarLabel: compact ? shortLabel : fullLabel,
-  tabBarIcon: ({ color }) => <Text style={{ color, fontSize: compact ? 19 : 21, lineHeight: compact ? 21 : 23 }}>{icon}</Text>,
+// Icona Ionicons: piena quando la voce e' attiva, contorno altrimenti, con "pillola" evidenziata.
+const tabOptions = (label, icon) => ({
+  title: label,
+  tabBarLabel: label,
+  tabBarIcon: ({ color, focused }) => (
+    <View style={{ width: 48, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: focused ? colors.primaryLight : 'transparent' }}>
+      <Ionicons name={focused ? icon : `${icon}-outline`} size={21} color={color} />
+    </View>
+  ),
 });
+
+// Voci non mostrate nella barra (raggiungibili da "Altro")
+const hiddenTab = (label) => ({ title: label, tabBarButton: () => null, tabBarItemStyle: { display: 'none' } });
 
 function CalendarStack() {
   const { isCoach } = useAuth();
@@ -200,6 +217,15 @@ function ClientsTabStack() {
   );
 }
 
+function MoreStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="MoreHome" component={MoreScreen} options={{ title: 'Altro', headerLeft: () => null }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
 function MainTabs() {
   const { isCoach, enduranceEnabled } = useAuth();
   const { width } = useWindowDimensions();
@@ -209,22 +235,36 @@ function MainTabs() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: compact ? 10 : 13, fontWeight: '600' },
-        tabBarItemStyle: { minWidth: 0, flex: 1 },
-        tabBarStyle: { height: compact ? 64 : 72, paddingTop: compact ? 4 : 7, paddingBottom: compact ? 5 : 8 },
+        tabBarInactiveTintColor: '#98A2B3',
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+        tabBarIconStyle: { height: 30 },
+        tabBarItemStyle: { paddingVertical: 2 },
+        tabBarLabelPosition: 'below-icon',
+        tabBarStyle: {
+          height: 74,
+          paddingTop: 6,
+          paddingBottom: 10,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          ...(compact ? {} : { paddingHorizontal: Math.max(0, (width - 760) / 2) }),
+        },
       }}
     >
-      <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'Calend.', '⌂', compact)} />
-      <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'Diete', '◉', compact)} />
-      <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={tabOptions('Pagamenti', 'Pagam.', '€', compact)} />
-      {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={tabOptions('Endurance', 'Endur.', '➤', compact)} />}
-      <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'Pesi', '⚑', compact)} />
-      {enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'Zone', '◈', compact)} />}
-      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'Libr.', '▤', compact)} />}
-      {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={tabOptions('Template', 'Templ.', '▦', compact)} />}
-      {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={tabOptions('Video tutorial', 'Video', '▶', compact)} />}
-      {isCoach && <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'Atleti', '♙', compact)} />}
+      <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
+      {isCoach && <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'people')} />}
+      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'library')} />}
+      {!isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />}
+      <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'nutrition')} />
+      {!isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
+      <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'grid')} />
+
+      {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
+      {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
+      {isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={hiddenTab('Pesistica')} />}
+      {isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={hiddenTab('Zone')} />}
+      {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />}
+      {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />}
+      <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
     </Tab.Navigator>
   );
 }

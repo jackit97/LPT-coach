@@ -32,14 +32,14 @@ export default function RegisterScreen({ navigation }) {
       <View style={{ height: spacing.lg }} />
 
       <Text style={styles.fieldLabel}>Nome</Text>
-      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Mario Rossi" placeholderTextColor={colors.textMuted} />
+      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Nome e cognome" placeholderTextColor={colors.textMuted} />
 
       <Text style={styles.fieldLabel}>Email</Text>
-      <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="nome@esempio.it" placeholderTextColor={colors.textMuted} />
+      <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="Email" placeholderTextColor={colors.textMuted} />
 
       <Text style={styles.fieldLabel}>Password</Text>
       <View style={styles.passwordRow}>
-        <TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={[styles.input, styles.passwordInput]} placeholder="••••••••" placeholderTextColor={colors.textMuted} />
+        <TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={[styles.input, styles.passwordInput]} placeholder="Password" placeholderTextColor={colors.textMuted} />
         <Pressable style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}>
           <Text style={styles.passwordToggleText}>{showPassword ? 'Nascondi' : 'Mostra'}</Text>
         </Pressable>

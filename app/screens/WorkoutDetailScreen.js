@@ -319,10 +319,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           <RpeSelector value={rpe} onChange={setRpe} />
 
           <Text style={styles.fieldLabel}>Durata effettiva (minuti)</Text>
-          <TextInput value={durataEffettiva} onChangeText={setDurataEffettiva} keyboardType="numeric" style={styles.input} placeholder="60" />
+          <TextInput value={durataEffettiva} onChangeText={setDurataEffettiva} keyboardType="numeric" style={styles.input} placeholder="Minuti" />
 
           <Text style={styles.fieldLabel}>Note</Text>
-          <TextInput value={note} onChangeText={setNote} style={[styles.input, styles.textArea]} multiline placeholder="Come è andata?" />
+          <TextInput value={note} onChangeText={setNote} style={[styles.input, styles.textArea]} multiline placeholder="Note" />
 
           <View style={styles.feedbackActions}>
             <Pressable style={styles.secondaryButton} onPress={() => submitFeedback(false)} disabled={saving}>

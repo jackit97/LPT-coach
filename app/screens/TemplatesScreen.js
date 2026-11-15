@@ -55,9 +55,9 @@ export default function TemplatesScreen({ navigation }) {
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.overlay}><View style={styles.modal}>
           <Text style={typography.h2}>Nuovo template endurance</Text>
-          <Text style={styles.label}>Titolo</Text><TextInput value={name} onChangeText={setName} style={styles.input} placeholder="HYROX base" />
-          <Text style={styles.label}>Note</Text><TextInput value={notes} onChangeText={setNotes} style={styles.input} placeholder="Indicazioni generali" />
-          <Text style={styles.label}>Sessioni separate da virgola</Text><TextInput value={exercise} onChangeText={setExercise} style={styles.input} placeholder="Corsa Z2, Ripetute Z4, Lungo" />
+          <Text style={styles.label}>Titolo</Text><TextInput value={name} onChangeText={setName} style={styles.input} placeholder="Titolo" />
+          <Text style={styles.label}>Note</Text><TextInput value={notes} onChangeText={setNotes} style={styles.input} placeholder="Note" />
+          <Text style={styles.label}>Sessioni separate da virgola</Text><TextInput value={exercise} onChangeText={setExercise} style={styles.input} placeholder="Sessioni (separate da virgola)" />
           <View style={styles.actions}><Pressable style={styles.secondary} onPress={() => setOpen(false)}><Text>Annulla</Text></Pressable><Pressable style={styles.primary} onPress={create} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Crea</Text>}</Pressable></View>
         </View></View>
       </Modal>

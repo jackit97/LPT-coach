@@ -41,7 +41,7 @@ export default function LoginScreen({ navigation }) {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          placeholder="nome@esempio.it"
+          placeholder="Email"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
         />
@@ -52,7 +52,7 @@ export default function LoginScreen({ navigation }) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
-            placeholder="••••••••"
+            placeholder="Password"
             placeholderTextColor={colors.textMuted}
             style={[styles.input, styles.passwordInput]}
           />

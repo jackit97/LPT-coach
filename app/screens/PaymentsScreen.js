@@ -107,11 +107,11 @@ export default function PaymentsScreen({ navigation }) {
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Nuovo pagamento</Text>
             <Text style={styles.fieldLabel}>Importo (€)</Text>
-            <TextInput value={importo} onChangeText={setImporto} keyboardType="numeric" style={styles.input} placeholder="59.99" />
+            <TextInput value={importo} onChangeText={setImporto} keyboardType="numeric" style={styles.input} placeholder="Importo" />
             <Text style={styles.fieldLabel}>Scadenza (YYYY-MM-DD)</Text>
             <DateField value={scadenza} onChange={setScadenza} style={styles.dateField} />
             <Text style={styles.fieldLabel}>Causale</Text>
-            <TextInput value={causale} onChangeText={setCausale} style={styles.input} placeholder="Abbonamento mensile" />
+            <TextInput value={causale} onChangeText={setCausale} style={styles.input} placeholder="Causale" />
             <View style={styles.modalActions}>
               <Pressable style={styles.secondaryButton} onPress={() => setModalOpen(false)}>
                 <Text style={styles.secondaryButtonText}>Annulla</Text>

@@ -108,7 +108,7 @@ export default function NewActivityScreen({ route, navigation }) {
             onChangeText={setQuickNote}
             style={styles.noteInput}
             multiline
-            placeholder="Istruzioni, obiettivo, richieste per l'atleta..."
+            placeholder="Nota per l'atleta"
             placeholderTextColor="#9ca3af"
           />
         </View>

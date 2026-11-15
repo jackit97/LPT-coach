@@ -132,28 +132,28 @@ export default function EndurancePlanDetailScreen({ route, navigation }) {
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Nuova sessione</Text>
             <Text style={styles.fieldLabel}>Titolo</Text>
-            <TextInput value={sTitle} onChangeText={setSTitle} style={styles.input} placeholder="Corsa lenta" />
+            <TextInput value={sTitle} onChangeText={setSTitle} style={styles.input} placeholder="Titolo" />
             <Text style={styles.fieldLabel}>Data (YYYY-MM-DD)</Text>
             <DateField value={sDate} onChange={setSDate} style={styles.dateField} />
             <Text style={styles.fieldLabel}>Zona</Text>
-            <TextInput value={sZone} onChangeText={setSZone} style={styles.input} placeholder="Z2" />
+            <TextInput value={sZone} onChangeText={setSZone} style={styles.input} placeholder="Zona" />
             <Text style={styles.fieldLabel}>Durata (min)</Text>
             <TextInput value={sDuration} onChangeText={setSDuration} keyboardType="numeric" style={styles.input} />
             <Text style={styles.fieldLabel}>Obiettivo / zona lavoro</Text>
-            <TextInput value={sTarget} onChangeText={setSTarget} style={styles.input} placeholder="6 x 600m in Z4" />
+            <TextInput value={sTarget} onChangeText={setSTarget} style={styles.input} placeholder="Obiettivo" />
             <Text style={styles.fieldLabel}>Descrizione</Text>
-            <TextInput value={sDescription} onChangeText={setSDescription} style={[styles.input, styles.textArea]} multiline placeholder="Riscaldamento, lavoro e defaticamento" />
+            <TextInput value={sDescription} onChangeText={setSDescription} style={[styles.input, styles.textArea]} multiline placeholder="Descrizione" />
             <Text style={styles.fieldLabel}>RPE obiettivo</Text>
-            <TextInput value={sRpe} onChangeText={setSRpe} keyboardType="numeric" style={styles.input} placeholder="7" />
+            <TextInput value={sRpe} onChangeText={setSRpe} keyboardType="numeric" style={styles.input} placeholder="RPE" />
             <Text style={styles.fieldLabel}>Struttura / step</Text>
-            <TextInput value={sSteps} onChangeText={setSSteps} style={[styles.input, styles.textArea]} multiline placeholder="10' Z1; 6x600m Z4; recupero 200m Z1" />
+            <TextInput value={sSteps} onChangeText={setSSteps} style={[styles.input, styles.textArea]} multiline placeholder="Struttura" />
             <View style={styles.stepsHeader}><Text style={styles.fieldLabel}>Blocchi workout</Text><Pressable onPress={addBlock}><Text style={styles.addLink}>+ Aggiungi fase</Text></Pressable></View>
             {sBlocks.map((block, index) => (
               <View key={index} style={styles.blockCard}>
                 <View style={styles.blockHeader}><Text style={styles.blockNumber}>{index + 1}</Text><TextInput value={block.type} onChangeText={(value) => updateBlock(index, 'type', value)} style={[styles.input, styles.blockType]} placeholder="Lavoro" /><Pressable onPress={() => removeBlock(index)}><Text style={styles.removeText}>Elimina</Text></Pressable></View>
-                <View style={styles.blockRow}><TextInput value={String(block.repeats)} onChangeText={(value) => updateBlock(index, 'repeats', value)} keyboardType="numeric" style={[styles.input, styles.blockSmall]} placeholder="Serie" /><Text style={styles.blockLabel}>x</Text><TextInput value={String(block.meters)} onChangeText={(value) => updateBlock(index, 'meters', value)} keyboardType="numeric" style={[styles.input, styles.blockMedium]} placeholder="Metri" /><TextInput value={String(block.duration)} onChangeText={(value) => updateBlock(index, 'duration', value)} style={[styles.input, styles.blockMedium]} placeholder="00:10:00" /></View>
-                <TextInput value={block.zone} onChangeText={(value) => updateBlock(index, 'zone', value)} style={styles.input} placeholder="Z4 - Soglia" />
-                <TextInput value={block.notes} onChangeText={(value) => updateBlock(index, 'notes', value)} style={[styles.input, styles.textArea]} multiline placeholder="Recupero 200 m in Z1; indicazioni tecniche" />
+                <View style={styles.blockRow}><TextInput value={String(block.repeats)} onChangeText={(value) => updateBlock(index, 'repeats', value)} keyboardType="numeric" style={[styles.input, styles.blockSmall]} placeholder="Serie" /><Text style={styles.blockLabel}>x</Text><TextInput value={String(block.meters)} onChangeText={(value) => updateBlock(index, 'meters', value)} keyboardType="numeric" style={[styles.input, styles.blockMedium]} placeholder="Metri" /><TextInput value={String(block.duration)} onChangeText={(value) => updateBlock(index, 'duration', value)} style={[styles.input, styles.blockMedium]} placeholder="Durata" /></View>
+                <TextInput value={block.zone} onChangeText={(value) => updateBlock(index, 'zone', value)} style={styles.input} placeholder="Zona" />
+                <TextInput value={block.notes} onChangeText={(value) => updateBlock(index, 'notes', value)} style={[styles.input, styles.textArea]} multiline placeholder="Note" />
               </View>
             ))}
             <View style={styles.modalActions}>
@@ -171,9 +171,9 @@ export default function EndurancePlanDetailScreen({ route, navigation }) {
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Check-in sessione</Text>
             <Text style={styles.fieldLabel}>RPE</Text>
-            <TextInput value={rpe} onChangeText={setRpe} keyboardType="numeric" style={styles.input} placeholder="6" />
+            <TextInput value={rpe} onChangeText={setRpe} keyboardType="numeric" style={styles.input} placeholder="Ripetizioni" />
             <Text style={styles.fieldLabel}>Distanza (km)</Text>
-            <TextInput value={distanceKm} onChangeText={setDistanceKm} keyboardType="numeric" style={styles.input} placeholder="8.2" />
+            <TextInput value={distanceKm} onChangeText={setDistanceKm} keyboardType="numeric" style={styles.input} placeholder="Km" />
             <Text style={styles.fieldLabel}>Note</Text>
             <TextInput value={notes} onChangeText={setNotes} style={[styles.input, styles.textArea]} multiline />
             <View style={styles.modalActions}>

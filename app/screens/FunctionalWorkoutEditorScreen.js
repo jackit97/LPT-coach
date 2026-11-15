@@ -48,11 +48,11 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={typography.h1}>Nuovo allenamento funzionale</Text>
     <Text style={styles.label}>Data</Text><DateField value={date} onChange={setDate} />
-    <Text style={styles.label}>Titolo</Text><TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Circuito full body" />
-    <Text style={styles.label}>Durata totale personalizzata (minuti)</Text><TextInput value={duration} onChangeText={setDuration} keyboardType="numeric" style={styles.input} placeholder="45" />
+    <Text style={styles.label}>Titolo</Text><TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Titolo" />
+    <Text style={styles.label}>Durata totale personalizzata (minuti)</Text><TextInput value={duration} onChangeText={setDuration} keyboardType="numeric" style={styles.input} placeholder="Durata (min)" />
     <Text style={styles.label}>Intensità pianificata (RPE)</Text><RpeSelector value={rpe} onChange={setRpe} />
     {!!duration && <Text style={styles.loadHint}>Carico stimato: {trimpFromRpe(duration, rpe)} TRIMP</Text>}
-    <Text style={styles.label}>Descrizione</Text><TextInput value={description} onChangeText={setDescription} style={[styles.input, styles.area]} multiline placeholder="Struttura e indicazioni del circuito" />
+    <Text style={styles.label}>Descrizione</Text><TextInput value={description} onChangeText={setDescription} style={[styles.input, styles.area]} multiline placeholder="Descrizione" />
     <View style={styles.sectionHeader}><Text style={typography.h3}>Esercizi</Text><Pressable onPress={() => setExercises((current) => [...current, emptyExercise()])}><Text style={styles.addLink}>+ Aggiungi esercizio</Text></Pressable></View>
     {exercises.map((exercise, index) => <View key={index} style={styles.exercise}>
       <View style={styles.exerciseHeader}><TextInput value={exercise.nome} onFocus={() => setSearch({ index, query: exercise.nome || '', results: [] })} onChangeText={(value) => { updateExercise(index, 'nome', value); setSearch({ index, query: value, results: [] }); }} style={[styles.input, styles.exerciseName]} placeholder="Cerca o scrivi esercizio" /><Pressable onPress={() => setExercises((current) => current.filter((_, exerciseIndex) => exerciseIndex !== index))}><Text style={styles.remove}>Elimina</Text></Pressable></View>

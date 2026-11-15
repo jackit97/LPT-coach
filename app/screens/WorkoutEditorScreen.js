@@ -136,13 +136,13 @@ export default function WorkoutEditorScreen({ route, navigation }) {
       </View>
 
       <Text style={styles.fieldLabel}>Titolo</Text>
-      <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder="Full Body A" />
+      <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder="Titolo" />
 
       <Text style={styles.fieldLabel}>Descrizione</Text>
-      <TextInput value={descrizione} onChangeText={setDescrizione} style={[styles.input, styles.textArea]} multiline placeholder="Note generali sul workout" />
+      <TextInput value={descrizione} onChangeText={setDescrizione} style={[styles.input, styles.textArea]} multiline placeholder="Descrizione" />
 
       <Text style={styles.fieldLabel}>Durata (min)</Text>
-      <TextInput value={durataMinuti} onChangeText={setDurataMinuti} keyboardType="numeric" style={styles.input} placeholder="60" />
+      <TextInput value={durataMinuti} onChangeText={setDurataMinuti} keyboardType="numeric" style={styles.input} placeholder="Durata (min)" />
 
       <Text style={styles.fieldLabel}>Intensità pianificata (RPE)</Text>
       <RpeSelector value={rpePianificato} onChange={setRpePianificato} />

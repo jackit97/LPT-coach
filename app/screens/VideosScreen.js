@@ -87,9 +87,9 @@ export default function VideosScreen() {
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Nuovo video tutorial</Text>
             <Text style={styles.fieldLabel}>Titolo</Text>
-            <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder="Tutorial Squat" />
+            <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder="Titolo" />
             <Text style={styles.fieldLabel}>URL video</Text>
-            <TextInput value={videourl} onChangeText={setVideourl} autoCapitalize="none" style={styles.input} placeholder="https://..." />
+            <TextInput value={videourl} onChangeText={setVideourl} autoCapitalize="none" style={styles.input} placeholder="URL video" />
             <Text style={styles.fieldLabel}>Descrizione</Text>
             <TextInput value={descrizione} onChangeText={setDescrizione} style={[styles.input, styles.textArea]} multiline />
             <View style={styles.modalActions}>

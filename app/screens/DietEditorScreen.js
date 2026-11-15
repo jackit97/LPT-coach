@@ -217,7 +217,7 @@ export default function DietEditorScreen({ route, navigation }) {
           value={searchingHere ? query : ''}
           onFocus={() => { if (!searchingHere) { setSearchMealKey(meal.key); setQuery(''); } }}
           onChangeText={(value) => { setSearchMealKey(meal.key); setQuery(value); }}
-          placeholder="🔍 Cerca alimento (es. riso, petto di pollo, yogurt…)"
+          placeholder="🔍 Cerca alimento"
           style={styles.searchInput}
         />
         {searchingHere && query.trim().length >= 2 && (
@@ -249,7 +249,7 @@ export default function DietEditorScreen({ route, navigation }) {
         <TextInput
           value={meal.manuale}
           onChangeText={(value) => updateMeal(meal.key, { manuale: value })}
-          placeholder="Note / alternative (es. in alternativa 80 g di farro)"
+          placeholder="Note / alternative"
           style={styles.noteInput}
           multiline
         />
@@ -268,13 +268,13 @@ export default function DietEditorScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Intestazione */}
         <View style={styles.panel}>
-          <TextInput value={nome} onChangeText={setNome} style={styles.titleInput} placeholder="Nome dieta (es. Definizione inverno)" />
+          <TextInput value={nome} onChangeText={setNome} style={styles.titleInput} placeholder="Nome dieta" />
           <View style={styles.row}>
             <View style={styles.half}><Text style={styles.label}>Inizio</Text><DateField value={datainizio} onChange={setDatainizio} /></View>
             <View style={styles.half}><Text style={styles.label}>Fine</Text><DateField value={datafine} onChange={setDatafine} /></View>
           </View>
           <Text style={styles.label}>Note generali</Text>
-          <TextInput value={notegenerali} onChangeText={setNotegenerali} style={[styles.input, styles.area]} multiline placeholder="Idratazione, integrazione, indicazioni pre/post allenamento…" />
+          <TextInput value={notegenerali} onChangeText={setNotegenerali} style={[styles.input, styles.area]} multiline placeholder="Note generali" />
         </View>
 
         {/* Calcolatore fabbisogno */}
@@ -286,9 +286,9 @@ export default function DietEditorScreen({ route, navigation }) {
           {calcOpen && (
             <>
               <View style={styles.row}>
-                <View style={styles.third}><Text style={styles.label}>Peso (kg)</Text><TextInput value={String(needs.pesoKg)} onChangeText={(v) => setNeed('pesoKg', v)} keyboardType="decimal-pad" style={styles.input} placeholder="70" /></View>
-                <View style={styles.third}><Text style={styles.label}>Altezza (cm)</Text><TextInput value={String(needs.altezzaCm)} onChangeText={(v) => setNeed('altezzaCm', v)} keyboardType="numeric" style={styles.input} placeholder="175" /></View>
-                <View style={styles.third}><Text style={styles.label}>Età</Text><TextInput value={String(needs.eta)} onChangeText={(v) => setNeed('eta', v)} keyboardType="numeric" style={styles.input} placeholder="30" /></View>
+                <View style={styles.third}><Text style={styles.label}>Peso (kg)</Text><TextInput value={String(needs.pesoKg)} onChangeText={(v) => setNeed('pesoKg', v)} keyboardType="decimal-pad" style={styles.input} placeholder="Peso" /></View>
+                <View style={styles.third}><Text style={styles.label}>Altezza (cm)</Text><TextInput value={String(needs.altezzaCm)} onChangeText={(v) => setNeed('altezzaCm', v)} keyboardType="numeric" style={styles.input} placeholder="Altezza" /></View>
+                <View style={styles.third}><Text style={styles.label}>Età</Text><TextInput value={String(needs.eta)} onChangeText={(v) => setNeed('eta', v)} keyboardType="numeric" style={styles.input} placeholder="Età" /></View>
               </View>
               <Text style={styles.label}>Sesso</Text>
               <View style={styles.chips}>

@@ -66,12 +66,12 @@ export default function StrengthSheetEditorScreen({ route, navigation }) {
   };
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={typography.h1}>Nuova scheda pesistica</Text>
-    <Text style={styles.label}>Nome scheda</Text><TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Forza base" />
+    <Text style={styles.label}>Nome scheda</Text><TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Nome scheda" />
     <Text style={styles.label}>Data inizio scheda</Text><DateField value={datainizio} onChange={updateStartDate} placeholder="Seleziona data inizio" />
     <Text style={styles.label}>Data scadenza scheda</Text><DateField value={datafine} onChange={setDatafine} placeholder="Seleziona scadenza" />
     {giorni.map((day, dayIndex) => <View key={dayIndex} style={styles.dayCard}>
       <Text style={typography.h2}>Giorno {dayIndex + 1}</Text><Text style={styles.label}>Data calcolata</Text><DateField value={day.data} onChange={(value) => updateDay(dayIndex, 'data', value)} />
-      {dayIndex > 0 && <><Text style={styles.label}>Dopo quanti giorni dal giorno precedente?</Text><TextInput value={String(day.daysAfter)} onChangeText={(value) => updateDayInterval(dayIndex, value)} keyboardType="numeric" style={styles.input} placeholder="2" /></>}
+      {dayIndex > 0 && <><Text style={styles.label}>Dopo quanti giorni dal giorno precedente?</Text><TextInput value={String(day.daysAfter)} onChangeText={(value) => updateDayInterval(dayIndex, value)} keyboardType="numeric" style={styles.input} placeholder="Giorni" /></>}
       <Text style={styles.label}>Note giornata</Text><TextInput value={day.note} onChangeText={(value) => updateDay(dayIndex, 'note', value)} style={styles.input} placeholder="Obiettivo del giorno" />
       {day.esercizi.map((exercise, exerciseIndex) => <View key={exerciseIndex} style={styles.exercise}>
         <TextInput value={exercise.nome} onFocus={() => setExerciseSearch({ dayIndex, exerciseIndex, query: exercise.nome || '', results: [] })} onChangeText={(value) => updateExerciseName(dayIndex, exerciseIndex, value)} style={styles.input} placeholder="Cerca esercizio o scrivi manualmente" />

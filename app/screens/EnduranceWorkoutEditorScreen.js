@@ -76,7 +76,8 @@ const BLOCK_PRESETS = [
   },
 ];
 
-function emptyStep(zone = 'Z4', unit = 'mt', value = '600') {
+// Nessun valore di esempio: i campi vuoti mostrano solo il nome del campo
+function emptyStep(zone = 'Z2', unit = 'mt', value = '') {
   return { unit, value, zone, subzone: 'zona intera', notes: '' };
 }
 
@@ -86,7 +87,7 @@ function emptyBlock(type = 'Lavoro', title = '') {
     title,
     repeats: '1',
     notes: '',
-    steps: [emptyStep(type === 'Riscaldamento' ? 'Z2' : type === 'Defaticamento' ? 'Z1' : 'Z4', 'mt', '600')],
+    steps: [emptyStep(type === 'Riscaldamento' ? 'Z2' : type === 'Defaticamento' ? 'Z1' : 'Z4', type === 'Lavoro' ? 'mt' : 'hh:mm:ss', '')],
   };
 }
 
@@ -98,7 +99,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const [date, setDate] = useState(route.params?.date || toISODate(new Date()));
   const [sport, setSport] = useState(route.params?.sport || 'corsa');
   const [title, setTitle] = useState('');
-  const [autoDesc, setAutoDesc] = useState(true);
+  const [autoDesc, setAutoDesc] = useState(false);
   const [stars, setStars] = useState(3);
   const [elevation, setElevation] = useState('0');
   const [generalZone, setGeneralZone] = useState('Z2');
@@ -108,9 +109,9 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const [videoModal, setVideoModal] = useState(false);
   const [videoInput, setVideoInput] = useState('');
   const [blocks, setBlocks] = useState([
-    emptyBlock('Riscaldamento', 'Riscaldamento'),
-    emptyBlock('Lavoro', 'Lavoro'),
-    emptyBlock('Defaticamento', 'Defaticamento'),
+    emptyBlock('Riscaldamento'),
+    emptyBlock('Lavoro'),
+    emptyBlock('Defaticamento'),
   ]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
@@ -321,7 +322,8 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
     if (!autoDesc || isEdit) return;
     const summaries = blocks.map((b) => {
       const reps = Number(b.repeats) || 1;
-      const inner = b.steps.map((s) => `${s.value}${s.unit} ${s.zone}`).join(' + ');
+      const inner = b.steps.filter((st) => String(st.value || '').trim()).map((st) => `${st.value}${st.unit} ${st.zone}`).join(' + ');
+      if (!inner) return '';
       return reps > 1 ? `${reps}x (${inner})` : inner;
     }).filter(Boolean);
     if (summaries.length) {
@@ -341,7 +343,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   };
 
   const addBlock = () => {
-    setBlocks((curr) => [...curr, emptyBlock('Lavoro', 'Lavoro')]);
+    setBlocks((curr) => [...curr, emptyBlock('Lavoro')]);
   };
 
   const duplicateBlock = (index) => {
@@ -425,6 +427,9 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const saveWorkout = async () => {
     if (!targetUserId || !date || !title.trim()) {
       return Alert.alert('Errore', 'Compila titolo e data.');
+    }
+    if (!workoutTotals.totalSeconds) {
+      return Alert.alert('Errore', 'Inserisci durata o distanza di almeno un intervallo.');
     }
     setSaving(true);
     try {
@@ -514,7 +519,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
           {saving ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.saveTopBtnText}>Salva modifiche</Text>
+            <Text style={styles.saveTopBtnText}>{isEdit ? 'Salva modifiche' : 'Salva allenamento'}</Text>
           )}
         </Pressable>
       </View>
@@ -533,7 +538,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               value={title}
               onChangeText={setTitle}
               style={styles.titleInput}
-              placeholder="inserisci un titolo"
+              placeholder="Titolo"
               placeholderTextColor="#999"
             />
             <Text style={styles.pencilIcon}>✎</Text>
@@ -747,7 +752,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                           value={step.value}
                           onChangeText={(v) => updateStepField(bi, si, 'value', v)}
                           style={styles.stepValInput}
-                          placeholder="600"
+                          placeholder="Valore"
                         />
 
                         {/* Zone dropdown */}
@@ -800,7 +805,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                   value={block.notes}
                   onChangeText={(v) => updateBlockField(bi, 'notes', v)}
                   style={styles.blockNotesInput}
-                  placeholder="Note sul blocco (tecnica, recupero...)"
+                  placeholder="Note sul blocco"
                   placeholderTextColor="#aaa"
                 />
               </View>
@@ -881,7 +886,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               onChangeText={setNotes}
               style={styles.notesTextarea}
               multiline
-              placeholder="Inserisci note o istruzioni per l'atleta..."
+              placeholder="Note per l'atleta"
               placeholderTextColor="#aaa"
             />
 
@@ -925,7 +930,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                 value={calcPace}
                 onChangeText={setCalcPace}
                 style={styles.calcInput}
-                placeholder="04:30"
+                placeholder="mm:ss"
               />
               <Text style={styles.calcFieldLabel}>Tempo calcolato</Text>
               <View style={styles.calcResultBox}>
@@ -1018,7 +1023,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
             <TextInput
               value={videoInput}
               onChangeText={setVideoInput}
-              placeholder="https://youtube.com/..."
+              placeholder="URL video"
               style={styles.calcInput}
             />
             <Pressable
