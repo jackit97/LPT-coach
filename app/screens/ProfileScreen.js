@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Switch, Linking, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api/client';
 import DateField from '../components/DateField';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +22,20 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState({ sessions: 18, distanceKm: 246.4, trimp: 132, avgRpe: 7.3 });
 
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
+  useEffect(() => {
+    const loadSavedStravaConfig = async () => {
+      try {
+        const raw = await AsyncStorage.getItem('strava-config');
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        setStravaConfig((current) => ({ ...current, ...parsed }));
+      } catch (error) {
+        // ignore invalid saved config
+      }
+    };
+
+    loadSavedStravaConfig();
+  }, []);
   const [days, setDays] = useState([]);
   const toggleDay = (day) => setDays((current) => current.includes(day) ? current.filter((item) => item !== day) : [...current, day]);
   useEffect(() => { setDays((profile.giorni_allenamento || '').split(',').map((day) => day.trim()).filter(Boolean)); }, [profile.giorni_allenamento]);
@@ -39,12 +54,43 @@ export default function ProfileScreen() {
     finally { setTogglingEndurance(false); }
   };
 
-  const connectStrava = () => {
-    Alert.alert(
-      'Collegamento Strava',
-      'Qui inserirai poi le credenziali Strava e il token di autorizzazione per importare allenamenti e note automatiche.',
-      [{ text: 'OK' }],
-    );
+  const persistStravaConfig = async (nextConfig) => {
+    try {
+      await AsyncStorage.setItem('strava-config', JSON.stringify(nextConfig));
+    } catch (error) {
+      // ignore storage failure and keep in-memory state only
+    }
+  };
+
+  const connectStrava = async () => {
+    if (!stravaConfig.clientId || !stravaConfig.redirectUri) {
+      Alert.alert('Strava', 'Inserisci prima il Client ID e l\'URL di redirect per avviare il collegamento.');
+      return;
+    }
+
+    const nextConfig = { ...stravaConfig, connected: true };
+    setStravaConfig(nextConfig);
+    await persistStravaConfig(nextConfig);
+
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(stravaConfig.clientId)}&redirect_uri=${encodeURIComponent(stravaConfig.redirectUri)}&response_type=code&approval_prompt=force&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(authUrl);
+      if (!canOpen) {
+        Alert.alert('Strava', 'Impossibile aprire Strava in questo dispositivo. Copia il link manualmente.');
+        return;
+      }
+
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.open(authUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        await Linking.openURL(authUrl);
+      }
+
+      Alert.alert('Strava', 'Ti stiamo portando alla pagina di autorizzazione Strava. Completa il login e ritorna qui per confermare il collegamento.');
+    } catch (error) {
+      Alert.alert('Errore', 'Non è stato possibile aprire la pagina Strava.');
+    }
   };
 
   return (
@@ -93,7 +139,11 @@ export default function ProfileScreen() {
           <Text style={styles.label}>Client ID</Text>
           <TextInput
             value={stravaConfig.clientId}
-            onChangeText={(value) => setStravaConfig((current) => ({ ...current, clientId: value }))}
+            onChangeText={(value) => {
+              const next = { ...stravaConfig, clientId: value };
+              setStravaConfig(next);
+              persistStravaConfig(next);
+            }}
             style={styles.input}
             placeholder="es. 123456"
             keyboardType="numeric"
@@ -102,7 +152,11 @@ export default function ProfileScreen() {
           <Text style={styles.label}>Client Secret</Text>
           <TextInput
             value={stravaConfig.clientSecret}
-            onChangeText={(value) => setStravaConfig((current) => ({ ...current, clientSecret: value }))}
+            onChangeText={(value) => {
+              const next = { ...stravaConfig, clientSecret: value };
+              setStravaConfig(next);
+              persistStravaConfig(next);
+            }}
             style={styles.input}
             placeholder="Inserisci secret Strava"
             secureTextEntry
@@ -111,7 +165,11 @@ export default function ProfileScreen() {
           <Text style={styles.label}>Redirect URI</Text>
           <TextInput
             value={stravaConfig.redirectUri}
-            onChangeText={(value) => setStravaConfig((current) => ({ ...current, redirectUri: value }))}
+            onChangeText={(value) => {
+              const next = { ...stravaConfig, redirectUri: value };
+              setStravaConfig(next);
+              persistStravaConfig(next);
+            }}
             style={styles.input}
             placeholder="https://..."
           />
