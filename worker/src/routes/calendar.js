@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
 import { loadWorkoutsWithLoad } from '../lib/athleteData.js';
+import { isoDay } from '../lib/trainingLoad.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -276,7 +277,7 @@ app.get('/:id', async (c) => {
   const scheda = workout.schedaid
     ? (await sql`SELECT * FROM schedeallenamento WHERE schedaid = ${workout.schedaid} LIMIT 1`)[0] || null
     : null;
-  const day = workout.data instanceof Date ? workout.data.toISOString().slice(0, 10) : String(workout.data).slice(0, 10);
+  const day = isoDay(workout.data);
   const withLoad = (await loadWorkoutsWithLoad(sql, workout.utenteid, day, day)).find((row) => row.workout_id === id);
 
   return c.json({

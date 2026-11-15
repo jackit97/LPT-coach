@@ -7,6 +7,8 @@
 
 export const ZONE_TRIMP_WEIGHTS = { Z0: 0, Z1: 1, Z2: 1.5, Z3: 2.2, Z4: 3.2, Z5: 4.5, Z6: 6, Z7: 8 };
 export const ACUTE_DAYS = 7;
+// Forza/funzionale: solo parte della seduta e' lavoro effettivo, quindi il TRIMP da RPE viene ridotto.
+export const NON_ENDURANCE_FACTOR = 0.6;
 export const CHRONIC_DAYS = 42;
 
 // Sport endurance riconosciuti e relativa icona/colore (allineati all'editor).
@@ -142,6 +144,11 @@ export function computeWorkoutLoad(workout, { session = null, hrZones = [] } = {
       doneTrimp = trimpFromZoneSeconds({ [workout.tipo === 'endurance' ? 'Z2' : 'Z3']: doneSeconds });
       trimpMethod = 'stima';
     }
+  }
+
+  if (workout.tipo !== 'endurance') {
+    plannedTrimp = Math.round(plannedTrimp * NON_ENDURANCE_FACTOR);
+    if (trimpMethod !== 'fc') doneTrimp = Math.round(doneTrimp * NON_ENDURANCE_FACTOR);
   }
 
   return {

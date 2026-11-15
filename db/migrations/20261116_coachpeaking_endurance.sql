@@ -1,4 +1,4 @@
--- Allineamento endurance a CoachPeaking: sport per allenamento, D+, video, libreria blocchi.
+-- Allineamento endurance a CoachPeaking (sport, D+, video, libreria blocchi) + diete strutturate.
 ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS sport VARCHAR(20);
 ALTER TABLE lptapp.endurance_sessions ADD COLUMN IF NOT EXISTS sport VARCHAR(20);
 ALTER TABLE lptapp.endurance_sessions ADD COLUMN IF NOT EXISTS elevation_m INT;
@@ -33,3 +33,7 @@ WHERE w.external_provider = 'strava' AND a.provider = 'strava' AND a.external_id
 -- Zone: un unico set unificato per atleta (prima ne esisteva uno per sport e la lettura ne prendeva uno a caso).
 -- L'unificazione vera avviene lato API al primo salvataggio; qui si marca solo lo sport.
 UPDATE lptapp.training_zone_sets SET sport = 'multi' WHERE sport IS NULL;
+
+-- Diete: alimenti strutturati per pasto (grammature e valori per 100 g) e parametri del calcolatore fabbisogno.
+ALTER TABLE lptapp.pastidieta ADD COLUMN IF NOT EXISTS alimenti_json TEXT;
+ALTER TABLE lptapp.diete ADD COLUMN IF NOT EXISTS fabbisogno_json TEXT;

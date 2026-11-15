@@ -120,7 +120,8 @@ export function rpeToZone(rpe) {
   return 'Z7';
 }
 
+// Forza/funzionale: TRIMP ridotto del 40% (stesso fattore del backend, NON_ENDURANCE_FACTOR)
 export function trimpFromRpe(minutes, rpe, fallbackZone = 'Z3') {
   const zone = rpeToZone(rpe) || fallbackZone;
-  return trimpFromZoneSeconds({ [zone]: (Number(minutes) || 0) * 60 });
+  return Math.round(trimpFromZoneSeconds({ [zone]: (Number(minutes) || 0) * 60 }) * 0.6);
 }
