@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Switch, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api/client';
@@ -12,30 +12,109 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState(user || {});
   const [saving, setSaving] = useState(false);
   const [togglingEndurance, setTogglingEndurance] = useState(false);
+  const [syncingStrava, setSyncingStrava] = useState(false);
+  const [stravaStatus, setStravaStatus] = useState(null);
   const [stravaConfig, setStravaConfig] = useState({
     connected: false,
     clientId: '',
     clientSecret: '',
-    redirectUri: 'https://lpt-coach.pages.dev/',
-    syncMode: 'manual',
+    redirectUri: Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/',
+    syncMode: 'auto',
   });
   const [stats, setStats] = useState({ sessions: 18, distanceKm: 246.4, trimp: 132, avgRpe: 7.3 });
 
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
+
+  const loadStravaStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get('/strava/status');
+      setStravaStatus(data);
+      if (data?.connected) {
+        setStravaConfig((curr) => ({
+          ...curr,
+          connected: true,
+          clientId: data.clientId || curr.clientId,
+          redirectUri: data.redirectUri || curr.redirectUri,
+          syncMode: data.sync_mode || curr.syncMode,
+        }));
+      }
+    } catch (e) {
+      // not connected or offline
+    }
+  }, []);
+
   useEffect(() => {
     const loadSavedStravaConfig = async () => {
       try {
         const raw = await AsyncStorage.getItem('strava-config');
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        setStravaConfig((current) => ({ ...current, ...parsed }));
+        setStravaConfig((current) => ({
+          ...current,
+          ...parsed,
+          redirectUri: parsed.redirectUri || (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/'),
+        }));
       } catch (error) {
         // ignore invalid saved config
       }
     };
 
     loadSavedStravaConfig();
-  }, []);
+    loadStravaStatus();
+  }, [loadStravaStatus]);
+
+  // Handle OAuth code on web redirect (e.g. ?code=xxx)
+  useEffect(() => {
+    const handleAuthRedirect = async () => {
+      let code = null;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        code = params.get('code');
+      }
+
+      if (!code) return;
+
+      setSyncingStrava(true);
+      try {
+        const raw = await AsyncStorage.getItem('strava-config');
+        const saved = raw ? JSON.parse(raw) : {};
+        const clientId = saved.clientId || stravaConfig.clientId;
+        const clientSecret = saved.clientSecret || stravaConfig.clientSecret;
+        const redirectUri = saved.redirectUri || stravaConfig.redirectUri;
+
+        const { data } = await api.post('/strava/connect', {
+          code,
+          clientId,
+          clientSecret,
+          redirectUri,
+          syncMode: saved.syncMode || stravaConfig.syncMode || 'auto',
+        });
+
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        setStravaStatus({
+          connected: true,
+          athlete: data.athlete,
+          last_sync: new Date().toISOString(),
+          importedCount: data.importedCount,
+        });
+        setStravaConfig((curr) => ({ ...curr, connected: true }));
+
+        Alert.alert(
+          'Strava collegato!',
+          `Account ${data.athlete?.firstname || ''} ${data.athlete?.lastname || ''} collegato con successo! Importate ${data.importedCount || 0} attività nel calendario.`
+        );
+      } catch (err) {
+        Alert.alert('Errore collegamento Strava', err?.response?.data?.message || 'Scambio del codice Strava non riuscito.');
+      } finally {
+        setSyncingStrava(false);
+      }
+    };
+
+    handleAuthRedirect();
+  }, [stravaConfig.clientId, stravaConfig.clientSecret, stravaConfig.redirectUri, stravaConfig.syncMode]);
   const [days, setDays] = useState([]);
   const toggleDay = (day) => setDays((current) => current.includes(day) ? current.filter((item) => item !== day) : [...current, day]);
   useEffect(() => { setDays((profile.giorni_allenamento || '').split(',').map((day) => day.trim()).filter(Boolean)); }, [profile.giorni_allenamento]);
@@ -68,11 +147,9 @@ export default function ProfileScreen() {
       return;
     }
 
-    const nextConfig = { ...stravaConfig, connected: true };
-    setStravaConfig(nextConfig);
-    await persistStravaConfig(nextConfig);
+    await persistStravaConfig(stravaConfig);
 
-    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(stravaConfig.clientId)}&redirect_uri=${encodeURIComponent(stravaConfig.redirectUri)}&response_type=code&approval_prompt=force&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(stravaConfig.clientId)}&redirect_uri=${encodeURIComponent(stravaConfig.redirectUri)}&response_type=code&approval_prompt=auto&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
 
     try {
       const canOpen = await Linking.canOpenURL(authUrl);
@@ -87,10 +164,44 @@ export default function ProfileScreen() {
         await Linking.openURL(authUrl);
       }
 
-      Alert.alert('Strava', 'Ti stiamo portando alla pagina di autorizzazione Strava. Completa il login e ritorna qui per confermare il collegamento.');
+      Alert.alert('Strava', 'Ti stiamo portando alla pagina di autorizzazione Strava. Completa l\'accesso per autorizzare LPT Coach.');
     } catch (error) {
       Alert.alert('Errore', 'Non è stato possibile aprire la pagina Strava.');
     }
+  };
+
+  const syncStravaNow = async () => {
+    setSyncingStrava(true);
+    try {
+      const { data } = await api.post('/strava/sync');
+      Alert.alert('Strava', data.message || 'Attività sincronizzate con successo!');
+      await loadStravaStatus();
+    } catch (err) {
+      Alert.alert('Errore sincronizzazione', err?.response?.data?.message || 'Impossibile sincronizzare le attività Strava.');
+    } finally {
+      setSyncingStrava(false);
+    }
+  };
+
+  const disconnectStrava = async () => {
+    Alert.alert('Scollega Strava', 'Vuoi disconnettere il tuo account Strava da LPT Coach?', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Scollega',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.post('/strava/disconnect');
+            setStravaStatus({ connected: false });
+            setStravaConfig((curr) => ({ ...curr, connected: false }));
+            await persistStravaConfig({ ...stravaConfig, connected: false });
+            Alert.alert('Strava', 'Account Strava scollegato');
+          } catch (err) {
+            Alert.alert('Errore', err?.response?.data?.message || 'Impossibile scollegare Strava');
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -127,14 +238,58 @@ export default function ProfileScreen() {
       {!isCoach && (
         <View style={styles.stravaPanel}>
           <View style={styles.stravaHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Collegamento Strava</Text>
-              <Text style={styles.stravaStatus}>{stravaConfig.connected ? 'Connesso' : 'Non connesso'}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 16 }}>⚡</Text>
+                <Text style={styles.sectionTitle}>Integrazione Strava</Text>
+              </View>
+              {stravaStatus?.connected ? (
+                <Text style={styles.stravaStatusConnected}>
+                  Connesso: {stravaStatus.athlete ? `${stravaStatus.athlete.firstname || ''} ${stravaStatus.athlete.lastname || ''}`.trim() : 'Account attivo'}
+                </Text>
+              ) : (
+                <Text style={styles.stravaStatus}>Non connesso</Text>
+              )}
             </View>
-            <Pressable style={[styles.stravaButton, stravaConfig.connected && styles.stravaButtonConnected]} onPress={connectStrava}>
-              <Text style={styles.stravaButtonText}>{stravaConfig.connected ? 'Aggiorna' : 'Collega Strava'}</Text>
-            </Pressable>
           </View>
+
+          {stravaStatus?.connected ? (
+            <View style={styles.stravaConnectedBox}>
+              <Text style={styles.stravaSyncInfo}>
+                Ultima sincronizzazione: {stravaStatus.last_sync ? new Date(stravaStatus.last_sync).toLocaleString('it-IT') : 'Mai'}
+              </Text>
+              <View style={styles.stravaActionRow}>
+                <Pressable
+                  style={[styles.stravaSyncBtn, syncingStrava && { opacity: 0.6 }]}
+                  onPress={syncStravaNow}
+                  disabled={syncingStrava}
+                >
+                  {syncingStrava ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.stravaSyncBtnText}>🔄 Sincronizza attività ora</Text>
+                  )}
+                </Pressable>
+                <Pressable style={styles.stravaDisconnectBtn} onPress={disconnectStrava}>
+                  <Text style={styles.stravaDisconnectText}>Scollega</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.stravaConnectBox}>
+              <Text style={styles.stravaHintText}>
+                Collega il tuo account Strava per importare automaticamente gli allenamenti, tempi, distanza e frequenza cardiaca nel calendario.
+              </Text>
+              <Pressable style={styles.stravaMainButton} onPress={connectStrava}>
+                <Text style={styles.stravaMainButtonText}>⚡ Accedi e autorizza con Strava</Text>
+              </Pressable>
+            </View>
+          )}
+
+          <Text style={[styles.sectionSubtitle, { marginTop: spacing.md }]}>Credenziali API Strava</Text>
+          <Text style={styles.stravaCredHint}>
+            Inserisci il Client ID e Secret della tua applicazione Strava (da strava.com/settings/api). Come Authorization Callback Domain imposta il dominio di questa app.
+          </Text>
 
           <Text style={styles.label}>Client ID</Text>
           <TextInput
@@ -176,14 +331,18 @@ export default function ProfileScreen() {
 
           <Text style={styles.label}>Modalità import</Text>
           <View style={styles.syncRow}>
-            {['manual', 'auto'].map((mode) => (
+            {['auto', 'manual'].map((mode) => (
               <Pressable
                 key={mode}
-                onPress={() => setStravaConfig((current) => ({ ...current, syncMode: mode }))}
+                onPress={() => {
+                  const next = { ...stravaConfig, syncMode: mode };
+                  setStravaConfig(next);
+                  persistStravaConfig(next);
+                }}
                 style={[styles.syncChip, stravaConfig.syncMode === mode && styles.syncChipActive]}
               >
                 <Text style={[styles.syncChipText, stravaConfig.syncMode === mode && styles.syncChipTextActive]}>
-                  {mode === 'manual' ? 'Manuale' : 'Automatica'}
+                  {mode === 'auto' ? 'Automatica (consigliata)' : 'Manuale'}
                 </Text>
               </Pressable>
             ))}
@@ -244,7 +403,21 @@ const styles = StyleSheet.create({
   statValue: { marginTop: 4, fontSize: 18, fontWeight: '800', color: colors.text },
   stravaPanel: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   stravaHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
-  stravaStatus: { marginTop: 4, fontSize: 12, color: colors.primary, fontWeight: '700' },
+  stravaStatus: { marginTop: 4, fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  stravaStatusConnected: { marginTop: 4, fontSize: 12, color: '#10b981', fontWeight: '700' },
+  stravaConnectedBox: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: radius.md, padding: spacing.sm, marginVertical: spacing.xs },
+  stravaSyncInfo: { fontSize: 11, color: '#15803d', marginBottom: spacing.xs, fontWeight: '500' },
+  stravaActionRow: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center' },
+  stravaSyncBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
+  stravaSyncBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
+  stravaDisconnectBtn: { backgroundColor: '#fee2e2', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+  stravaDisconnectText: { color: '#dc2626', fontWeight: '600', fontSize: 12 },
+  stravaConnectBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', borderRadius: radius.md, padding: spacing.md, marginVertical: spacing.xs },
+  stravaHintText: { fontSize: 12, color: '#9a3412', marginBottom: spacing.sm, lineHeight: 16 },
+  stravaMainButton: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, alignItems: 'center' },
+  stravaMainButtonText: { color: '#ffffff', fontWeight: '800', fontSize: 13, letterSpacing: 0.3 },
+  sectionSubtitle: { fontSize: 12, fontWeight: '700', color: colors.text, textTransform: 'uppercase', letterSpacing: 0.5 },
+  stravaCredHint: { fontSize: 11, color: colors.textMuted, marginTop: 2, marginBottom: spacing.xs },
   stravaButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
   stravaButtonConnected: { backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#10b981' },
   stravaButtonText: { color: colors.textInverse, fontWeight: '700', fontSize: 12 },

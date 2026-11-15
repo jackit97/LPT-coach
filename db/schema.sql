@@ -125,8 +125,15 @@ CREATE TABLE IF NOT EXISTS lptapp.calendar_workouts (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS external_id VARCHAR(100);
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS external_provider VARCHAR(50);
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS distance_km NUMERIC(6,2);
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS avg_hr INT;
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS elev_gain_m INT;
+
 CREATE INDEX IF NOT EXISTS idx_calendar_workouts_utente_data ON lptapp.calendar_workouts(utenteid, data);
 CREATE INDEX IF NOT EXISTS idx_calendar_workouts_coach ON lptapp.calendar_workouts(coach_userid, data);
+CREATE INDEX IF NOT EXISTS idx_calendar_workouts_external ON lptapp.calendar_workouts(utenteid, external_provider, external_id);
 
 -- Exercises attached directly to a calendar workout (simple strength blocks)
 CREATE TABLE IF NOT EXISTS lptapp.calendar_workout_exercises (

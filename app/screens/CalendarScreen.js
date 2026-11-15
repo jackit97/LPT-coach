@@ -22,6 +22,7 @@ export default function CalendarScreen({ navigation }) {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncingStrava, setSyncingStrava] = useState(false);
   const [mode, setMode] = useState('normal'); // normal | move | copy
   const [selected, setSelected] = useState(null);
 
@@ -106,6 +107,25 @@ export default function CalendarScreen({ navigation }) {
   };
 
   const shiftWeeks = (n) => setWeekStart((current) => addDays(current, n * 7));
+
+  const syncStrava = async () => {
+    setSyncingStrava(true);
+    try {
+      const { data } = await api.post('/strava/sync', null, {
+        params: isCoach && targetUserId ? { utenteId: targetUserId } : {},
+      });
+      Alert.alert('Strava', data.message || 'Attività Strava sincronizzate');
+      await load();
+    } catch (e) {
+      Alert.alert(
+        'Strava',
+        e?.response?.data?.message || 'Impossibile sincronizzare Strava. Verifica il collegamento nella sezione Profilo.'
+      );
+    } finally {
+      setSyncingStrava(false);
+    }
+  };
+
   const coachNotifications = [
     { label: 'Feedback', value: '3 nuovi' },
     { label: 'Note', value: '2 da leggere' },
@@ -162,6 +182,17 @@ export default function CalendarScreen({ navigation }) {
           <Text style={styles.headerSubtitle}>{fmtDay(weekStart)} – {fmtDay(rangeEnd)} {rangeEnd.getFullYear()}</Text>
         </View>
         <View style={styles.headerActions}>
+          <Pressable
+            onPress={syncStrava}
+            disabled={syncingStrava}
+            style={[styles.stravaSyncHeaderBtn, syncingStrava && { opacity: 0.6 }]}
+          >
+            {syncingStrava ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.stravaSyncHeaderText}>⚡ Sync Strava</Text>
+            )}
+          </Pressable>
           <Pressable onPress={() => shiftWeeks(-WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>«</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>‹</Text></Pressable>
           <Pressable onPress={() => setWeekStart(addDays(startOfWeek(new Date()), -7))} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>
@@ -309,6 +340,8 @@ const styles = StyleSheet.create({
   headerTitle: { ...typography.h2 },
   headerSubtitle: { ...typography.caption, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  stravaSyncHeaderBtn: { backgroundColor: '#FC4C02', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  stravaSyncHeaderText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
   navBtn: { width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   navBtnText: { fontSize: 18, fontWeight: '700', color: colors.primary },
   navBtnToday: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryLight },

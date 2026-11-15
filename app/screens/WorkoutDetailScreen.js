@@ -131,6 +131,44 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </Text>
       </View>
 
+      {workout.external_provider === 'strava' && (
+        <View style={styles.stravaBanner}>
+          <View style={styles.stravaBannerHeader}>
+            <Text style={{ fontSize: 18 }}>⚡</Text>
+            <View>
+              <Text style={styles.stravaBannerTitle}>Attività Strava sincronizzata</Text>
+              <Text style={styles.stravaBannerSubtitle}>ID attività: {workout.external_id}</Text>
+            </View>
+          </View>
+          <View style={styles.stravaMetricGrid}>
+            {!!workout.distance_km && (
+              <View style={styles.stravaMetricCard}>
+                <Text style={styles.stravaMetricLabel}>Distanza</Text>
+                <Text style={styles.stravaMetricValue}>{Number(workout.distance_km).toFixed(2)} km</Text>
+              </View>
+            )}
+            {!!(workout.durata_secondi || workout.durata_minuti) && (
+              <View style={styles.stravaMetricCard}>
+                <Text style={styles.stravaMetricLabel}>Tempo</Text>
+                <Text style={styles.stravaMetricValue}>{formatDuration(workout)}</Text>
+              </View>
+            )}
+            {!!workout.avg_hr && (
+              <View style={styles.stravaMetricCard}>
+                <Text style={styles.stravaMetricLabel}>FC Media</Text>
+                <Text style={styles.stravaMetricValue}>{workout.avg_hr} bpm</Text>
+              </View>
+            )}
+            {!!workout.elev_gain_m && (
+              <View style={styles.stravaMetricCard}>
+                <Text style={styles.stravaMetricLabel}>Dislivello</Text>
+                <Text style={styles.stravaMetricValue}>+{workout.elev_gain_m} m</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
       {structuredSteps.length > 0 && (
         <View style={styles.chartSection}>
           <Text style={typography.h3}>Profilo allenamento</Text>
@@ -286,4 +324,12 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: colors.text, fontWeight: '700' },
   dangerButton: { flex: 1, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
   dangerButtonText: { color: colors.danger, fontWeight: '700' },
+  stravaBanner: { marginTop: spacing.md, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FFEDD5', borderRadius: radius.md, padding: spacing.md },
+  stravaBannerHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  stravaBannerTitle: { fontSize: 13, fontWeight: '800', color: '#9A3412' },
+  stravaBannerSubtitle: { fontSize: 11, color: '#C2410C' },
+  stravaMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  stravaMetricCard: { flex: 1, minWidth: 90, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#FED7AA', borderRadius: radius.sm, padding: spacing.sm },
+  stravaMetricLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
+  stravaMetricValue: { fontSize: 14, fontWeight: '800', color: '#EA580C', marginTop: 2 },
 });
