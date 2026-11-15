@@ -14,6 +14,7 @@ export default function ProfileScreen() {
   const [togglingEndurance, setTogglingEndurance] = useState(false);
   const [syncingStrava, setSyncingStrava] = useState(false);
   const [stravaStatus, setStravaStatus] = useState(null);
+  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
   const [stravaConfig, setStravaConfig] = useState({
     connected: false,
     clientId: '',
@@ -145,14 +146,25 @@ export default function ProfileScreen() {
   };
 
   const connectStrava = async () => {
-    if (!stravaConfig.clientId || !stravaConfig.redirectUri) {
-      Alert.alert('Strava', 'Inserisci prima il Client ID e l\'URL di redirect per avviare il collegamento.');
+    const effectiveClientId = stravaConfig.clientId || stravaStatus?.defaultClientId;
+    const effectiveRedirectUri = stravaConfig.redirectUri || (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/');
+
+    if (!effectiveClientId) {
+      setShowAdvancedCredentials(true);
+      Alert.alert(
+        'Strava',
+        'Configura il Client ID dell\'app Strava sotto la sezione "Impostazioni avanzate" per avviare il collegamento (oppure impostalo come variabile d\'ambiente sul server).'
+      );
       return;
     }
 
-    await persistStravaConfig(stravaConfig);
+    await persistStravaConfig({
+      ...stravaConfig,
+      clientId: effectiveClientId,
+      redirectUri: effectiveRedirectUri,
+    });
 
-    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(stravaConfig.clientId)}&redirect_uri=${encodeURIComponent(stravaConfig.redirectUri)}&response_type=code&approval_prompt=auto&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(effectiveRedirectUri)}&response_type=code&approval_prompt=auto&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
 
     try {
       const canOpen = await Linking.canOpenURL(authUrl);
@@ -239,29 +251,46 @@ export default function ProfileScreen() {
       )}
 
       {!isCoach && (
-        <View style={styles.stravaPanel}>
-          <View style={styles.stravaHeader}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 16 }}>⚡</Text>
-                <Text style={styles.sectionTitle}>Integrazione Strava</Text>
-              </View>
-              {stravaStatus?.connected ? (
-                <Text style={styles.stravaStatusConnected}>
-                  Connesso: {stravaStatus.athlete ? `${stravaStatus.athlete.firstname || ''} ${stravaStatus.athlete.lastname || ''}`.trim() : 'Account attivo'}
-                </Text>
-              ) : (
-                <Text style={styles.stravaStatus}>Non connesso</Text>
-              )}
-            </View>
-          </View>
+        <View style={styles.connessioniSection}>
+          <Text style={styles.sectionTitle}>Connessioni</Text>
+          <Text style={typography.caption}>Collega le tue app e dispositivi per importare automaticamente gli allenamenti.</Text>
 
-          {stravaStatus?.connected ? (
-            <View style={styles.stravaConnectedBox}>
-              <Text style={styles.stravaSyncInfo}>
-                Ultima sincronizzazione: {stravaStatus.last_sync ? new Date(stravaStatus.last_sync).toLocaleString('it-IT') : 'Mai'}
-              </Text>
-              <View style={styles.stravaActionRow}>
+          <View style={styles.connectionItem}>
+            <View style={styles.connectionRow}>
+              <View style={styles.connectionBrand}>
+                <View style={[styles.brandIcon, { backgroundColor: '#FC4C02' }]}>
+                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>⚡</Text>
+                </View>
+                <View>
+                  <Text style={styles.brandTitle}>Strava</Text>
+                  <Text style={styles.brandDesc}>
+                    {stravaStatus?.connected
+                      ? `Connesso: ${stravaStatus.athlete ? `${stravaStatus.athlete.firstname || ''} ${stravaStatus.athlete.lastname || ''}`.trim() : 'Account attivo'}`
+                      : 'Corsa, ciclismo, camminata e nuoto'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Switch
+                  value={Boolean(stravaStatus?.connected)}
+                  onValueChange={(val) => {
+                    if (val) connectStrava();
+                    else disconnectStrava();
+                  }}
+                  trackColor={{ true: '#10b981', false: colors.border }}
+                />
+                <Text style={[styles.switchStatusText, stravaStatus?.connected && { color: '#10b981' }]}>
+                  {stravaStatus?.connected ? 'Connesso' : 'Disconnesso'}
+                </Text>
+              </View>
+            </View>
+
+            {stravaStatus?.connected ? (
+              <View style={styles.stravaConnectedActions}>
+                <Text style={styles.stravaSyncInfo}>
+                  Ultimo sync: {stravaStatus.last_sync ? new Date(stravaStatus.last_sync).toLocaleString('it-IT') : 'Mai'}
+                </Text>
                 <Pressable
                   style={[styles.stravaSyncBtn, syncingStrava && { opacity: 0.6 }]}
                   onPress={syncStravaNow}
@@ -270,85 +299,91 @@ export default function ProfileScreen() {
                   {syncingStrava ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={styles.stravaSyncBtnText}>🔄 Sincronizza attività ora</Text>
+                    <Text style={styles.stravaSyncBtnText}>🔄 Recupera allenamenti</Text>
                   )}
                 </Pressable>
-                <Pressable style={styles.stravaDisconnectBtn} onPress={disconnectStrava}>
-                  <Text style={styles.stravaDisconnectText}>Scollega</Text>
+              </View>
+            ) : (
+              <View style={{ marginTop: spacing.sm }}>
+                <Pressable style={styles.stravaQuickConnectBtn} onPress={connectStrava}>
+                  <Text style={styles.stravaQuickConnectText}>Collega account Strava</Text>
                 </Pressable>
               </View>
-            </View>
-          ) : (
-            <View style={styles.stravaConnectBox}>
-              <Text style={styles.stravaHintText}>
-                Collega il tuo account Strava per importare automaticamente gli allenamenti, tempi, distanza e frequenza cardiaca nel calendario.
+            )}
+
+            <Pressable
+              onPress={() => setShowAdvancedCredentials((prev) => !prev)}
+              style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
+            >
+              <Text style={{ fontSize: 11, color: colors.textMuted, textDecorationLine: 'underline' }}>
+                {showAdvancedCredentials ? 'Nascondi impostazioni avanzate API' : 'Impostazioni avanzate API (Client ID / Secret)'}
               </Text>
-              <Pressable style={styles.stravaMainButton} onPress={connectStrava}>
-                <Text style={styles.stravaMainButtonText}>⚡ Accedi e autorizza con Strava</Text>
-              </Pressable>
-            </View>
-          )}
+            </Pressable>
 
-          <Text style={[styles.sectionSubtitle, { marginTop: spacing.md }]}>Credenziali API Strava</Text>
-          <Text style={styles.stravaCredHint}>
-            Inserisci il Client ID e Secret della tua applicazione Strava (da strava.com/settings/api). Come Authorization Callback Domain imposta il dominio di questa app.
-          </Text>
-
-          <Text style={styles.label}>Client ID</Text>
-          <TextInput
-            value={stravaConfig.clientId}
-            onChangeText={(value) => {
-              const next = { ...stravaConfig, clientId: value };
-              setStravaConfig(next);
-              persistStravaConfig(next);
-            }}
-            style={styles.input}
-            placeholder="es. 123456"
-            keyboardType="numeric"
-          />
-
-          <Text style={styles.label}>Client Secret</Text>
-          <TextInput
-            value={stravaConfig.clientSecret}
-            onChangeText={(value) => {
-              const next = { ...stravaConfig, clientSecret: value };
-              setStravaConfig(next);
-              persistStravaConfig(next);
-            }}
-            style={styles.input}
-            placeholder="Inserisci secret Strava"
-            secureTextEntry
-          />
-
-          <Text style={styles.label}>Redirect URI</Text>
-          <TextInput
-            value={stravaConfig.redirectUri}
-            onChangeText={(value) => {
-              const next = { ...stravaConfig, redirectUri: value };
-              setStravaConfig(next);
-              persistStravaConfig(next);
-            }}
-            style={styles.input}
-            placeholder="https://..."
-          />
-
-          <Text style={styles.label}>Modalità import</Text>
-          <View style={styles.syncRow}>
-            {['auto', 'manual'].map((mode) => (
-              <Pressable
-                key={mode}
-                onPress={() => {
-                  const next = { ...stravaConfig, syncMode: mode };
-                  setStravaConfig(next);
-                  persistStravaConfig(next);
-                }}
-                style={[styles.syncChip, stravaConfig.syncMode === mode && styles.syncChipActive]}
-              >
-                <Text style={[styles.syncChipText, stravaConfig.syncMode === mode && styles.syncChipTextActive]}>
-                  {mode === 'auto' ? 'Automatica (consigliata)' : 'Manuale'}
+            {showAdvancedCredentials && (
+              <View style={styles.advancedBox}>
+                <Text style={styles.stravaCredHint}>
+                  Se hai inserito `STRAVA_CLIENT_ID` e `STRAVA_CLIENT_SECRET` sul server o Worker, questi campi sono opzionali. Altrimenti inseriscili qui una sola volta.
                 </Text>
-              </Pressable>
-            ))}
+
+                <Text style={styles.label}>Client ID</Text>
+                <TextInput
+                  value={stravaConfig.clientId}
+                  onChangeText={(value) => {
+                    const next = { ...stravaConfig, clientId: value };
+                    setStravaConfig(next);
+                    persistStravaConfig(next);
+                  }}
+                  style={styles.input}
+                  placeholder={stravaStatus?.defaultClientId || 'es. 123456'}
+                  keyboardType="numeric"
+                />
+
+                <Text style={styles.label}>Client Secret</Text>
+                <TextInput
+                  value={stravaConfig.clientSecret}
+                  onChangeText={(value) => {
+                    const next = { ...stravaConfig, clientSecret: value };
+                    setStravaConfig(next);
+                    persistStravaConfig(next);
+                  }}
+                  style={styles.input}
+                  placeholder="Inserisci secret Strava"
+                  secureTextEntry
+                />
+
+                <Text style={styles.label}>Redirect URI (automatico)</Text>
+                <TextInput
+                  value={stravaConfig.redirectUri}
+                  onChangeText={(value) => {
+                    const next = { ...stravaConfig, redirectUri: value };
+                    setStravaConfig(next);
+                    persistStravaConfig(next);
+                  }}
+                  style={styles.input}
+                  placeholder="https://..."
+                />
+              </View>
+            )}
+          </View>
+
+          {/* Placeholder for Garmin connection as on CoachPeaking */}
+          <View style={[styles.connectionItem, { opacity: 0.85 }]}>
+            <View style={styles.connectionRow}>
+              <View style={styles.connectionBrand}>
+                <View style={[styles.brandIcon, { backgroundColor: '#007cc3' }]}>
+                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 12 }}>G</Text>
+                </View>
+                <View>
+                  <Text style={styles.brandTitle}>Garmin</Text>
+                  <Text style={styles.brandDesc}>Sincronizzazione orologi e ciclocomputer</Text>
+                </View>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Switch value={false} disabled trackColor={{ false: colors.border }} />
+                <Text style={styles.switchStatusText}>Disponibile via .FIT</Text>
+              </View>
+            </View>
           </View>
         </View>
       )}
@@ -404,31 +439,22 @@ const styles = StyleSheet.create({
   statCard: { flexBasis: '48%', flexGrow: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
   statLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase' },
   statValue: { marginTop: 4, fontSize: 18, fontWeight: '800', color: colors.text },
-  stravaPanel: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  stravaHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
-  stravaStatus: { marginTop: 4, fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  stravaStatusConnected: { marginTop: 4, fontSize: 12, color: '#10b981', fontWeight: '700' },
-  stravaConnectedBox: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: radius.md, padding: spacing.sm, marginVertical: spacing.xs },
-  stravaSyncInfo: { fontSize: 11, color: '#15803d', marginBottom: spacing.xs, fontWeight: '500' },
-  stravaActionRow: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center' },
-  stravaSyncBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
+  connessioniSection: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  connectionItem: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.md, marginBottom: spacing.md },
+  connectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  connectionBrand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
+  brandIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  brandTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  brandDesc: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  switchStatusText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  stravaConnectedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, paddingTop: spacing.xs },
+  stravaSyncInfo: { fontSize: 11, color: '#15803d', fontWeight: '500' },
+  stravaSyncBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md },
   stravaSyncBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
-  stravaDisconnectBtn: { backgroundColor: '#fee2e2', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
-  stravaDisconnectText: { color: '#dc2626', fontWeight: '600', fontSize: 12 },
-  stravaConnectBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', borderRadius: radius.md, padding: spacing.md, marginVertical: spacing.xs },
-  stravaHintText: { fontSize: 12, color: '#9a3412', marginBottom: spacing.sm, lineHeight: 16 },
-  stravaMainButton: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, alignItems: 'center' },
-  stravaMainButtonText: { color: '#ffffff', fontWeight: '800', fontSize: 13, letterSpacing: 0.3 },
-  sectionSubtitle: { fontSize: 12, fontWeight: '700', color: colors.text, textTransform: 'uppercase', letterSpacing: 0.5 },
-  stravaCredHint: { fontSize: 11, color: colors.textMuted, marginTop: 2, marginBottom: spacing.xs },
-  stravaButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
-  stravaButtonConnected: { backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#10b981' },
-  stravaButtonText: { color: colors.textInverse, fontWeight: '700', fontSize: 12 },
-  syncRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
-  syncChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface },
-  syncChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  syncChipText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  syncChipTextActive: { color: colors.primary, fontWeight: '700' },
+  stravaQuickConnectBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignSelf: 'flex-start' },
+  stravaQuickConnectText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
+  advancedBox: { marginTop: spacing.sm, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: radius.md, padding: spacing.sm },
+  stravaCredHint: { fontSize: 11, color: colors.textMuted, marginBottom: spacing.xs, lineHeight: 15 },
   warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
   warningText: { color: '#92400E', fontWeight: '600' },
   logoutBtn: { marginTop: spacing.xxl, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xxl },

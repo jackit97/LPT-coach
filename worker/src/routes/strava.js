@@ -199,6 +199,8 @@ app.get('/status', async (c) => {
   const allowed = await assertAccessToAthlete(sql, user, utenteId);
   if (!allowed) return c.json({ message: 'Accesso non consentito' }, 403);
 
+  const defaultClientId = c.env.STRAVA_CLIENT_ID || '';
+
   const rows = await sql`
     SELECT connected, data_json, updated_at
     FROM endurance_integrations
@@ -207,7 +209,12 @@ app.get('/status', async (c) => {
   `;
 
   if (!rows.length || !rows[0].connected) {
-    return c.json({ connected: false, sync_mode: 'manual' });
+    return c.json({
+      connected: false,
+      sync_mode: 'auto',
+      hasServerApp: Boolean(defaultClientId),
+      defaultClientId,
+    });
   }
 
   let parsed = {};
@@ -218,8 +225,9 @@ app.get('/status', async (c) => {
     athlete: parsed.athlete || null,
     last_sync: parsed.last_sync || rows[0].updated_at,
     sync_mode: parsed.sync_mode || 'auto',
-    clientId: parsed.client_id || '',
-    redirectUri: parsed.redirect_uri || '',
+    clientId: parsed.client_id || defaultClientId,
+    hasServerApp: Boolean(defaultClientId),
+    defaultClientId,
   });
 });
 
