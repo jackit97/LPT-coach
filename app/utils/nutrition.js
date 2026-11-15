@@ -79,3 +79,39 @@ export function computeNeeds({ pesoKg, altezzaCm, eta, sesso, activityKey, goalK
   const tdee = bmr * activity.factor;
   return { bmr: Math.round(bmr), tdee: Math.round(tdee), target: Math.round(tdee * (1 + goal.delta)) };
 }
+
+// Ripartizione macro consigliata sul target calorico (g/kg di peso corporeo).
+// Proteine piu' alte in definizione, grassi ~0.9 g/kg (minimo 20% kcal), carboidrati a completamento.
+export function macroTargets({ kcal, pesoKg, goalKey }) {
+  const kg = toNumber(pesoKg);
+  const total = toNumber(kcal);
+  if (!kg || !total) return null;
+  const proteinPerKg = goalKey === 'definizione' ? 2.2 : goalKey === 'massa' ? 1.8 : 2.0;
+  const proteins = kg * proteinPerKg;
+  const fat = Math.max(kg * 0.9, (total * 0.2) / 9);
+  const carbs = Math.max(0, (total - proteins * 4 - fat * 9) / 4);
+  return { kcal: Math.round(total), proteins: Math.round(proteins), carbs: Math.round(carbs), fat: Math.round(fat) };
+}
+
+// Colori macro coerenti in tutta la sezione diete.
+export const MACRO_COLORS = { proteins: '#2563eb', carbs: '#f59e0b', fat: '#db2777', kcal: '#0B3D91' };
+
+export const QUICK_GRAMS = [30, 50, 80, 100, 150, 200];
+
+export const dayShort = (day) => day.slice(0, 3);
+
+// Testo leggibile del pasto (usato per PDF, calendario e compatibilita' con le diete vecchie).
+export function mealDescription(manuale, alimenti) {
+  return [manuale, ...(alimenti || []).map((item) => `${item.food.product_name} - ${toNumber(item.grams)} g`)].filter(Boolean).join('\n');
+}
+
+// Riduce l'alimento ai soli campi necessari prima di salvarlo in alimenti_json.
+export const compactFood = (food) => ({
+  code: food.code,
+  product_name: food.product_name,
+  brands: food.brands || null,
+  energy_kcal_100g: food.energy_kcal_100g,
+  proteins_100g: food.proteins_100g,
+  carbohydrates_100g: food.carbohydrates_100g,
+  fat_100g: food.fat_100g,
+});

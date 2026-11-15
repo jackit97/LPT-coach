@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS lptapp.pastidieta (
 );
 
 ALTER TABLE lptapp.pastidieta ADD COLUMN IF NOT EXISTS giorno_settimana VARCHAR(20) DEFAULT 'Lunedi';
-ALTER TABLE lptapp.pastidieta ADD COLUMN IF NOT EXISTS alimenti_json TEXT; -- { manuale, alimenti: [{ nome, grams, kcal, p, c, f per 100 g }] }
+ALTER TABLE lptapp.pastidieta ADD COLUMN IF NOT EXISTS alimenti_json TEXT; -- { manuale, alimenti: [{ grams, food: { code, product_name, energy_kcal_100g, proteins_100g, carbohydrates_100g, fat_100g } }] }
 ALTER TABLE lptapp.diete ADD COLUMN IF NOT EXISTS fabbisogno_json TEXT; -- parametri del calcolatore fabbisogno
 
 -- ---------- Videos ----------
