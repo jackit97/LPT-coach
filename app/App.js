@@ -254,6 +254,68 @@ function RootNavigator() {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('LPT Coach Uncaught Error:', error, errorInfo);
+  }
+  handleReset = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.reload();
+    } else {
+      this.setState({ hasError: false, error: null });
+    }
+  };
+  handleClearCacheAndReload = async () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) await reg.unregister();
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const key of keys) await caches.delete(key);
+        }
+        window.localStorage.clear();
+      } catch (e) {
+        // ignore
+      }
+      window.location.reload();
+    } else {
+      this.setState({ hasError: false, error: null });
+    }
+  };
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: colors.primary, marginBottom: 8 }}>LPT Coach</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8 }}>Si è verificato un problema</Text>
+          <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', maxWidth: 420, marginBottom: 20 }}>
+            {this.state.error?.message || 'Errore durante il caricamento dell\'applicazione.'}
+          </Text>
+          <Pressable
+            onPress={this.handleReset}
+            style={{ backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 12, paddingHorizontal: 24, marginBottom: 12 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Ricarica l'applicazione</Text>
+          </Pressable>
+          {Platform.OS === 'web' && (
+            <Pressable onPress={this.handleClearCacheAndReload} style={{ padding: 8 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }}>Svuota cache e ricarica</Text>
+            </Pressable>
+          )}
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   useEffect(() => {
     if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
@@ -270,11 +332,13 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <NavigationContainer>
-        <StatusBar style="light" />
-        <RootNavigator />
-      </NavigationContainer>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <NavigationContainer>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

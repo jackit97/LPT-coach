@@ -19,3 +19,9 @@ for (const [marker, tag] of tags) {
 }
 
 fs.writeFileSync(htmlPath, html);
+
+const swSrc = path.join(__dirname, '..', 'public', 'sw.js');
+const swDest = path.join(__dirname, '..', 'dist', 'sw.js');
+if (fs.existsSync(swSrc)) {
+  fs.copyFileSync(swSrc, swDest);
+}
