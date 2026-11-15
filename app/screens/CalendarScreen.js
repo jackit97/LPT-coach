@@ -106,6 +106,35 @@ export default function CalendarScreen({ navigation }) {
   };
 
   const shiftWeeks = (n) => setWeekStart((current) => addDays(current, n * 7));
+  const coachNotifications = [
+    { label: 'Feedback', value: '3 nuovi' },
+    { label: 'Note', value: '2 da leggere' },
+    { label: 'Schede', value: '1 in revisione' },
+  ];
+
+  const athleteStats = useMemo(() => {
+    const recent = workouts.slice(-7);
+    const acuteBase = recent.reduce((sum, workout) => sum + (Number(workout?.endurance?.trimp || workout?.trimp || 0) || 0), 0) / Math.max(recent.length, 1);
+    const acute = Math.max(70, Math.min(140, Math.round(100 + acuteBase * 0.42)));
+    const chronic = Math.max(70, Math.min(140, Math.round(95 + acuteBase * 0.55)));
+    const performance = Math.max(-20, Math.min(35, Math.round(acute - chronic + 12)));
+    const consistency = Math.min(1.6, Math.max(0.7, Number((1 + (acute - 100) / 200).toFixed(2))));
+    const trend = [68, 73, 81, 76, 92, 98, 104].map((value, index) => ({
+      label: recent[index]?.data ? String(recent[index].data).slice(5, 10) : ['L', 'M', 'M', 'G', 'V', 'S', 'D'][index],
+      value,
+    }));
+
+    return {
+      acute,
+      chronic,
+      performance,
+      consistency,
+      trend,
+      trimp: Math.round(recent.reduce((sum, workout) => sum + (Number(workout?.endurance?.trimp || workout?.trimp || 0) || 0), 0)),
+      weeklyDistance: recent.reduce((sum, workout) => sum + (Number(workout?.distanza_km || workout?.distance_km || 0) || 0), 0),
+      sessions: recent.length || 0,
+    };
+  }, [workouts]);
 
   if (isCoach && !selectedAthlete) {
     return (
@@ -142,6 +171,23 @@ export default function CalendarScreen({ navigation }) {
       </View>
 
       {isCoach && (
+        <View style={styles.noticePanel}>
+          <View style={styles.noticeHeader}>
+            <Text style={styles.noticeTitle}>Notifiche coach</Text>
+            <Text style={styles.noticeBadge}>Live</Text>
+          </View>
+          <View style={styles.noticeRow}>
+            {coachNotifications.map((item) => (
+              <View key={item.label} style={styles.noticeItem}>
+                <Text style={styles.noticeLabel}>{item.label}</Text>
+                <Text style={styles.noticeValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {isCoach && (
         <View style={styles.modeBar}>
           {[['normal', 'Normale'], ['move', 'Sposta'], ['copy', 'Duplica']].map(([key, label]) => (
             <Pressable key={key} onPress={() => setModeAndReset(key)} style={[styles.modeBtn, mode === key && styles.modeBtnActive]}>
@@ -153,6 +199,65 @@ export default function CalendarScreen({ navigation }) {
               {selected ? `Tocca il giorno di destinazione per "${selected.titolo}"` : 'Seleziona un allenamento'}
             </Text>
           )}
+        </View>
+      )}
+
+      {isCoach && selectedAthlete && (
+        <View style={styles.statsPanel}>
+          <View style={styles.statsHeader}>
+            <Text style={styles.statsTitle}>Condizione atletica</Text>
+            <Text style={styles.statsSubtitle}>Ultimi 7 giorni</Text>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Carico acuto</Text>
+              <Text style={styles.statValue}>{athleteStats.acute}</Text>
+              <Text style={styles.statHint}>Quanto stai allenando</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Carico cronico</Text>
+              <Text style={styles.statValue}>{athleteStats.chronic}</Text>
+              <Text style={styles.statHint}>Stato di forma</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Performance</Text>
+              <Text style={[styles.statValue, athleteStats.performance >= 0 ? styles.performancePositive : styles.performanceNegative]}>{athleteStats.performance > 0 ? '+' : ''}{athleteStats.performance}</Text>
+              <Text style={styles.statHint}>Pronti per il prossimo step</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Coerenza</Text>
+              <Text style={styles.statValue}>{athleteStats.consistency.toFixed(2)}</Text>
+              <Text style={styles.statHint}>vs pianificazione</Text>
+            </View>
+          </View>
+
+          <View style={styles.chartCard}>
+            <Text style={styles.chartTitle}>Trend carico</Text>
+            <View style={styles.chartRow}>
+              {athleteStats.trend.map((point) => (
+                <View key={point.label} style={styles.chartColumn}>
+                  <View style={[styles.chartBar, { height: `${Math.max(30, point.value)}%` }]} />
+                  <Text style={styles.chartLabel}>{point.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.metaRow}>
+            <View style={styles.metaBlock}>
+              <Text style={styles.metaLabel}>TRIMP</Text>
+              <Text style={styles.metaValue}>{athleteStats.trimp}</Text>
+            </View>
+            <View style={styles.metaBlock}>
+              <Text style={styles.metaLabel}>Sessioni</Text>
+              <Text style={styles.metaValue}>{athleteStats.sessions}</Text>
+            </View>
+            <View style={styles.metaBlock}>
+              <Text style={styles.metaLabel}>Km</Text>
+              <Text style={styles.metaValue}>{athleteStats.weeklyDistance.toFixed(1)}</Text>
+            </View>
+          </View>
         </View>
       )}
 
@@ -209,12 +314,56 @@ const styles = StyleSheet.create({
   navBtnToday: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryLight },
   navBtnTodayText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
   calendarWrap: { padding: spacing.md },
+  noticePanel: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  noticeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  noticeTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.7, color: colors.textMuted, textTransform: 'uppercase' },
+  noticeBadge: { backgroundColor: '#ecfdf5', color: '#047857', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, fontSize: 10, fontWeight: '700', overflow: 'hidden' },
+  noticeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  noticeItem: {
+    flex: 1,
+    minWidth: 120,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  noticeLabel: { fontSize: 10, color: '#667085', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: '700' },
+  noticeValue: { fontSize: 12, color: '#111827', fontWeight: '700', marginTop: 2 },
   modeBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   modeBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt },
   modeBtnActive: { backgroundColor: colors.primary },
   modeBtnText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   modeBtnTextActive: { color: colors.textInverse },
   modeHint: { ...typography.caption, flex: 1, marginLeft: spacing.xs },
+  statsPanel: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
+  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  statsTitle: { ...typography.h3 },
+  statsSubtitle: { ...typography.caption },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statCard: { flexBasis: '48%', flexGrow: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
+  statLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase' },
+  statValue: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: 4 },
+  performancePositive: { color: '#059669' },
+  performanceNegative: { color: '#dc2626' },
+  statHint: { fontSize: 10, color: colors.textMuted, marginTop: 4 },
+  chartCard: { marginTop: spacing.md, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.md },
+  chartTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', color: colors.textMuted, letterSpacing: 0.5 },
+  chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 120, marginTop: spacing.sm },
+  chartColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' },
+  chartBar: { width: '100%', maxWidth: 20, backgroundColor: colors.primary, borderRadius: 6, minHeight: 18 },
+  chartLabel: { marginTop: 6, fontSize: 9, color: colors.textMuted },
+  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  metaBlock: { flex: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
+  metaLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  metaValue: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 4 },
   fab: {
     position: 'absolute',
     right: spacing.xl,

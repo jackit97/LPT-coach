@@ -11,6 +11,14 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState(user || {});
   const [saving, setSaving] = useState(false);
   const [togglingEndurance, setTogglingEndurance] = useState(false);
+  const [stravaConfig, setStravaConfig] = useState({
+    connected: false,
+    clientId: '',
+    clientSecret: '',
+    redirectUri: 'https://lpt-coach.pages.dev/',
+    syncMode: 'manual',
+  });
+  const [stats, setStats] = useState({ sessions: 18, distanceKm: 246.4, trimp: 132, avgRpe: 7.3 });
 
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
   const [days, setDays] = useState([]);
@@ -31,12 +39,99 @@ export default function ProfileScreen() {
     finally { setTogglingEndurance(false); }
   };
 
+  const connectStrava = () => {
+    Alert.alert(
+      'Collegamento Strava',
+      'Qui inserirai poi le credenziali Strava e il token di autorizzazione per importare allenamenti e note automatiche.',
+      [{ text: 'OK' }],
+    );
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.avatar}><Text style={styles.avatarText}>{user?.nome?.[0]?.toUpperCase() || '?'}</Text></View>
       <Text style={typography.h2}>{user?.nome}</Text>
       <Text style={typography.caption}>{user?.email}</Text>
       <Text style={styles.role}>{user?.ruolo === 'personal_trainer' ? 'Coach' : 'Atleta'}</Text>
+
+      {!isCoach && (
+        <View style={styles.statsPanel}>
+          <Text style={styles.statsTitle}>Riepilogo ultimi 30 giorni</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Sessioni</Text>
+              <Text style={styles.statValue}>{stats.sessions}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Distanza</Text>
+              <Text style={styles.statValue}>{stats.distanceKm.toFixed(1)} km</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Trimp</Text>
+              <Text style={styles.statValue}>{stats.trimp}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>RPE medio</Text>
+              <Text style={styles.statValue}>{stats.avgRpe.toFixed(1)}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {!isCoach && (
+        <View style={styles.stravaPanel}>
+          <View style={styles.stravaHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Collegamento Strava</Text>
+              <Text style={styles.stravaStatus}>{stravaConfig.connected ? 'Connesso' : 'Non connesso'}</Text>
+            </View>
+            <Pressable style={[styles.stravaButton, stravaConfig.connected && styles.stravaButtonConnected]} onPress={connectStrava}>
+              <Text style={styles.stravaButtonText}>{stravaConfig.connected ? 'Aggiorna' : 'Collega Strava'}</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.label}>Client ID</Text>
+          <TextInput
+            value={stravaConfig.clientId}
+            onChangeText={(value) => setStravaConfig((current) => ({ ...current, clientId: value }))}
+            style={styles.input}
+            placeholder="es. 123456"
+            keyboardType="numeric"
+          />
+
+          <Text style={styles.label}>Client Secret</Text>
+          <TextInput
+            value={stravaConfig.clientSecret}
+            onChangeText={(value) => setStravaConfig((current) => ({ ...current, clientSecret: value }))}
+            style={styles.input}
+            placeholder="Inserisci secret Strava"
+            secureTextEntry
+          />
+
+          <Text style={styles.label}>Redirect URI</Text>
+          <TextInput
+            value={stravaConfig.redirectUri}
+            onChangeText={(value) => setStravaConfig((current) => ({ ...current, redirectUri: value }))}
+            style={styles.input}
+            placeholder="https://..."
+          />
+
+          <Text style={styles.label}>Modalità import</Text>
+          <View style={styles.syncRow}>
+            {['manual', 'auto'].map((mode) => (
+              <Pressable
+                key={mode}
+                onPress={() => setStravaConfig((current) => ({ ...current, syncMode: mode }))}
+                style={[styles.syncChip, stravaConfig.syncMode === mode && styles.syncChipActive]}
+              >
+                <Text style={[styles.syncChipText, stravaConfig.syncMode === mode && styles.syncChipTextActive]}>
+                  {mode === 'manual' ? 'Manuale' : 'Automatica'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       {isCoach && (
         <View style={styles.enduranceRow}>
@@ -83,6 +178,23 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.textInverse, fontSize: 32, fontWeight: '700' },
   role: { ...typography.caption, marginTop: spacing.sm, backgroundColor: colors.primaryLight, color: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill },
   enduranceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  statsPanel: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  statsTitle: { ...typography.h3, marginBottom: spacing.sm },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statCard: { flexBasis: '48%', flexGrow: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
+  statLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase' },
+  statValue: { marginTop: 4, fontSize: 18, fontWeight: '800', color: colors.text },
+  stravaPanel: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  stravaHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
+  stravaStatus: { marginTop: 4, fontSize: 12, color: colors.primary, fontWeight: '700' },
+  stravaButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
+  stravaButtonConnected: { backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#10b981' },
+  stravaButtonText: { color: colors.textInverse, fontWeight: '700', fontSize: 12 },
+  syncRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
+  syncChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface },
+  syncChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  syncChipText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  syncChipTextActive: { color: colors.primary, fontWeight: '700' },
   warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
   warningText: { color: '#92400E', fontWeight: '600' },
   logoutBtn: { marginTop: spacing.xxl, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xxl },

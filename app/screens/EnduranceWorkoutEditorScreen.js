@@ -158,7 +158,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const [elevation, setElevation] = useState('0');
   const [generalZone, setGeneralZone] = useState('Z2');
   const [target, setTarget] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(route.params?.coachNote || '');
   const [videoUrls, setVideoUrls] = useState([]);
   const [videoModal, setVideoModal] = useState(false);
   const [videoInput, setVideoInput] = useState('');
@@ -484,6 +484,11 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   }, [calcDist, calcPace]);
 
   const currentSport = SPORTS.find((s) => s.key === sport) || SPORTS[0];
+  const coachNotifications = [
+    { label: 'Feedback', value: '3 da leggere' },
+    { label: 'Dieta', value: 'Aggiornata ieri' },
+    { label: 'Scheda', value: 'Da confermare' },
+  ];
 
   if (loading) {
     return (
@@ -805,7 +810,6 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
 
         {/* BOTTOM ANALYSIS SECTION (ZONE DI ALLENAMENTO, NOTE, VIDEO) */}
         <View style={styles.bottomGrid}>
-          {/* Card: Zone di allenamento */}
           <View style={styles.bottomCard}>
             <View style={styles.bottomCardHeader}>
               <Text style={styles.bottomCardTitle}>Zone di allenamento</Text>
@@ -857,9 +861,11 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* Card: Note generali */}
           <View style={styles.bottomCard}>
-            <Text style={styles.bottomCardTitle}>Note</Text>
+            <View style={styles.bottomCardHeader}>
+              <Text style={styles.bottomCardTitle}>Note</Text>
+              <Text style={styles.inlineChip}>Coach</Text>
+            </View>
             <TextInput
               value={notes}
               onChangeText={setNotes}
@@ -881,6 +887,19 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
             <Pressable style={styles.addVideoBtn} onPress={() => setVideoModal(true)}>
               <Text style={styles.addVideoText}>+ Aggiungi video</Text>
             </Pressable>
+          </View>
+
+          <View style={styles.bottomCard}>
+            <View style={styles.bottomCardHeader}>
+              <Text style={styles.bottomCardTitle}>Notifiche coach</Text>
+              <Text style={styles.inlineChip}>Live</Text>
+            </View>
+            {coachNotifications.map((item) => (
+              <View key={item.label} style={styles.notificationRow}>
+                <Text style={styles.notificationLabel}>{item.label}</Text>
+                <Text style={styles.notificationValue}>{item.value}</Text>
+              </View>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -1383,6 +1402,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   bottomCardTitle: { fontSize: 14, fontWeight: '700', color: '#2f4050' },
+  inlineChip: {
+    backgroundColor: '#ecfdf5',
+    color: '#047857',
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
   radioGroup: { flexDirection: 'row', gap: spacing.sm },
   radioItem: {
     paddingHorizontal: 8,
@@ -1412,14 +1441,30 @@ const styles = StyleSheet.create({
   notesTextarea: {
     borderWidth: 1,
     borderColor: '#e7eaec',
-    borderRadius: 4,
+    borderRadius: 6,
     padding: spacing.sm,
     fontSize: 12,
     color: '#333',
-    minHeight: 80,
+    minHeight: 96,
     textAlignVertical: 'top',
     marginTop: spacing.xs,
+    backgroundColor: '#fbfcfd',
   },
+
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  notificationLabel: { fontSize: 11, fontWeight: '700', color: '#475467', textTransform: 'uppercase', letterSpacing: 0.4 },
+  notificationValue: { fontSize: 12, fontWeight: '700', color: '#111827' },
 
   videoItemRow: {
     flexDirection: 'row',
