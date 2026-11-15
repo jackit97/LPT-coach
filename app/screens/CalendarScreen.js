@@ -6,8 +6,13 @@ import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import MonthCalendarGrid from '../components/MonthCalendarGrid';
 import AthletePicker from '../components/AthletePicker';
+import LoadChart from '../components/LoadChart';
 import { colors, spacing, radius, typography } from '../theme';
 import { toISODate, startOfWeek, addDays } from '../utils/dates';
+import { performanceStatus, formatShortDuration } from '../utils/endurance';
+
+const ALERT_ICONS = { inattivita: '⏸', aderenza: '📉', carico: '⚠', commenti: '💬' };
+const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
 
 const WEEKS_SHOWN = 5;
 const EVENT_TYPES = ['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pagamento'];
@@ -16,7 +21,7 @@ const fmtDay = (d) => d.toLocaleDateString('it-IT', { day: '2-digit', month: 'sh
 
 export default function CalendarScreen({ navigation }) {
   const { isCoach, enduranceEnabled, profileComplete } = useAuth();
-  const { selectedAthlete, targetUserId } = useAthlete();
+  const { selectedAthlete, targetUserId, clients, setSelectedAthlete } = useAthlete();
 
   const [weekStart, setWeekStart] = useState(() => addDays(startOfWeek(new Date()), -7));
   const [workouts, setWorkouts] = useState([]);
@@ -25,6 +30,10 @@ export default function CalendarScreen({ navigation }) {
   const [syncingStrava, setSyncingStrava] = useState(false);
   const [mode, setMode] = useState('normal'); // normal | move | copy
   const [selected, setSelected] = useState(null);
+  const [loadData, setLoadData] = useState(null);
+  const [assistant, setAssistant] = useState(null);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(true);
 
   const rangeEnd = addDays(weekStart, WEEKS_SHOWN * 7 - 1);
   const fromISO = toISODate(weekStart);
@@ -49,7 +58,32 @@ export default function CalendarScreen({ navigation }) {
     }
   }, [targetUserId, fromISO, toISO, enduranceEnabled]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Carico acuto/cronico/performance: ultime 8 settimane + 2 di proiezione sul pianificato
+  const loadTrainingLoad = useCallback(async () => {
+    if (!targetUserId || !enduranceEnabled) { setLoadData(null); return; }
+    const today = new Date();
+    try {
+      const { data } = await api.get('/endurance/load', {
+        params: { utenteId: targetUserId, from: toISODate(addDays(today, -55)), to: toISODate(addDays(today, 14)) },
+      });
+      setLoadData(data);
+    } catch {
+      setLoadData(null);
+    }
+  }, [targetUserId, enduranceEnabled]);
+
+  const loadAssistant = useCallback(async () => {
+    if (!isCoach) return;
+    try {
+      const { data } = await api.get('/pt/alerts');
+      setAssistant(data);
+    } catch {
+      setAssistant(null);
+    }
+  }, [isCoach]);
+
+  useFocusEffect(useCallback(() => { load(); loadTrainingLoad(); }, [load, loadTrainingLoad]));
+  useFocusEffect(useCallback(() => { loadAssistant(); }, [loadAssistant]));
 
   const workoutsByDate = useMemo(() => {
     const map = {};
@@ -126,35 +160,21 @@ export default function CalendarScreen({ navigation }) {
     }
   };
 
-  const coachNotifications = [
-    { label: 'Feedback', value: '3 nuovi' },
-    { label: 'Note', value: '2 da leggere' },
-    { label: 'Schede', value: '1 in revisione' },
-  ];
+  const condition = useMemo(() => {
+    if (!loadData?.current) return null;
+    const mondayISO = toISODate(startOfWeek(new Date()));
+    const week = (loadData.weeks || []).find((item) => item.settimana === mondayISO);
+    const adherence = week && week.secondi_pianificati > 0 ? Math.round((week.secondi_eseguiti / week.secondi_pianificati) * 100) : null;
+    const ratio = loadData.current.cronico > 1 ? loadData.current.acuto / loadData.current.cronico : null;
+    return { ...loadData.current, week, adherence, ratio, status: performanceStatus(loadData.current.performance) };
+  }, [loadData]);
 
-  const athleteStats = useMemo(() => {
-    const recent = workouts.slice(-7);
-    const acuteBase = recent.reduce((sum, workout) => sum + (Number(workout?.endurance?.trimp || workout?.trimp || 0) || 0), 0) / Math.max(recent.length, 1);
-    const acute = Math.max(70, Math.min(140, Math.round(100 + acuteBase * 0.42)));
-    const chronic = Math.max(70, Math.min(140, Math.round(95 + acuteBase * 0.55)));
-    const performance = Math.max(-20, Math.min(35, Math.round(acute - chronic + 12)));
-    const consistency = Math.min(1.6, Math.max(0.7, Number((1 + (acute - 100) / 200).toFixed(2))));
-    const trend = [68, 73, 81, 76, 92, 98, 104].map((value, index) => ({
-      label: recent[index]?.data ? String(recent[index].data).slice(5, 10) : ['L', 'M', 'M', 'G', 'V', 'S', 'D'][index],
-      value,
-    }));
-
-    return {
-      acute,
-      chronic,
-      performance,
-      consistency,
-      trend,
-      trimp: Math.round(recent.reduce((sum, workout) => sum + (Number(workout?.endurance?.trimp || workout?.trimp || 0) || 0), 0)),
-      weeklyDistance: recent.reduce((sum, workout) => sum + (Number(workout?.distanza_km || workout?.distance_km || 0) || 0), 0),
-      sessions: recent.length || 0,
-    };
-  }, [workouts]);
+  const athletesWithAlerts = (assistant?.athletes || []).filter((athlete) => athlete.alerts.length);
+  const visibleAlerts = showAllAlerts ? athletesWithAlerts : athletesWithAlerts.slice(0, 3);
+  const openAthlete = (athleteId) => {
+    const client = clients.find((item) => item.utenteid === athleteId);
+    if (client) setSelectedAthlete(client);
+  };
 
   if (isCoach && !selectedAthlete) {
     return (
@@ -204,23 +224,6 @@ export default function CalendarScreen({ navigation }) {
       </View>
 
       {isCoach && (
-        <View style={styles.noticePanel}>
-          <View style={styles.noticeHeader}>
-            <Text style={styles.noticeTitle}>Notifiche coach</Text>
-            <Text style={styles.noticeBadge}>Live</Text>
-          </View>
-          <View style={styles.noticeRow}>
-            {coachNotifications.map((item) => (
-              <View key={item.label} style={styles.noticeItem}>
-                <Text style={styles.noticeLabel}>{item.label}</Text>
-                <Text style={styles.noticeValue}>{item.value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {isCoach && (
         <View style={styles.modeBar}>
           {[['normal', 'Normale'], ['move', 'Sposta'], ['copy', 'Duplica']].map(([key, label]) => (
             <Pressable key={key} onPress={() => setModeAndReset(key)} style={[styles.modeBtn, mode === key && styles.modeBtnActive]}>
@@ -235,72 +238,84 @@ export default function CalendarScreen({ navigation }) {
         </View>
       )}
 
-      {isCoach && selectedAthlete && (
-        <View style={styles.statsPanel}>
-          <View style={styles.statsHeader}>
-            <Text style={styles.statsTitle}>Condizione atletica</Text>
-            <Text style={styles.statsSubtitle}>Ultimi 7 giorni</Text>
-          </View>
-
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Carico acuto</Text>
-              <Text style={styles.statValue}>{athleteStats.acute}</Text>
-              <Text style={styles.statHint}>Quanto stai allenando</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Carico cronico</Text>
-              <Text style={styles.statValue}>{athleteStats.chronic}</Text>
-              <Text style={styles.statHint}>Stato di forma</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Performance</Text>
-              <Text style={[styles.statValue, athleteStats.performance >= 0 ? styles.performancePositive : styles.performanceNegative]}>{athleteStats.performance > 0 ? '+' : ''}{athleteStats.performance}</Text>
-              <Text style={styles.statHint}>Pronti per il prossimo step</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Coerenza</Text>
-              <Text style={styles.statValue}>{athleteStats.consistency.toFixed(2)}</Text>
-              <Text style={styles.statHint}>vs pianificazione</Text>
-            </View>
-          </View>
-
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Trend carico</Text>
-            <View style={styles.chartRow}>
-              {athleteStats.trend.map((point) => (
-                <View key={point.label} style={styles.chartColumn}>
-                  <View style={[styles.chartBar, { height: `${Math.max(30, point.value)}%` }]} />
-                  <Text style={styles.chartLabel}>{point.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.metaRow}>
-            <View style={styles.metaBlock}>
-              <Text style={styles.metaLabel}>TRIMP</Text>
-              <Text style={styles.metaValue}>{athleteStats.trimp}</Text>
-            </View>
-            <View style={styles.metaBlock}>
-              <Text style={styles.metaLabel}>Sessioni</Text>
-              <Text style={styles.metaValue}>{athleteStats.sessions}</Text>
-            </View>
-            <View style={styles.metaBlock}>
-              <Text style={styles.metaLabel}>Km</Text>
-              <Text style={styles.metaValue}>{athleteStats.weeklyDistance.toFixed(1)}</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>
       ) : (
         <ScrollView
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); loadTrainingLoad(); loadAssistant(); }} />}
           contentContainerStyle={styles.calendarWrap}
         >
+          {isCoach && assistant && (
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <Text style={styles.panelTitle}>Coach Assistant</Text>
+                <Text style={[styles.panelBadge, !athletesWithAlerts.length && styles.panelBadgeOk]}>
+                  {athletesWithAlerts.length ? `${athletesWithAlerts.length} atleti da seguire` : 'Tutto in ordine'}
+                </Text>
+              </View>
+              {visibleAlerts.map((athlete) => (
+                <Pressable key={athlete.utenteid} style={[styles.alertRow, athlete.utenteid === targetUserId && styles.alertRowActive]} onPress={() => openAthlete(athlete.utenteid)}>
+                  <Text style={styles.alertName} numberOfLines={1}>{athlete.nome}</Text>
+                  <View style={styles.alertChips}>
+                    {athlete.alerts.map((alert) => (
+                      <Text key={alert.type} style={[styles.alertChip, { color: PRIORITY_COLORS[alert.priority], borderColor: PRIORITY_COLORS[alert.priority] }]} numberOfLines={1}>
+                        {ALERT_ICONS[alert.type]} {alert.message}
+                      </Text>
+                    ))}
+                  </View>
+                </Pressable>
+              ))}
+              {athletesWithAlerts.length > 3 && (
+                <Pressable onPress={() => setShowAllAlerts((value) => !value)}>
+                  <Text style={styles.linkText}>{showAllAlerts ? 'Mostra meno' : `Mostra tutti (${athletesWithAlerts.length})`}</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {enduranceEnabled && condition && (
+            <View style={styles.panel}>
+              <Pressable style={styles.panelHeader} onPress={() => setStatsOpen((value) => !value)}>
+                <Text style={styles.panelTitle}>Condizione atletica</Text>
+                <Text style={styles.linkText}>{statsOpen ? 'Nascondi ▴' : 'Mostra ▾'}</Text>
+              </Pressable>
+              <View style={styles.statsGrid}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statLabel}>Carico acuto</Text>
+                  <Text style={[styles.statValue, { color: '#2563eb' }]}>{Math.round(condition.acuto)}</Text>
+                  <Text style={styles.statHint}>Quanto si sta allenando (7 gg)</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statLabel}>Carico cronico</Text>
+                  <Text style={[styles.statValue, { color: '#c026d3' }]}>{Math.round(condition.cronico)}</Text>
+                  <Text style={styles.statHint}>Condizione di forma (42 gg)</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statLabel}>Performance</Text>
+                  <Text style={[styles.statValue, { color: condition.status.color }]}>{condition.performance > 0 ? '+' : ''}{Math.round(condition.performance)}</Text>
+                  <Text style={styles.statHint}>{condition.status.label}</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statLabel}>Settimana</Text>
+                  <Text style={styles.statValue}>{condition.adherence !== null ? `${condition.adherence}%` : '—'}</Text>
+                  <Text style={styles.statHint}>
+                    {condition.week ? `${formatShortDuration(condition.week.secondi_eseguiti)} di ${formatShortDuration(condition.week.secondi_pianificati)} · ${condition.week.trimp_eseguito} TRIMP` : 'Nessun allenamento'}
+                  </Text>
+                </View>
+              </View>
+              {statsOpen && (
+                <View style={styles.chartWrap}>
+                  <LoadChart series={loadData.series || []} />
+                  {condition.ratio !== null && (condition.ratio > 1.5 || condition.ratio < 0.5) && (
+                    <Text style={styles.ratioWarning}>
+                      Rapporto acuto/cronico {condition.ratio.toFixed(2)}: {condition.ratio > 1.5 ? 'aumento di carico troppo rapido' : 'carico in forte calo'}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
           <MonthCalendarGrid
             startDate={weekStart}
             weeks={WEEKS_SHOWN}
@@ -331,6 +346,8 @@ const styles = StyleSheet.create({
   profileWarningText: { color: '#92400E', fontWeight: '600' },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -341,7 +358,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...typography.h2 },
   headerSubtitle: { ...typography.caption, marginTop: 2 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   stravaSyncHeaderBtn: { backgroundColor: '#FC4C02', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   stravaSyncHeaderText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
   navBtn: { width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
@@ -349,56 +366,30 @@ const styles = StyleSheet.create({
   navBtnToday: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryLight },
   navBtnTodayText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
   calendarWrap: { padding: spacing.md },
-  noticePanel: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  noticeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  noticeTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.7, color: colors.textMuted, textTransform: 'uppercase' },
-  noticeBadge: { backgroundColor: '#ecfdf5', color: '#047857', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, fontSize: 10, fontWeight: '700', overflow: 'hidden' },
-  noticeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  noticeItem: {
-    flex: 1,
-    minWidth: 120,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  noticeLabel: { fontSize: 10, color: '#667085', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: '700' },
-  noticeValue: { fontSize: 12, color: '#111827', fontWeight: '700', marginTop: 2 },
   modeBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   modeBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt },
   modeBtnActive: { backgroundColor: colors.primary },
   modeBtnText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   modeBtnTextActive: { color: colors.textInverse },
   modeHint: { ...typography.caption, flex: 1, marginLeft: spacing.xs },
-  statsPanel: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
-  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  statsTitle: { ...typography.h3 },
-  statsSubtitle: { ...typography.caption },
+  panel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
+  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  panelTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.7, color: colors.textMuted, textTransform: 'uppercase' },
+  panelBadge: { backgroundColor: '#fef3c7', color: '#92400e', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, fontSize: 10, fontWeight: '700', overflow: 'hidden' },
+  panelBadgeOk: { backgroundColor: '#ecfdf5', color: '#047857' },
+  alertRow: { paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  alertRowActive: { backgroundColor: colors.primaryLight, marginHorizontal: -spacing.md, paddingHorizontal: spacing.md },
+  alertName: { fontSize: 13, fontWeight: '800', color: colors.text },
+  alertChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  alertChip: { fontSize: 10, fontWeight: '700', borderWidth: 1, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, maxWidth: '100%' },
+  linkText: { color: colors.accent, fontSize: 12, fontWeight: '700', marginTop: 4 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  statCard: { flexBasis: '48%', flexGrow: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
+  statCard: { flexBasis: '22%', minWidth: 140, flexGrow: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
   statLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase' },
   statValue: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: 4 },
-  performancePositive: { color: '#059669' },
-  performanceNegative: { color: '#dc2626' },
   statHint: { fontSize: 10, color: colors.textMuted, marginTop: 4 },
-  chartCard: { marginTop: spacing.md, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.md },
-  chartTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', color: colors.textMuted, letterSpacing: 0.5 },
-  chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 120, marginTop: spacing.sm },
-  chartColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' },
-  chartBar: { width: '100%', maxWidth: 20, backgroundColor: colors.primary, borderRadius: 6, minHeight: 18 },
-  chartLabel: { marginTop: 6, fontSize: 9, color: colors.textMuted },
-  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  metaBlock: { flex: 1, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: radius.md, padding: spacing.sm },
-  metaLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  metaValue: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 4 },
+  chartWrap: { marginTop: spacing.md },
+  ratioWarning: { marginTop: spacing.xs, color: colors.danger, fontSize: 11, fontWeight: '700' },
   fab: {
     position: 'absolute',
     right: spacing.xl,

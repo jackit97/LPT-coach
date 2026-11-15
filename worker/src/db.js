@@ -6,6 +6,7 @@ const TABLE_NAMES = [
   'calendar_workouts',
   'diete',
   'endurance_activities',
+  'endurance_block_library',
   'endurance_checkins',
   'endurance_goals',
   'endurance_integrations',

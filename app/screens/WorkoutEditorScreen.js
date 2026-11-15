@@ -2,31 +2,54 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import api from '../api/client';
 import DateField from '../components/DateField';
+import RpeSelector from '../components/RpeSelector';
+import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography, workoutTypeColors } from '../theme';
+import { trimpFromRpe } from '../utils/endurance';
 
-const TYPES = ['forza', 'mobilita'];
+const TYPES = [
+  { key: 'forza', label: 'Forza' },
+  { key: 'mobilita', label: 'Mobilità' },
+  { key: 'funzionale', label: 'Funzionale' },
+];
 
 export default function WorkoutEditorScreen({ route, navigation }) {
-  const existing = route.params?.workout || null;
-  const isEdit = !!existing;
+  const { targetUserId } = useAthlete();
+  // Si puo' aprire con l'oggetto workout (vecchio flusso) o solo con workoutId (dal dettaglio)
+  const editId = route.params?.workout?.workout_id || route.params?.workoutId || null;
+  const isEdit = !!editId;
+  const [existing, setExisting] = useState(route.params?.workout || null);
 
-  const [data, setData] = useState(existing ? String(existing.data).slice(0, 10) : route.params?.date);
-  const [tipo, setTipo] = useState(existing?.tipo || 'forza');
-  const [titolo, setTitolo] = useState(existing?.titolo || '');
-  const [descrizione, setDescrizione] = useState(existing?.descrizione || '');
-  const [durataMinuti, setDurataMinuti] = useState(existing?.durata_minuti ? String(existing.durata_minuti) : '');
-  const [rpePianificato, setRpePianificato] = useState(existing?.rpe_pianificato ? String(existing.rpe_pianificato) : '');
+  const [data, setData] = useState(route.params?.date || new Date().toISOString().slice(0, 10));
+  const [tipo, setTipo] = useState(route.params?.sport === 'funzionale' ? 'funzionale' : 'forza');
+  const [titolo, setTitolo] = useState('');
+  const [descrizione, setDescrizione] = useState(route.params?.coachNote || '');
+  const [durataMinuti, setDurataMinuti] = useState('');
+  const [rpePianificato, setRpePianificato] = useState('');
   const [esercizi, setEsercizi] = useState([]);
   const [exerciseSearch, setExerciseSearch] = useState({ index: null, query: '', results: [] });
   const [saving, setSaving] = useState(false);
+  const [loadingWorkout, setLoadingWorkout] = useState(isEdit);
 
   useEffect(() => {
-    if (isEdit) {
-      api.get(`/calendar/${existing.workout_id}`).then(({ data: full }) => {
+    if (!isEdit) return;
+    api.get(`/calendar/${editId}`)
+      .then(({ data: full }) => {
+        setExisting(full);
+        setData(String(full.data).slice(0, 10));
+        setTipo(full.tipo || 'forza');
+        setTitolo(full.titolo || '');
+        setDescrizione(full.descrizione || '');
+        const seconds = Number(full.durata_secondi ?? (Number(full.durata_minuti) || 0) * 60);
+        setDurataMinuti(seconds ? String(Math.round(seconds / 60)) : '');
+        setRpePianificato(full.rpe_pianificato ? String(full.rpe_pianificato) : '');
         setEsercizi((full.esercizi || []).map((e) => ({ ...e })));
-      });
-    }
-  }, [isEdit]);
+      })
+      .catch(() => Alert.alert('Errore', 'Impossibile caricare il workout'))
+      .finally(() => setLoadingWorkout(false));
+  }, [isEdit, editId]);
+
+  const plannedTrimp = durataMinuti ? trimpFromRpe(durataMinuti, rpePianificato) : 0;
 
   const addExercise = () => setEsercizi((prev) => [...prev, { nome: '', serie: '', ripetizioni: '', carico: '', recupero: '', note: '' }]);
   const updateExercise = (idx, field, value) => {
@@ -66,7 +89,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
     setSaving(true);
     try {
       const payload = {
-        utenteId: existing?.utenteid || route.params?.utenteId,
+        utenteId: existing?.utenteid || route.params?.utenteId || targetUserId,
         data,
         tipo,
         titolo,
@@ -76,7 +99,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         esercizi: esercizi.filter((e) => e.nome),
       };
 
-      let workoutId = existing?.workout_id;
+      let workoutId = editId;
       if (isEdit) {
         await api.put(`/calendar/${workoutId}`, payload);
         await api.put(`/calendar/${workoutId}/exercises`, { esercizi: payload.esercizi });
@@ -92,6 +115,10 @@ export default function WorkoutEditorScreen({ route, navigation }) {
     }
   };
 
+  if (loadingWorkout) {
+    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={colors.primary} size="large" /></View>;
+  }
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: spacing.lg }}>
       <Text style={typography.h1}>{isEdit ? 'Modifica workout' : 'Nuovo workout'}</Text>
@@ -102,8 +129,8 @@ export default function WorkoutEditorScreen({ route, navigation }) {
       <Text style={styles.fieldLabel}>Tipo</Text>
       <View style={styles.chipsRow}>
         {TYPES.map((t) => (
-          <Pressable key={t} onPress={() => setTipo(t)} style={[styles.chip, tipo === t && { backgroundColor: workoutTypeColors[t] + '22', borderColor: workoutTypeColors[t] }]}>
-            <Text style={[styles.chipText, tipo === t && { color: workoutTypeColors[t] }]}>{t === 'forza' ? 'Forza' : 'Mobilità'}</Text>
+          <Pressable key={t.key} onPress={() => setTipo(t.key)} style={[styles.chip, tipo === t.key && { backgroundColor: workoutTypeColors[t.key] + '22', borderColor: workoutTypeColors[t.key] }]}>
+            <Text style={[styles.chipText, tipo === t.key && { color: workoutTypeColors[t.key] }]}>{t.label}</Text>
           </Pressable>
         ))}
       </View>
@@ -114,15 +141,15 @@ export default function WorkoutEditorScreen({ route, navigation }) {
       <Text style={styles.fieldLabel}>Descrizione</Text>
       <TextInput value={descrizione} onChangeText={setDescrizione} style={[styles.input, styles.textArea]} multiline placeholder="Note generali sul workout" />
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <Text style={styles.fieldLabel}>Durata (min)</Text>
-          <TextInput value={durataMinuti} onChangeText={setDurataMinuti} keyboardType="numeric" style={styles.input} placeholder="60" />
-        </View>
-        <View style={styles.half}>
-          <Text style={styles.fieldLabel}>RPE pianificato</Text>
-          <TextInput value={rpePianificato} onChangeText={setRpePianificato} keyboardType="numeric" style={styles.input} placeholder="7" />
-        </View>
+      <Text style={styles.fieldLabel}>Durata (min)</Text>
+      <TextInput value={durataMinuti} onChangeText={setDurataMinuti} keyboardType="numeric" style={styles.input} placeholder="60" />
+
+      <Text style={styles.fieldLabel}>Intensità pianificata (RPE)</Text>
+      <RpeSelector value={rpePianificato} onChange={setRpePianificato} />
+      <View style={styles.loadPreview}>
+        <Text style={styles.loadPreviewLabel}>Carico stimato</Text>
+        <Text style={styles.loadPreviewValue}>{plannedTrimp ? `${plannedTrimp} TRIMP` : '—'}</Text>
+        <Text style={styles.loadPreviewHint}>Durata × intensità: entra nel carico acuto/cronico come gli allenamenti endurance</Text>
       </View>
 
       <View style={styles.section}>
@@ -183,6 +210,10 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   chipText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   section: { marginTop: spacing.xl },
+  loadPreview: { marginTop: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm },
+  loadPreviewLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' },
+  loadPreviewValue: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 2 },
+  loadPreviewHint: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   testSection: { marginTop: spacing.lg, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: radius.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   addLink: { color: colors.accent, fontWeight: '700' },

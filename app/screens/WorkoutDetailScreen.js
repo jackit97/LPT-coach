@@ -4,9 +4,43 @@ import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography, workoutTypeColors, statusColors } from '../theme';
+import RpeSelector from '../components/RpeSelector';
+import { ZONE_COLORS, sportInfo, formatHMS, formatKm } from '../utils/endurance';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
-const ZONE_COLORS = { Z1: '#8ED1D1', Z2: '#58C86B', Z3: '#F5E832', Z4: '#F4A340', Z5: '#EF4141', Z6: '#A83232', Z7: '#D96BE8' };
+const TRIMP_METHODS = { fc: 'da frequenza cardiaca', rpe: 'da RPE percepito', pianificato: 'dal pianificato sulla durata reale', stima: 'stimato' };
+
+// Dettaglio carico (CoachPeaking): confronto tra allenamento assegnato ed eseguito.
+function LoadDetail({ load }) {
+  if (!load) return null;
+  const rows = [
+    { label: 'Tempo', planned: load.secondi_pianificati ? formatHMS(load.secondi_pianificati) : '—', done: load.secondi_eseguiti ? formatHMS(load.secondi_eseguiti) : '—', pct: load.secondi_pianificati ? load.secondi_eseguiti / load.secondi_pianificati : null },
+    { label: 'Distanza', planned: load.metri_pianificati ? formatKm(load.metri_pianificati, 2) : '—', done: load.metri_eseguiti ? formatKm(load.metri_eseguiti, 2) : '—', pct: load.metri_pianificati ? load.metri_eseguiti / load.metri_pianificati : null },
+    { label: 'TRIMP', planned: load.trimp_pianificato || '—', done: load.trimp_eseguito || '—', pct: load.trimp_pianificato ? load.trimp_eseguito / load.trimp_pianificato : null },
+  ];
+  return (
+    <View style={styles.loadCard}>
+      <Text style={typography.h3}>Dettaglio carico</Text>
+      <View style={styles.loadHeaderRow}>
+        <Text style={[styles.loadCell, styles.loadHead, { flex: 1.2 }]} />
+        <Text style={[styles.loadCell, styles.loadHead]}>Assegnato</Text>
+        <Text style={[styles.loadCell, styles.loadHead]}>Eseguito</Text>
+        <Text style={[styles.loadCell, styles.loadHead]}>%</Text>
+      </View>
+      {rows.map((row) => (
+        <View key={row.label} style={styles.loadRow}>
+          <Text style={[styles.loadCell, { flex: 1.2, fontWeight: '700' }]}>{row.label}</Text>
+          <Text style={styles.loadCell}>{row.planned}</Text>
+          <Text style={[styles.loadCell, { fontWeight: '800' }]}>{row.done}</Text>
+          <Text style={[styles.loadCell, { color: row.pct === null ? colors.textMuted : row.pct < 0.7 ? colors.warning : colors.success, fontWeight: '800' }]}>
+            {row.pct === null || !row.done || row.done === '—' ? '—' : `${Math.round(row.pct * 100)}%`}
+          </Text>
+        </View>
+      ))}
+      {!!load.trimp_metodo && <Text style={styles.loadNote}>TRIMP eseguito {TRIMP_METHODS[load.trimp_metodo] || ''}</Text>}
+    </View>
+  );
+}
 
 function formatDuration(workout) {
   const seconds = Number(workout.durata_secondi ?? (Number(workout.durata_minuti) || 0) * 60);
@@ -37,7 +71,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
       const { data } = await api.get(`/calendar/${workoutId}`);
       setWorkout(data);
       if (data.feedback) {
-        setRpe(String(data.feedback.rpe ?? ''));
+        setRpe(data.feedback.rpe ? String(data.feedback.rpe) : '');
         setSensazione(data.feedback.sensazione ?? '');
         setDurataEffettiva(String(data.feedback.durata_effettiva_minuti ?? ''));
         setNote(data.feedback.note ?? '');
@@ -97,7 +131,12 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     return <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
-  const typeColor = workoutTypeColors[workout.tipo] || colors.primary;
+  const sport = sportInfo(workout.sport);
+  const typeColor = sport?.color || workoutTypeColors[workout.tipo] || colors.primary;
+  let videoUrls = [];
+  if (workout.endurance?.video_urls_json) {
+    try { videoUrls = JSON.parse(workout.endurance.video_urls_json) || []; } catch { videoUrls = []; }
+  }
   let structuredSteps = [];
   if (workout.endurance?.steps_json) {
     try { structuredSteps = JSON.parse(workout.endurance.steps_json); } catch { structuredSteps = []; }
@@ -119,11 +158,11 @@ export default function WorkoutDetailScreen({ route, navigation }) {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: spacing.lg }}>
       <View style={[styles.typeTag, { backgroundColor: typeColor + '1A', borderColor: typeColor }]}>
-        <Text style={[styles.typeTagText, { color: typeColor }]}>{workout.tipo?.toUpperCase()}</Text>
+        <Text style={[styles.typeTagText, { color: typeColor }]}>{sport ? `${sport.icon} ${sport.label.toUpperCase()}` : workout.tipo?.toUpperCase()}</Text>
       </View>
 
       <Text style={styles.title}>{workout.titolo}</Text>
-      <Text style={styles.date}>{String(workout.data).slice(0, 10)} · {calculatedStepSeconds > 0 ? formatDuration({ durata_secondi: calculatedStepSeconds }) : formatDuration(workout)}</Text>
+      <Text style={styles.date}>{String(workout.data).slice(0, 10)} · {calculatedStepSeconds > 0 ? formatDuration({ durata_secondi: calculatedStepSeconds }) : workout.load?.secondi_pianificati ? formatDuration({ durata_secondi: workout.load.secondi_pianificati }) : formatDuration(workout)}</Text>
 
       <View style={[styles.statusPill, { backgroundColor: (statusColors[workout.stato] || colors.textMuted) + '1A' }]}>
         <Text style={{ color: statusColors[workout.stato] || colors.textMuted, fontWeight: '700', fontSize: 12 }}>
@@ -169,18 +208,31 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {structuredSteps.length > 0 && (
+      {workout.load?.zone_profile?.length > 0 && (
         <View style={styles.chartSection}>
           <Text style={typography.h3}>Profilo allenamento</Text>
           <View style={styles.timeline}>
-            {structuredSteps.flatMap((step) => (step.children || []).length ? step.children : [step]).map((step, index) => {
-              const amount = Number(step.value || step.meters || 1) || 1;
-              const height = Math.min(72, 18 + Math.round(Math.log10(amount + 1) * 22));
-              return <View key={index} style={styles.barGroup}><View style={[styles.bar, { height, backgroundColor: ZONE_COLORS[String(step.zone || '').toUpperCase()] || colors.primary }]} /><Text style={styles.barLabel}>{step.zone || step.type || index + 1}</Text></View>;
+            {workout.load.zone_profile.map((segment, index) => {
+              const level = Number(String(segment.zone).replace(/\D/g, '')) || 0;
+              return (
+                <View key={index} style={{ flex: Math.max(1, segment.seconds), justifyContent: 'flex-end' }}>
+                  <View style={{ height: 8 + level * 11, backgroundColor: ZONE_COLORS[segment.zone] || colors.primary, borderTopLeftRadius: 2, borderTopRightRadius: 2 }} />
+                </View>
+              );
             })}
+          </View>
+          <View style={styles.zoneLegend}>
+            {Object.entries(workout.load.zone_seconds || {}).filter(([, sec]) => sec > 0).sort().map(([zone, sec]) => (
+              <View key={zone} style={styles.zoneLegendItem}>
+                <View style={[styles.zoneLegendDot, { backgroundColor: ZONE_COLORS[zone] || colors.primary }]} />
+                <Text style={styles.zoneLegendText}>{zone} {formatHMS(sec)}</Text>
+              </View>
+            ))}
           </View>
         </View>
       )}
+
+      <LoadDetail load={workout.load} />
 
       {!!workout.descrizione && (
         <View style={styles.section}>
@@ -206,6 +258,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           {!!workout.endurance.zone && <Text style={styles.detailLine}>Zona: {workout.endurance.zone}</Text>}
           {!!workout.endurance.target && <Text style={styles.detailLine}>Obiettivo: {workout.endurance.target}</Text>}
           {!!workout.endurance.rpe_target && <Text style={styles.detailLine}>RPE obiettivo: {workout.endurance.rpe_target}</Text>}
+          {!!workout.endurance.elevation_m && <Text style={styles.detailLine}>Dislivello: +{workout.endurance.elevation_m} m</Text>}
+          {videoUrls.map((url) => <Text key={url} style={styles.detailLine}>Video: {url}</Text>)}
           {!!workout.endurance.description && <Text style={styles.paragraph}>{workout.endurance.description}</Text>}
           {!!workout.endurance.steps_text && <Text style={styles.paragraph}>{workout.endurance.steps_text}</Text>}
           {structuredSteps.map((step, index) => (
@@ -261,8 +315,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
             ))}
           </View>
 
-          <Text style={styles.fieldLabel}>RPE (1-10)</Text>
-          <TextInput value={rpe} onChangeText={setRpe} keyboardType="numeric" style={styles.input} placeholder="7" />
+          <Text style={styles.fieldLabel}>Fatica percepita (RPE 1-10)</Text>
+          <RpeSelector value={rpe} onChange={setRpe} />
 
           <Text style={styles.fieldLabel}>Durata effettiva (minuti)</Text>
           <TextInput value={durataEffettiva} onChangeText={setDurataEffettiva} keyboardType="numeric" style={styles.input} placeholder="60" />
@@ -293,10 +347,17 @@ const styles = StyleSheet.create({
   date: { ...typography.caption, marginTop: spacing.xs },
   statusPill: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4, marginTop: spacing.sm },
   chartSection: { marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  timeline: { height: 104, flexDirection: 'row', alignItems: 'flex-end', gap: 4, borderBottomWidth: 1, borderBottomColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
-  barGroup: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', minWidth: 12 },
-  bar: { width: '80%', minWidth: 6, borderRadius: 2 },
-  barLabel: { fontSize: 9, color: colors.textMuted, marginTop: 4 },
+  timeline: { height: 96, flexDirection: 'row', alignItems: 'stretch', gap: 1, borderBottomWidth: 1, borderBottomColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
+  zoneLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  zoneLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  zoneLegendDot: { width: 10, height: 10, borderRadius: 2 },
+  zoneLegendText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  loadCard: { marginTop: spacing.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  loadHeaderRow: { flexDirection: 'row', marginTop: spacing.sm, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
+  loadRow: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  loadCell: { flex: 1, fontSize: 13, color: colors.text },
+  loadHead: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' },
+  loadNote: { fontSize: 11, color: colors.textMuted, marginTop: spacing.xs },
   section: { marginTop: spacing.xl },
   fitButton: { alignSelf: 'flex-start', marginTop: spacing.sm, backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
   fitButtonText: { color: colors.textInverse, fontWeight: '700', fontSize: 12 },

@@ -130,6 +130,7 @@ ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS external_provider 
 ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS distance_km NUMERIC(6,2);
 ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS avg_hr INT;
 ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS elev_gain_m INT;
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS sport VARCHAR(20); -- corsa | ciclismo | nuoto
 
 CREATE INDEX IF NOT EXISTS idx_calendar_workouts_utente_data ON lptapp.calendar_workouts(utenteid, data);
 CREATE INDEX IF NOT EXISTS idx_calendar_workouts_coach ON lptapp.calendar_workouts(coach_userid, data);
@@ -283,6 +284,21 @@ CREATE TABLE IF NOT EXISTS lptapp.endurance_sessions (
   rpe_target SMALLINT,
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE lptapp.endurance_sessions ADD COLUMN IF NOT EXISTS sport VARCHAR(20);
+ALTER TABLE lptapp.endurance_sessions ADD COLUMN IF NOT EXISTS elevation_m INT;
+ALTER TABLE lptapp.endurance_sessions ADD COLUMN IF NOT EXISTS video_urls_json TEXT;
+
+-- Libreria blocchi del coach (CoachPeaking: blocchi riutilizzabili negli allenamenti)
+CREATE TABLE IF NOT EXISTS lptapp.endurance_block_library (
+  block_id SERIAL PRIMARY KEY,
+  pt_user_id INT NOT NULL REFERENCES lptapp.utenti(utenteid) ON DELETE CASCADE,
+  sport VARCHAR(20),
+  title VARCHAR(200) NOT NULL,
+  block_json TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_endurance_block_library_coach ON lptapp.endurance_block_library(pt_user_id);
 
 CREATE TABLE IF NOT EXISTS lptapp.endurance_checkins (
   checkin_id SERIAL PRIMARY KEY,

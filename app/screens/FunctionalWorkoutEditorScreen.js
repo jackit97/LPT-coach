@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndic
 import api from '../api/client';
 import DateField from '../components/DateField';
 import ValuePicker from '../components/ValuePicker';
+import RpeSelector from '../components/RpeSelector';
+import { trimpFromRpe } from '../utils/endurance';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
 
@@ -13,7 +15,8 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
   const { targetUserId } = useAthlete();
   const [date, setDate] = useState(route.params?.date || new Date().toISOString().slice(0, 10));
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(route.params?.coachNote || '');
+  const [rpe, setRpe] = useState('');
   const [duration, setDuration] = useState('');
   const [exercises, setExercises] = useState([emptyExercise()]);
   const [search, setSearch] = useState({ index: null, query: '', results: [] });
@@ -36,7 +39,7 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
     if (!targetUserId || !date || !title.trim()) return Alert.alert('Errore', 'Data e titolo sono obbligatori');
     setSaving(true);
     try {
-      await api.post('/calendar/functional', { utenteId: targetUserId, data: date, titolo: title.trim(), descrizione: description, durataMinuti: duration ? Number(duration) : null, esercizi: exercises.filter((exercise) => exercise.nome).map((exercise) => ({ nome: exercise.nome, ripetizioni: exercise.unit === 'ripetizioni' ? exercise.amount : null, carico: exercise.unit === 'metri' ? `${exercise.amount} m` : exercise.unit === 'minuti' ? `${exercise.amount} min` : null, note: exercise.note })) });
+      await api.post('/calendar/functional', { utenteId: targetUserId, data: date, titolo: title.trim(), descrizione: description, durataMinuti: duration ? Number(duration) : null, rpePianificato: rpe ? Number(rpe) : null, esercizi: exercises.filter((exercise) => exercise.nome).map((exercise) => ({ nome: exercise.nome, ripetizioni: exercise.unit === 'ripetizioni' ? exercise.amount : null, carico: exercise.unit === 'metri' ? `${exercise.amount} m` : exercise.unit === 'minuti' ? `${exercise.amount} min` : null, note: exercise.note })) });
       navigation.goBack();
     } catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare l\'allenamento funzionale'); }
     finally { setSaving(false); }
@@ -47,6 +50,8 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
     <Text style={styles.label}>Data</Text><DateField value={date} onChange={setDate} />
     <Text style={styles.label}>Titolo</Text><TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Circuito full body" />
     <Text style={styles.label}>Durata totale personalizzata (minuti)</Text><TextInput value={duration} onChangeText={setDuration} keyboardType="numeric" style={styles.input} placeholder="45" />
+    <Text style={styles.label}>Intensità pianificata (RPE)</Text><RpeSelector value={rpe} onChange={setRpe} />
+    {!!duration && <Text style={styles.loadHint}>Carico stimato: {trimpFromRpe(duration, rpe)} TRIMP</Text>}
     <Text style={styles.label}>Descrizione</Text><TextInput value={description} onChangeText={setDescription} style={[styles.input, styles.area]} multiline placeholder="Struttura e indicazioni del circuito" />
     <View style={styles.sectionHeader}><Text style={typography.h3}>Esercizi</Text><Pressable onPress={() => setExercises((current) => [...current, emptyExercise()])}><Text style={styles.addLink}>+ Aggiungi esercizio</Text></Pressable></View>
     {exercises.map((exercise, index) => <View key={index} style={styles.exercise}>
@@ -60,4 +65,4 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
   </ScrollView>;
 }
 
-const styles = StyleSheet.create({ screen: { flex: 1, backgroundColor: colors.bg }, content: { padding: spacing.lg, paddingBottom: spacing.xxl }, label: { ...typography.caption, marginTop: spacing.md, marginBottom: spacing.xs }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface }, area: { minHeight: 70, textAlignVertical: 'top' }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm }, addLink: { color: colors.primary, fontWeight: '700' }, exercise: { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm }, exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, exerciseName: { flex: 1 }, suggestion: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, suggestionText: { color: colors.text, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, amount: { flex: 1 }, unitButton: { width: 110 }, unit: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface }, remove: { color: colors.danger, fontSize: 12, fontWeight: '700' }, modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'center', padding: spacing.xl }, modalCard: { backgroundColor: colors.surface, borderRadius: radius.md, overflow: 'hidden' }, option: { padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }, optionText: { color: colors.text, fontWeight: '600' }, actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl }, cancel: { flex: 1, padding: spacing.md, alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md }, save: { flex: 1, padding: spacing.md, alignItems: 'center', backgroundColor: colors.primary, borderRadius: radius.md }, saveText: { color: '#fff', fontWeight: '700' } });
+const styles = StyleSheet.create({ screen: { flex: 1, backgroundColor: colors.bg }, content: { padding: spacing.lg, paddingBottom: spacing.xxl }, label: { ...typography.caption, marginTop: spacing.md, marginBottom: spacing.xs }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface }, area: { minHeight: 70, textAlignVertical: 'top' }, loadHint: { ...typography.caption, marginTop: spacing.xs, fontWeight: '700' }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm }, addLink: { color: colors.primary, fontWeight: '700' }, exercise: { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm }, exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, exerciseName: { flex: 1 }, suggestion: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, suggestionText: { color: colors.text, fontWeight: '600' }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, amount: { flex: 1 }, unitButton: { width: 110 }, unit: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface }, remove: { color: colors.danger, fontSize: 12, fontWeight: '700' }, modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'center', padding: spacing.xl }, modalCard: { backgroundColor: colors.surface, borderRadius: radius.md, overflow: 'hidden' }, option: { padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }, optionText: { color: colors.text, fontWeight: '600' }, actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl }, cancel: { flex: 1, padding: spacing.md, alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md }, save: { flex: 1, padding: spacing.md, alignItems: 'center', backgroundColor: colors.primary, borderRadius: radius.md }, saveText: { color: '#fff', fontWeight: '700' } });

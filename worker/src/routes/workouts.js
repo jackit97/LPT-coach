@@ -34,6 +34,7 @@ async function loadWorkoutSnapshot(sql, workoutId, coachId) {
 // Creates a calendar workout (plus exercises / endurance session) from a normalized snapshot.
 async function insertWorkoutFromSnapshot(sql, coachId, utenteId, data, snap) {
   let sessionId = null;
+  const sport = snap.endurance?.sport || snap.sport || null;
   if (snap.endurance) {
     const e = snap.endurance;
     let plans = await sql`SELECT plan_id FROM endurance_plans WHERE user_id = ${utenteId} AND is_active = 1 ORDER BY plan_id DESC LIMIT 1`;
@@ -44,18 +45,20 @@ async function insertWorkoutFromSnapshot(sql, coachId, utenteId, data, snap) {
       `;
     }
     const sessions = await sql`
-      INSERT INTO endurance_sessions (plan_id, "date", title, zone, duration_minutes, duration_seconds, target, description, rpe_target, steps_text, steps_json)
+      INSERT INTO endurance_sessions (plan_id, "date", title, zone, duration_minutes, duration_seconds, target, description, rpe_target, steps_text, steps_json, sport, elevation_m, video_urls_json)
       VALUES (${plans[0].plan_id}, ${data}, ${snap.titolo}, ${e.zone || null}, ${e.duration_minutes || snap.durataMinuti || 0}, ${e.duration_seconds || null},
-        ${e.target || null}, ${e.description || null}, ${e.rpe_target || null}, ${e.steps_text || null}, ${e.steps_json || null})
+        ${e.target || null}, ${e.description || null}, ${e.rpe_target || null}, ${e.steps_text || null}, ${e.steps_json || null},
+        ${sport}, ${e.elevation_m || null}, ${e.video_urls_json || null})
       RETURNING session_id
     `;
     sessionId = sessions[0].session_id;
   }
   const workouts = await sql`
     INSERT INTO calendar_workouts
-      (utenteid, coach_userid, endurance_session_id, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, colore, stato)
+      (utenteid, coach_userid, endurance_session_id, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, colore, sport, stato)
     VALUES (${utenteId}, ${coachId}, ${sessionId}, ${data}, ${snap.tipo || 'forza'}, ${snap.titolo}, ${snap.descrizione || null},
-      ${snap.durataMinuti || null}, ${snap.durataSecondi || null}, ${snap.rpe || null}, ${snap.colore || null}, 'pianificato')
+      ${snap.durataMinuti || null}, ${snap.durataSecondi || (snap.durataMinuti ? snap.durataMinuti * 60 : null)}, ${snap.rpe || snap.endurance?.rpe_target || null},
+      ${snap.colore || null}, ${sport}, 'pianificato')
     RETURNING *
   `;
   const workout = workouts[0];
@@ -85,7 +88,7 @@ app.post('/duplicate/:id', async (c) => {
   const w = snap.workout;
   const created = await insertWorkoutFromSnapshot(sql, user.userId, targetId, data, {
     tipo: w.tipo, titolo: w.titolo, descrizione: w.descrizione, durataMinuti: w.durata_minuti,
-    durataSecondi: w.durata_secondi, rpe: w.rpe_pianificato, colore: w.colore,
+    durataSecondi: w.durata_secondi, rpe: w.rpe_pianificato, colore: w.colore, sport: w.sport,
     esercizi: snap.esercizi, endurance: snap.endurance,
   });
   return c.json(created, 201);
@@ -104,6 +107,7 @@ app.post('/templates/from-workout/:id', async (c) => {
     zone: snap.endurance.zone, target: snap.endurance.target, description: snap.endurance.description,
     rpe_target: snap.endurance.rpe_target, steps_text: snap.endurance.steps_text, steps_json: snap.endurance.steps_json,
     duration_minutes: snap.endurance.duration_minutes, duration_seconds: snap.endurance.duration_seconds,
+    sport: snap.endurance.sport || w.sport, elevation_m: snap.endurance.elevation_m, video_urls_json: snap.endurance.video_urls_json,
   }) : null;
   const templates = await sql`
     INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo, durata_minuti, durata_secondi, endurance_json)

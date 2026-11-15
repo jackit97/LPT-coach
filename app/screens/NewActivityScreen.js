@@ -1,14 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-native';
 import { useAthlete } from '../context/AthleteContext';
+import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
 
+// Gli editor endurance/funzionale/forza sono nello stack del calendario: dopo il salvataggio si torna al calendario.
+// La scheda palestra multi-giorno resta nella tab Pesistica.
 const SPORTS = [
-  { key: 'nuoto', label: 'Nuoto', icon: '🏊', color: '#1c84c6', tab: 'EnduranceTab', screen: 'EnduranceWorkoutEditor' },
-  { key: 'ciclismo', label: 'Ciclismo', icon: '🚴', color: '#1ab394', tab: 'EnduranceTab', screen: 'EnduranceWorkoutEditor' },
-  { key: 'corsa', label: 'Corsa', icon: '🏃', color: '#f37021', tab: 'EnduranceTab', screen: 'EnduranceWorkoutEditor' },
-  { key: 'palestra', label: 'Palestra', icon: '🏋️', color: '#7c3aed', tab: 'StrengthTab', screen: 'StrengthSheetEditor' },
-  { key: 'funzionale', label: 'Funzionale', icon: '⚡', color: '#0d9488', tab: 'EnduranceTab', screen: 'FunctionalWorkoutEditor' },
+  { key: 'nuoto', label: 'Nuoto', icon: '🏊', color: '#1c84c6', screen: 'EnduranceWorkoutEditor', endurance: true },
+  { key: 'ciclismo', label: 'Ciclismo', icon: '🚴', color: '#1ab394', screen: 'EnduranceWorkoutEditor', endurance: true },
+  { key: 'corsa', label: 'Corsa', icon: '🏃', color: '#f37021', screen: 'EnduranceWorkoutEditor', endurance: true },
+  { key: 'forza', label: 'Forza', icon: '🏋️', color: '#2563eb', screen: 'WorkoutEditor' },
+  { key: 'funzionale', label: 'Funzionale', icon: '⚡', color: '#0d9488', screen: 'FunctionalWorkoutEditor' },
+  { key: 'palestra', label: 'Scheda palestra', icon: '📋', color: '#7c3aed', tab: 'StrengthTab', screen: 'StrengthSheetEditor' },
 ];
 
 const OTHERS = [
@@ -25,6 +29,8 @@ const shortName = (name = '') => {
 
 export default function NewActivityScreen({ route, navigation }) {
   const { selectedAthlete } = useAthlete();
+  const { enduranceEnabled } = useAuth();
+  const sports = SPORTS.filter((sport) => enduranceEnabled || !sport.endurance);
   const date = route.params?.date;
   const athleteId = route.params?.utenteId || selectedAthlete?.utenteid;
   const [quickNote, setQuickNote] = useState('');
@@ -33,10 +39,12 @@ export default function NewActivityScreen({ route, navigation }) {
   const initials = useMemo(() => shortName(athleteLabel), [athleteLabel]);
 
   const handleSport = (sport) => {
-    navigation.getParent()?.navigate(sport.tab, {
-      screen: sport.screen,
-      params: { utenteId: athleteId, date, sport: sport.key, coachNote: quickNote.trim() },
-    });
+    const params = { utenteId: athleteId, date, sport: sport.key, coachNote: quickNote.trim() };
+    if (sport.tab) {
+      navigation.getParent()?.navigate(sport.tab, { screen: sport.screen, params });
+      return;
+    }
+    navigation.replace(sport.screen, params);
   };
 
   const handleOther = (item) => {
@@ -79,7 +87,7 @@ export default function NewActivityScreen({ route, navigation }) {
 
         <Text style={styles.sectionHeading}>Aggiungi allenamento</Text>
         <View style={styles.sportsGrid}>
-          {SPORTS.map((s) => (
+          {sports.map((s) => (
             <Pressable
               key={s.key}
               style={({ pressed }) => [styles.sportBtn, pressed && styles.btnPressed]}

@@ -5,16 +5,14 @@ import {
 } from 'react-native';
 import api from '../api/client';
 import DateField from '../components/DateField';
+import OptionPicker from '../components/OptionPicker';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, radius, spacing, typography } from '../theme';
 import { toISODate } from '../utils/dates';
-
-const SPORTS = [
-  { key: 'corsa', label: 'Corsa', icon: '🏃', color: '#f37021' },
-  { key: 'ciclismo', label: 'Ciclismo', icon: '🚴', color: '#1ab394' },
-  { key: 'nuoto', label: 'Nuoto', icon: '🏊', color: '#1c84c6' },
-  { key: 'palestra', label: 'Palestra', icon: '🏋️', color: '#7c3aed' },
-];
+import {
+  SPORTS, ZONE_COLORS, DEFAULT_ZONES, BIKE_SPEED_KMH, ZONE_TRIMP_WEIGHTS,
+  parsePaceSeconds, parseTimeValue, formatHMS, formatKm, sportInfo,
+} from '../utils/endurance';
 
 const PHASES = [
   { key: 'Riscaldamento', label: 'Riscaldamento', color: '#23c6c8' },
@@ -33,26 +31,8 @@ const UNITS = [
 
 const ZONE_RANGES = ['zona intera', 'bassa', 'centrale', 'alta'];
 
-const DEFAULT_PACE_ZONES = [
-  { key: 'Z1', name: 'Recupero', min: '07:26', max: '06:14' },
-  { key: 'Z2', name: 'Aerobico', min: '06:14', max: '05:30' },
-  { key: 'Z3', name: 'Medio', min: '05:30', max: '04:56' },
-  { key: 'Z4', name: 'Soglia', min: '04:56', max: '04:30' },
-  { key: 'Z5', name: 'Vo2Max', min: '04:30', max: '04:06' },
-  { key: 'Z6', name: 'Anaerobico', min: '04:06', max: '03:45' },
-  { key: 'Z7', name: 'Sprint', min: '03:45', max: '03:18' },
-];
-
-const ZONE_COLORS = {
-  Z0: '#cccccc',
-  Z1: '#8ed1d1',
-  Z2: '#58c86b',
-  Z3: '#f5e832',
-  Z4: '#f4a340',
-  Z5: '#ef4141',
-  Z6: '#a83232',
-  Z7: '#d96be8',
-};
+// Zona "Z0" = recupero da fermo (CoachPeaking: "Recupero fermo"), sempre disponibile.
+const REST_ZONE = { key: 'Z0', name: 'Recupero fermo', min: '', max: '' };
 
 const BLOCK_PRESETS = [
   {
@@ -110,40 +90,6 @@ function emptyBlock(type = 'Lavoro', title = '') {
   };
 }
 
-function parsePaceSeconds(value) {
-  const match = String(value || '').match(/(\d+):([0-5]\d)/);
-  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
-}
-
-function parseTimeValue(value) {
-  const text = String(value || '').trim();
-  if (text.includes(':')) {
-    const parts = text.split(':').map(Number);
-    if (parts.length === 3 && parts.every(Number.isFinite)) {
-      return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    }
-    if (parts.length === 2 && parts.every(Number.isFinite)) {
-      return parts[0] * 60 + parts[1];
-    }
-  }
-  const num = Number(text.replace(',', '.'));
-  return Number.isFinite(num) ? num * 60 : 0;
-}
-
-function formatHMS(seconds) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '0:00:00';
-  const total = Math.round(seconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function formatKm(meters) {
-  if (!Number.isFinite(meters) || meters <= 0) return '0.0 km';
-  return `${(meters / 1000).toFixed(1)} km`;
-}
-
 export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const workoutId = route.params?.workoutId;
   const isEdit = Boolean(workoutId);
@@ -154,7 +100,6 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const [title, setTitle] = useState('');
   const [autoDesc, setAutoDesc] = useState(true);
   const [stars, setStars] = useState(3);
-  const [paceMode, setPaceMode] = useState('Passo');
   const [elevation, setElevation] = useState('0');
   const [generalZone, setGeneralZone] = useState('Z2');
   const [target, setTarget] = useState('');
@@ -169,7 +114,8 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   ]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
-  const [athleteZones, setAthleteZones] = useState([]);
+  const [athleteZones, setAthleteZones] = useState({});
+  const [libraryBlocks, setLibraryBlocks] = useState([]);
   const [zoneViewMode, setZoneViewMode] = useState('tempo'); // 'tempo' | 'distanza'
 
   // Modals
@@ -187,7 +133,15 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
       .then(({ data }) => {
         setDate(String(data.data).slice(0, 10));
         setTitle(data.titolo || '');
+        setAutoDesc(false);
         setNotes(data.descrizione || '');
+        const savedSport = data.sport || data.endurance?.sport;
+        if (sportInfo(savedSport)) setSport(savedSport);
+        if (data.endurance?.elevation_m) setElevation(String(data.endurance.elevation_m));
+        if (data.rpe_pianificato) setStars(Math.min(5, Math.max(1, Math.round(Number(data.rpe_pianificato) / 2))));
+        if (data.endurance?.video_urls_json) {
+          try { const urls = JSON.parse(data.endurance.video_urls_json); if (Array.isArray(urls)) setVideoUrls(urls); } catch { /* ignore */ }
+        }
         setGeneralZone(data.endurance?.zone || 'Z2');
         setTarget(data.endurance?.target || '');
         if (data.endurance?.steps_json) {
@@ -216,41 +170,64 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
       .finally(() => setLoading(false));
   }, [workoutId]);
 
-  // Load athlete pace zones
+  // Zone dell'atleta (tutti gli sport): passo corsa /km, potenza bici W, passo nuoto /100m
   useEffect(() => {
+    if (!targetUserId) return;
     api.get('/zones', { params: { utenteId: targetUserId } })
-      .then(({ data }) => {
-        const pace = data.zones?.pace;
-        if (Array.isArray(pace) && pace.length) {
-          setAthleteZones(pace.map((z) => ({
-            key: z.key,
-            name: z.name || z.key,
-            min: String(z.min || '').replace('/km', '').trim(),
-            max: String(z.max || '').replace('/km', '').trim(),
-          })));
-        } else {
-          setAthleteZones(DEFAULT_PACE_ZONES);
-        }
-      })
-      .catch(() => setAthleteZones(DEFAULT_PACE_ZONES));
+      .then(({ data }) => setAthleteZones(data.zones || {}))
+      .catch(() => setAthleteZones({}));
   }, [targetUserId]);
 
-  const activeZones = athleteZones.length ? athleteZones : DEFAULT_PACE_ZONES;
+  // Libreria blocchi personale del coach
+  const loadLibrary = async () => {
+    try {
+      const { data } = await api.get('/endurance/blocks', { params: { sport } });
+      setLibraryBlocks(data || []);
+    } catch {
+      setLibraryBlocks([]);
+    }
+  };
+  useEffect(() => { loadLibrary(); }, [sport]);
 
-  // Pace in seconds per km for a given zone
-  const getPaceSeconds = (zoneKey, subzone = 'zona intera') => {
+  const currentSport = sportInfo(sport) || SPORTS[0];
+  const cleanValue = (value) => String(value ?? '').replace(/\/km|\/100m|W/g, '').trim();
+  const activeZones = useMemo(() => {
+    const group = currentSport.zoneGroup;
+    const fromAthlete = Array.isArray(athleteZones[group]) ? athleteZones[group] : [];
+    const hasValues = fromAthlete.some((zone) => cleanValue(zone.min) || cleanValue(zone.max));
+    const list = (hasValues ? fromAthlete : DEFAULT_ZONES[group] || DEFAULT_ZONES.pace)
+      .filter((zone) => /^Z[1-7]$/.test(zone.key))
+      .map((zone) => ({ key: zone.key, name: zone.name || zone.key, min: cleanValue(zone.min), max: cleanValue(zone.max) }));
+    return list;
+  }, [athleteZones, currentSport.zoneGroup]);
+  const usingDefaultZones = !(athleteZones[currentSport.zoneGroup] || []).some((zone) => cleanValue(zone.min) || cleanValue(zone.max));
+
+  const zoneRangeLabel = (zone) => {
+    if (!zone || (!zone.min && !zone.max)) return '';
+    return `${zone.min} - ${zone.max} ${currentSport.unit}`;
+  };
+
+  // Secondi necessari per percorrere 1 km nella zona indicata (per stimare tempo <-> distanza)
+  const getSecondsPerKm = (zoneKey, subzone = 'zona intera') => {
+    if (zoneKey === 'Z0') return 0;
+    if (currentSport.key === 'ciclismo') {
+      const speed = BIKE_SPEED_KMH[zoneKey] || 28;
+      return 3600 / speed;
+    }
     const found = activeZones.find((z) => z.key === zoneKey);
-    if (!found) return 300; // default 5:00 min/km
-    const minSec = parsePaceSeconds(found.min) || 300;
-    const maxSec = parsePaceSeconds(found.max) || 270;
-    if (subzone === 'bassa') return minSec;
-    if (subzone === 'alta') return maxSec;
-    return (minSec + maxSec) / 2;
+    const fallback = currentSport.key === 'nuoto' ? 130 : 300;
+    if (!found) return fallback * (1000 / currentSport.base);
+    const minSec = parsePaceSeconds(found.min) || fallback;
+    const maxSec = parsePaceSeconds(found.max) || minSec;
+    let pace = (minSec + maxSec) / 2;
+    if (subzone === 'bassa') pace = minSec;
+    if (subzone === 'alta') pace = maxSec;
+    return pace * (1000 / currentSport.base);
   };
 
   // Step duration & distance calculation
   const calcStep = (step) => {
-    const pace = getPaceSeconds(step.zone, step.subzone);
+    const pace = getSecondsPerKm(step.zone, step.subzone);
     let seconds = 0;
     let meters = 0;
 
@@ -313,14 +290,15 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
     });
 
     // Trimp estimation
-    const zoneWeights = { Z0: 1, Z1: 1, Z2: 1.5, Z3: 2.2, Z4: 3.2, Z5: 4.5, Z6: 6.0, Z7: 8.0 };
     let trimp = 0;
     Object.entries(zoneTime).forEach(([zk, sec]) => {
-      trimp += (sec / 60) * (zoneWeights[zk] || 1);
+      trimp += (sec / 60) * (ZONE_TRIMP_WEIGHTS[zk] ?? 1);
     });
 
-    // Kcal estimation (approx 1 kcal per kg per km, standard ~70kg)
-    const kcal = Math.round((totalMeters / 1000) * 72);
+    // Stima kcal (atleta ~70 kg): corsa ~1 kcal/kg/km, bici ~10 kcal/min, nuoto ~9 kcal/min
+    const kcal = currentSport.key === 'corsa'
+      ? Math.round((totalMeters / 1000) * 72)
+      : Math.round((totalSeconds / 60) * (currentSport.key === 'ciclismo' ? 10 : 9));
 
     // Density: active work vs rest
     const densita = recoverySeconds > 0
@@ -336,7 +314,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
       kcal,
       densita,
     };
-  }, [blocks, activeZones]);
+  }, [blocks, activeZones, currentSport.key]);
 
   // Auto-generate title if enabled
   useEffect(() => {
@@ -401,13 +379,43 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
     }));
   };
 
+  const blockSummary = (block) => {
+    const reps = Number(block.repeats) || 1;
+    const inner = block.steps.map((st) => `${st.value}${st.unit} ${st.zone}`).join(' + ');
+    return reps > 1 ? `${reps}x (${inner})` : inner;
+  };
+
+  const saveBlockToLibrary = async (block) => {
+    const titleText = (block.title && !PHASES.some((phase) => phase.key === block.title) ? block.title : blockSummary(block)).slice(0, 200);
+    try {
+      await api.post('/endurance/blocks', {
+        title: titleText,
+        sport,
+        block: { type: block.type, title: block.title, repeats: block.repeats, notes: block.notes, steps: block.steps },
+      });
+      await loadLibrary();
+      Alert.alert('Libreria blocchi', `"${titleText}" salvato nella tua libreria`);
+    } catch (err) {
+      Alert.alert('Errore', err?.response?.data?.message || 'Impossibile salvare il blocco');
+    }
+  };
+
+  const deleteLibraryBlock = async (blockId) => {
+    try {
+      await api.delete(`/endurance/blocks/${blockId}`);
+      setLibraryBlocks((current) => current.filter((item) => item.block_id !== blockId));
+    } catch (err) {
+      Alert.alert('Errore', err?.response?.data?.message || 'Impossibile eliminare il blocco');
+    }
+  };
+
   const importPreset = (preset) => {
     const newBlock = {
-      type: preset.type,
-      title: preset.title,
-      repeats: preset.repeats,
-      notes: '',
-      steps: preset.steps.map((s) => ({ ...s, notes: '' })),
+      type: preset.type || 'Lavoro',
+      title: preset.title || '',
+      repeats: String(preset.repeats || '1'),
+      notes: preset.notes || '',
+      steps: (preset.steps || []).map((st) => ({ subzone: 'zona intera', ...st, notes: st.notes || '' })),
     };
     setBlocks((curr) => [...curr, newBlock]);
     setImportModal(false);
@@ -456,8 +464,11 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
         durationSeconds: Math.round(workoutTotals.totalSeconds),
         target: target || null,
         description: notes || null,
-        rpeTarget: stars * 2, // 1-5 stars mapped to RPE 2-10
+        rpeTarget: stars * 2, // 1-5 stelle -> RPE 2-10
         stepsJson: stepsPayload,
+        sport,
+        elevationM: Number(elevation) || null,
+        videoUrls,
       };
 
       if (isEdit) {
@@ -483,12 +494,6 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
     return formatHMS((distM / 1000) * paceSec);
   }, [calcDist, calcPace]);
 
-  const currentSport = SPORTS.find((s) => s.key === sport) || SPORTS[0];
-  const coachNotifications = [
-    { label: 'Feedback', value: '3 da leggere' },
-    { label: 'Dieta', value: 'Aggiornata ieri' },
-    { label: 'Scheda', value: 'Da confermare' },
-  ];
 
   if (loading) {
     return (
@@ -553,9 +558,11 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               ))}
             </View>
 
-            {/* Mode: Passo / Cardio */}
+            {/* Riferimento zone per lo sport */}
             <View style={styles.badgeSelector}>
-              <Text style={styles.badgeSelectorText}>🏃 {paceMode}</Text>
+              <Text style={styles.badgeSelectorText}>
+                {currentSport.icon} {currentSport.key === 'ciclismo' ? 'Potenza' : 'Passo'} {currentSport.unit}{usingDefaultZones ? ' · zone standard' : ''}
+              </Text>
             </View>
 
             {/* D+ elevation */}
@@ -617,8 +624,8 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               const reps = Math.max(1, Number(b.repeats) || 1);
               return Array.from({ length: reps }, () => b.steps).flat();
             }).map((step, idx) => {
-              const zoneNum = Number(step.zone.replace(/\D/g, '')) || 2;
-              const heightPercent = Math.min(100, Math.max(15, zoneNum * 14));
+              const zoneNum = Number(String(step.zone).replace(/\D/g, '')) || 0;
+              const heightPercent = Math.min(100, Math.max(8, zoneNum * 14));
               const color = ZONE_COLORS[step.zone] || '#1ab394';
               return (
                 <View key={idx} style={styles.chartBarItem}>
@@ -644,9 +651,14 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                   <Text style={styles.dragGrip}>⋮⋮</Text>
 
                   {/* Phase selector pill */}
-                  <View style={[styles.phasePill, { backgroundColor: phaseObj.color }]}>
-                    <Text style={styles.phasePillText}>{block.type} ▾</Text>
-                  </View>
+                  <OptionPicker
+                    title="Fase del blocco"
+                    value={block.type}
+                    options={PHASES.map((phase) => ({ value: phase.key, label: phase.label, color: phase.color }))}
+                    onChange={(value) => updateBlockField(bi, 'type', value)}
+                    style={[styles.phasePill, { backgroundColor: phaseObj.color }]}
+                    textStyle={styles.phasePillText}
+                  />
 
                   {/* Block subtitle input */}
                   <TextInput
@@ -662,7 +674,10 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                     {formatHMS(bCalc.seconds)} · {formatKm(bCalc.meters)}
                   </Text>
 
-                  {/* Actions: Duplicate, Delete */}
+                  {/* Azioni: salva in libreria, duplica, elimina */}
+                  <Pressable onPress={() => saveBlockToLibrary(block)} hitSlop={6} style={styles.headerIconBtn}>
+                    <Text style={styles.headerIcon}>☆</Text>
+                  </Pressable>
                   <Pressable onPress={() => duplicateBlock(bi)} hitSlop={6} style={styles.headerIconBtn}>
                     <Text style={styles.headerIcon}>⧉</Text>
                   </Pressable>
@@ -718,16 +733,14 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                         </Text>
 
                         {/* Unit selector */}
-                        <View style={styles.unitBox}>
-                          <Text style={styles.unitText}>{step.unit} ▾</Text>
-                          <select
-                            value={step.unit}
-                            onChange={(e) => updateStepField(bi, si, 'unit', e.target.value)}
-                            style={styles.hiddenNativeSelect}
-                          >
-                            {UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
-                          </select>
-                        </View>
+                        <OptionPicker
+                          title="Unità"
+                          value={step.unit}
+                          options={UNITS.map((u) => ({ value: u.key, label: u.label }))}
+                          onChange={(value) => updateStepField(bi, si, 'unit', value)}
+                          style={styles.unitBox}
+                          textStyle={styles.unitText}
+                        />
 
                         {/* Value input */}
                         <TextInput
@@ -738,35 +751,32 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                         />
 
                         {/* Zone dropdown */}
-                        <View style={styles.zoneBox}>
+                        <OptionPicker
+                          title="Zona di intensità"
+                          value={step.zone}
+                          options={[REST_ZONE, ...activeZones].map((z) => ({
+                            value: z.key,
+                            label: `${z.key} - ${z.name}${zoneRangeLabel(z) ? ` | ${zoneRangeLabel(z)}` : ''}`,
+                            color: ZONE_COLORS[z.key],
+                          }))}
+                          onChange={(value) => updateStepField(bi, si, 'zone', value)}
+                          style={styles.zoneBox}
+                        >
                           <View style={[styles.zoneColorDot, { backgroundColor: zColor }]} />
                           <Text style={styles.zoneBoxText} numberOfLines={1}>
-                            {step.zone} {zInfo ? `· ${zInfo.name} | ${zInfo.min} - ${zInfo.max}` : ''}
+                            {step.zone} {zInfo ? `· ${zInfo.name}${zoneRangeLabel(zInfo) ? ` | ${zoneRangeLabel(zInfo)}` : ''}` : step.zone === 'Z0' ? '· Recupero fermo' : ''} ▾
                           </Text>
-                          <select
-                            value={step.zone}
-                            onChange={(e) => updateStepField(bi, si, 'zone', e.target.value)}
-                            style={styles.hiddenNativeSelect}
-                          >
-                            {activeZones.map((z) => (
-                              <option key={z.key} value={z.key}>
-                                {z.key} - {z.name} | {z.min} - {z.max} /km
-                              </option>
-                            ))}
-                          </select>
-                        </View>
+                        </OptionPicker>
 
                         {/* Subzone range */}
-                        <View style={styles.subzoneBox}>
-                          <Text style={styles.subzoneText}>{step.subzone} ▾</Text>
-                          <select
-                            value={step.subzone}
-                            onChange={(e) => updateStepField(bi, si, 'subzone', e.target.value)}
-                            style={styles.hiddenNativeSelect}
-                          >
-                            {ZONE_RANGES.map((r) => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                        </View>
+                        <OptionPicker
+                          title="Parte della zona"
+                          value={step.subzone}
+                          options={ZONE_RANGES.map((r) => ({ value: r, label: r }))}
+                          onChange={(value) => updateStepField(bi, si, 'subzone', value)}
+                          style={styles.subzoneBox}
+                          textStyle={styles.subzoneText}
+                        />
 
                         {/* Step actions: Duplicate, Delete */}
                         <Pressable onPress={() => duplicateStep(bi, si)} hitSlop={4} style={styles.stepActionBtn}>
@@ -849,7 +859,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                     <View style={styles.zoneTableCellLeft}>
                       <View style={[styles.zoneSquare, { backgroundColor: zColor }]} />
                       <Text style={styles.zoneTableName}>
-                        {z.key} - {z.name} | {z.min} - {z.max} /km
+                        {z.key} - {z.name}{zoneRangeLabel(z) ? ` | ${zoneRangeLabel(z)}` : ''}
                       </Text>
                     </View>
                     <Text style={styles.zoneTableValue}>
@@ -889,18 +899,6 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
             </Pressable>
           </View>
 
-          <View style={styles.bottomCard}>
-            <View style={styles.bottomCardHeader}>
-              <Text style={styles.bottomCardTitle}>Notifiche coach</Text>
-              <Text style={styles.inlineChip}>Live</Text>
-            </View>
-            {coachNotifications.map((item) => (
-              <View key={item.label} style={styles.notificationRow}>
-                <Text style={styles.notificationLabel}>{item.label}</Text>
-                <Text style={styles.notificationValue}>{item.value}</Text>
-              </View>
-            ))}
-          </View>
         </View>
       </ScrollView>
 
@@ -951,7 +949,23 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                 <Text style={styles.dialogClose}>✕</Text>
               </Pressable>
             </View>
-            <ScrollView style={{ maxHeight: 360 }}>
+            <ScrollView style={{ maxHeight: 420 }}>
+              <Text style={styles.librarySection}>I miei blocchi · {currentSport.label}</Text>
+              {libraryBlocks.length === 0 && (
+                <Text style={styles.libraryEmpty}>Nessun blocco salvato. Usa ☆ su un blocco per aggiungerlo alla libreria.</Text>
+              )}
+              {libraryBlocks.map((item) => (
+                <View key={item.block_id} style={styles.libraryRow}>
+                  <Pressable style={[styles.presetItem, { flex: 1 }]} onPress={() => importPreset({ ...item.block, title: item.block.title || item.title })}>
+                    <Text style={styles.presetTitle}>{item.title}</Text>
+                    <Text style={styles.presetMeta}>Fase: {item.block.type} · {item.block.repeats || 1}x serie</Text>
+                  </Pressable>
+                  <Pressable onPress={() => deleteLibraryBlock(item.block_id)} hitSlop={6} style={styles.libraryDelete}>
+                    <Text style={{ color: '#dc2626', fontWeight: '700' }}>✕</Text>
+                  </Pressable>
+                </View>
+              ))}
+              <Text style={styles.librarySection}>Blocchi predefiniti</Text>
               {BLOCK_PRESETS.map((p, pi) => (
                 <Pressable key={pi} style={styles.presetItem} onPress={() => importPreset(p)}>
                   <Text style={styles.presetTitle}>{p.title}</Text>
@@ -1270,6 +1284,7 @@ const styles = StyleSheet.create({
 
   stepRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: 6,
@@ -1302,6 +1317,7 @@ const styles = StyleSheet.create({
   zoneBox: {
     position: 'relative',
     flex: 2,
+    minWidth: 170,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -1326,17 +1342,6 @@ const styles = StyleSheet.create({
   },
   subzoneText: { fontSize: 11, fontWeight: '600', color: '#666' },
 
-  hiddenNativeSelect: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0,
-    cursor: 'pointer',
-    width: '100%',
-    height: '100%',
-  },
 
   stepActionBtn: { padding: 4 },
   stepActionIcon: { fontSize: 14, color: '#676a6c' },
@@ -1451,20 +1456,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fbfcfd',
   },
 
-  notificationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  notificationLabel: { fontSize: 11, fontWeight: '700', color: '#475467', textTransform: 'uppercase', letterSpacing: 0.4 },
-  notificationValue: { fontSize: 12, fontWeight: '700', color: '#111827' },
+  librarySection: { fontSize: 11, fontWeight: '800', color: '#667085', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.sm, marginBottom: spacing.xs },
+  libraryEmpty: { fontSize: 12, color: '#98a2b3', marginBottom: spacing.sm },
+  libraryRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  libraryDelete: { padding: spacing.sm },
 
   videoItemRow: {
     flexDirection: 'row',

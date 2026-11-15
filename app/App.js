@@ -94,6 +94,8 @@ function CalendarStack() {
       <Stack.Screen name="DayWorkouts" component={DayWorkoutsScreen} options={{ title: 'Workout del giorno' }} />
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ title: 'Dettaglio workout' }} />
       {isCoach && <Stack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ title: 'Editor workout' }} />}
+      {isCoach && <Stack.Screen name="EnduranceWorkoutEditor" component={EnduranceWorkoutEditorScreen} options={{ title: 'Allenamento endurance' }} />}
+      {isCoach && <Stack.Screen name="FunctionalWorkoutEditor" component={FunctionalWorkoutEditorScreen} options={{ title: 'Allenamento funzionale' }} />}
       {isCoach && <Stack.Screen name="WorkoutLibrary" component={WorkoutLibraryScreen} options={{ title: 'Libreria allenamenti' }} />}
       {isCoach && <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />}
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
@@ -137,7 +139,7 @@ function EnduranceStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="EnduranceHome" component={EnduranceScreen} options={{ title: 'Endurance' }} />
       <Stack.Screen name="EndurancePlanDetail" component={EndurancePlanDetailScreen} options={{ title: 'Piano endurance' }} />
-      <Stack.Screen name="EnduranceWorkoutEditor" component={EnduranceWorkoutEditorScreen} options={{ title: 'Nuovo allenamento' }} />
+      <Stack.Screen name="EnduranceWorkoutEditor" component={EnduranceWorkoutEditorScreen} options={{ title: 'Allenamento endurance' }} />
       <Stack.Screen name="FunctionalWorkoutEditor" component={FunctionalWorkoutEditorScreen} options={{ title: 'Nuovo funzionale' }} />
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ title: 'Dettaglio workout' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />

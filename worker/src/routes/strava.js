@@ -108,6 +108,7 @@ async function syncStravaActivities(sql, userId, accessToken, coachId, integrati
 
     const description = `${sportEmoji} ${act.name || sport}\n${details}\nImportato automaticamente da Strava`;
     const workoutType = /weight|crossfit|gym/i.test(sport) ? 'forza' : 'endurance';
+    const sportKey = /run|walk|hike/i.test(sport) ? 'corsa' : /ride|bike|cycl/i.test(sport) ? 'ciclismo' : /swim/i.test(sport) ? 'nuoto' : null;
 
     // 1. Upsert into endurance_activities
     const existingAct = await sql`
@@ -149,15 +150,16 @@ async function syncStravaActivities(sql, userId, accessToken, coachId, integrati
             distance_km = ${distanceKm},
             avg_hr = ${avgHr},
             elev_gain_m = ${elevGainM},
+            sport = ${sportKey},
             updated_at = NOW()
         WHERE workout_id = ${workoutId}
       `;
     } else {
       const inserted = await sql`
         INSERT INTO calendar_workouts
-          (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, distance_km, avg_hr, elev_gain_m, colore, stato, external_id, external_provider)
+          (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, distance_km, avg_hr, elev_gain_m, sport, colore, stato, external_id, external_provider)
         VALUES
-          (${userId}, ${coachId}, ${date}, ${workoutType}, ${act.name || sport}, ${description}, ${durationMinutes}, ${durationSeconds}, ${distanceKm}, ${avgHr}, ${elevGainM}, '#FC4C02', 'completato', ${externalId}, 'strava')
+          (${userId}, ${coachId}, ${date}, ${workoutType}, ${act.name || sport}, ${description}, ${durationMinutes}, ${durationSeconds}, ${distanceKm}, ${avgHr}, ${elevGainM}, ${sportKey}, '#FC4C02', 'completato', ${externalId}, 'strava')
         RETURNING workout_id
       `;
       workoutId = inserted[0]?.workout_id;

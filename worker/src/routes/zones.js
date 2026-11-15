@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertAccessToAthlete, resolveTargetUserId } from '../utils.js';
+import { loadMergedZones, saveMergedZones } from '../lib/athleteData.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -14,6 +15,7 @@ const BUILTIN_TESTS = [
   ['corsa', 'TEST_CORSA_FC_MAX', 'Test corsa FC max', 'bpm_max', 'FC max (bpm)', 'TEST_CORSA_FC_MAX'],
   ['bike', 'TEST_BIKE_20MIN', 'Test bike 20 minuti', 'watt_avg', 'Potenza media (W)', 'TEST_BIKE_20MIN'],
   ['bike', 'TEST_BIKE_FC_MAX', 'Test bike FC max', 'bpm_max', 'FC max (bpm)', 'TEST_BIKE_FC_MAX'],
+  ['nuoto', 'TEST_NUOTO_CSS', 'Test nuoto CSS (400 m + 200 m)', 'css_pair', 'Tempi 400 m e 200 m (MM:SS-MM:SS)', 'TEST_NUOTO_CSS'],
 ];
 
 async function ensureBuiltinTests(sql) {
@@ -33,18 +35,34 @@ function parseTime(value) {
   return Number(value);
 }
 
-function pace(secondsPerKm) {
+function pace(secondsPerKm, unit = '/km') {
   const total = Math.max(1, Math.round(secondsPerKm));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}/km`;
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}${unit}`;
 }
 
 function calculateZones(test, rawResult) {
+  if (test.zone_calc_method === 'TEST_NUOTO_CSS') {
+    // Critical Swim Speed: (T400 - T200) / 2 = secondi per 100 m alla soglia
+    const [t400, t200] = String(rawResult || '').split(/[-–;/ ]+/).filter(Boolean).map(parseTime);
+    if (!Number.isFinite(t400) || !Number.isFinite(t200) || t400 <= t200 || t200 <= 0) throw new Error('Inserisci i tempi come 400m-200m, ad esempio 6:20-2:55');
+    const css = (t400 - t200) / 2;
+    const swim = (factor) => pace(css * factor, '/100m');
+    return { sport: 'nuoto', swimPace: [
+      { key: 'Z1', name: 'Recupero', min: swim(1.25), max: swim(1.15), unit: '/100m' },
+      { key: 'Z2', name: 'Aerobico', min: swim(1.15), max: swim(1.08), unit: '/100m' },
+      { key: 'Z3', name: 'Medio', min: swim(1.08), max: swim(1.03), unit: '/100m' },
+      { key: 'Z4', name: 'Soglia', min: swim(1.03), max: swim(0.99), unit: '/100m' },
+      { key: 'Z5', name: 'VO2Max', min: swim(0.99), max: swim(0.95), unit: '/100m' },
+      { key: 'Z6', name: 'Anaerobico', min: swim(0.95), max: swim(0.9), unit: '/100m' },
+      { key: 'Z7', name: 'Sprint', min: swim(0.9), max: swim(0.82), unit: '/100m' },
+    ], css: pace(css, '/100m') };
+  }
   const value = test.result_unit === 'time_mm_ss' || test.result_unit === 'pace_mm_ss'
     ? parseTime(rawResult)
     : Number(rawResult);
   if (!Number.isFinite(value) || value <= 0) throw new Error('Risultato numerico non valido');
   if (test.zone_calc_method === 'TEST_CORSA_FC_MAX' || test.zone_calc_method === 'TEST_BIKE_FC_MAX') {
-    return { sport: test.sport, heartRate: [
+    return { sport: test.sport, hrMax: Math.round(value), heartRate: [
       { key: 'Z1', name: 'Recupero', min: Math.round(value * 0.50), max: Math.round(value * 0.60), unit: 'bpm' },
       { key: 'Z2', name: 'Aerobico', min: Math.round(value * 0.60), max: Math.round(value * 0.70), unit: 'bpm' },
       { key: 'Z3', name: 'Medio', min: Math.round(value * 0.70), max: Math.round(value * 0.80), unit: 'bpm' },
@@ -116,9 +134,11 @@ app.post('/tests/results', async (c) => {
     ? await sql`UPDATE athlete_test_results SET test_date = ${testDate}, raw_result = ${String(rawResult)}, notes = ${notes || null}, computed_zones = ${JSON.stringify(zones)}::jsonb, is_active = true WHERE test_result_id = ${previous[0].test_result_id} RETURNING *`
     : await sql`INSERT INTO athlete_test_results (athlete_id, test_type_id, test_date, raw_result, notes, computed_zones, is_active) VALUES (${targetId}, ${testTypeId}, ${testDate}, ${String(rawResult)}, ${notes || null}, ${JSON.stringify(zones)}::jsonb, true) RETURNING *`;
   await sql`DELETE FROM athlete_test_results WHERE athlete_id = ${targetId} AND test_type_id = ${testTypeId} AND test_result_id <> ${result[0].test_result_id}`;
-  await sql`DELETE FROM training_zone_sets WHERE athlete_id = ${targetId} AND sport = ${zones.sport}`;
-  await sql`INSERT INTO training_zone_sets (athlete_id, sport, source_test_result_id, zones, efficiency_zones, is_active) VALUES (${targetId}, ${zones.sport}, ${result[0].test_result_id}, ${JSON.stringify(zones)}::jsonb, '{}'::jsonb, true)`;
-  return c.json({ ...result[0], computed_zones: zones }, 201);
+  // Le zone calcolate dal test sostituiscono solo il proprio gruppo (passo, potenza, FC, nuoto)
+  const { sport: _sport, ...computedGroups } = zones;
+  const merged = { ...await loadMergedZones(sql, targetId), ...computedGroups };
+  await saveMergedZones(sql, targetId, merged, result[0].test_result_id);
+  return c.json({ ...result[0], computed_zones: zones, zones: merged }, 201);
 });
 
 const DEFAULT_ZONES = {
@@ -150,6 +170,15 @@ const DEFAULT_ZONES = {
     { key: 'Z6', name: 'Anaerobico', min: '', max: '', unit: 'bpm' },
     { key: 'Z7', name: 'Neuromuscolare', min: '', max: '', unit: 'bpm' },
   ],
+  swimPace: [
+    { key: 'Z1', name: 'Recupero', min: '', max: '', unit: '/100m' },
+    { key: 'Z2', name: 'Aerobico', min: '', max: '', unit: '/100m' },
+    { key: 'Z3', name: 'Medio', min: '', max: '', unit: '/100m' },
+    { key: 'Z4', name: 'Soglia', min: '', max: '', unit: '/100m' },
+    { key: 'Z5', name: 'VO2Max', min: '', max: '', unit: '/100m' },
+    { key: 'Z6', name: 'Anaerobico', min: '', max: '', unit: '/100m' },
+    { key: 'Z7', name: 'Sprint', min: '', max: '', unit: '/100m' },
+  ],
 };
 
 app.get('/', async (c) => {
@@ -158,8 +187,9 @@ app.get('/', async (c) => {
   if (error) return c.json({ message: error }, 400);
   const sql = db(c.env);
   if (!await assertAccessToAthlete(sql, user, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
-  const rows = await sql`SELECT * FROM training_zone_sets WHERE athlete_id = ${utenteId} AND is_active = true LIMIT 1`;
-  return c.json(rows[0] || { athlete_id: utenteId, zones: DEFAULT_ZONES });
+  const merged = await loadMergedZones(sql, utenteId);
+  // I gruppi mai impostati restano con i valori vuoti di default, cosi' la UI li mostra sempre tutti
+  return c.json({ athlete_id: utenteId, zones: { ...DEFAULT_ZONES, ...merged } });
 });
 
 app.put('/', roleCheck('personal_trainer'), async (c) => {
@@ -167,14 +197,9 @@ app.put('/', roleCheck('personal_trainer'), async (c) => {
   const { athleteId, zones } = await c.req.json();
   if (!athleteId || !zones) return c.json({ message: 'athleteId e zones richiesti' }, 400);
   const sql = db(c.env);
-  if (!await assertAccessToAthlete(sql, user.userId, Number(athleteId))) return c.json({ message: 'Accesso negato' }, 403);
-  await sql`DELETE FROM training_zone_sets WHERE athlete_id = ${athleteId}`;
-  const rows = await sql`
-    INSERT INTO training_zone_sets (athlete_id, is_active, zones)
-    VALUES (${athleteId}, true, ${JSON.stringify(zones)}::jsonb)
-    RETURNING *
-  `;
-  return c.json(rows[0]);
+  if (!await assertAccessToAthlete(sql, user, Number(athleteId))) return c.json({ message: 'Accesso negato' }, 403);
+  const merged = { ...await loadMergedZones(sql, Number(athleteId)), ...zones };
+  return c.json(await saveMergedZones(sql, Number(athleteId), merged));
 });
 
 export default app;

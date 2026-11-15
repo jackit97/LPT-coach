@@ -2,19 +2,32 @@ import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
+import { loadWorkoutsWithLoad } from '../lib/athleteData.js';
 
 const app = new Hono();
 app.use('*', authenticate());
 
+// Un coach puo' modificare solo i workout degli atleti che segue.
+async function loadOwnedWorkout(sql, user, id) {
+  const rows = await sql`SELECT * FROM calendar_workouts WHERE workout_id = ${id}`;
+  const workout = rows[0];
+  if (!workout) return { error: 'Workout non trovato', status: 404 };
+  if (workout.coach_userid !== user.userId && !await assertCoachOwnsAthlete(sql, user.userId, workout.utenteid)) {
+    return { error: 'Accesso negato', status: 403 };
+  }
+  return { workout };
+}
+
 app.post('/functional', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
-  const { utenteId, data, titolo, descrizione, durataMinuti, esercizi = [] } = await c.req.json();
+  const { utenteId, data, titolo, descrizione, durataMinuti, rpePianificato, esercizi = [] } = await c.req.json();
   if (!utenteId || !data || !titolo) return c.json({ message: 'utenteId, data e titolo sono richiesti' }, 400);
   const sql = db(c.env);
   if (!await assertCoachOwnsAthlete(sql, user.userId, Number(utenteId))) return c.json({ message: 'Accesso negato' }, 403);
   const inserted = await sql`
-    INSERT INTO calendar_workouts (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, stato)
-    VALUES (${utenteId}, ${user.userId}, ${data}, 'funzionale', ${titolo}, ${descrizione || null}, ${durataMinuti || null}, 'pianificato')
+    INSERT INTO calendar_workouts (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, stato)
+    VALUES (${utenteId}, ${user.userId}, ${data}, 'funzionale', ${titolo}, ${descrizione || null}, ${durataMinuti || null},
+            ${durataMinuti ? Number(durataMinuti) * 60 : null}, ${rpePianificato || null}, 'pianificato')
     RETURNING *
   `;
   for (let index = 0; index < esercizi.length; index += 1) {
@@ -43,9 +56,10 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
     ) AS occurrences(scheduled_date)
     WHERE s.utenteid = ${utenteId}
       AND s.datainizio IS NOT NULL
+      -- la scheda viene espansa una sola volta: le occorrenze eliminate dal coach non ricompaiono
       AND NOT EXISTS (
         SELECT 1 FROM calendar_workouts w
-        WHERE w.schedaid = s.schedaid AND w.data = s.datainizio
+        WHERE w.schedaid = s.schedaid
       )
   `;
 
@@ -76,7 +90,7 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
 
   await sql`
     INSERT INTO calendar_workouts
-      (utenteid, coach_userid, endurance_session_id, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, stato)
+      (utenteid, coach_userid, endurance_session_id, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, sport, stato)
     SELECT p.user_id, NULL, s.session_id,
            COALESCE(
              s."date"::date,
@@ -84,7 +98,7 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
                (ROW_NUMBER() OVER (PARTITION BY p.plan_id ORDER BY s.session_id) - 1) * 7
              )::int
            ),
-           'endurance', s.title, s.description, s.duration_minutes, s.duration_seconds, s.rpe_target, 'pianificato'
+           'endurance', s.title, s.description, s.duration_minutes, s.duration_seconds, s.rpe_target, s.sport, 'pianificato'
     FROM endurance_sessions s
     JOIN endurance_plans p ON p.plan_id = s.plan_id
     WHERE p.user_id = ${utenteId}
@@ -108,6 +122,7 @@ app.get('/', async (c) => {
     return c.json({ message: 'utenteId richiesto per il coach' }, 400);
   } else {
     utenteId = Number(utenteId);
+    if (!await assertCoachOwnsAthlete(sql, user.userId, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
   }
 
   const fromDate = from || '1970-01-01';
@@ -115,14 +130,8 @@ app.get('/', async (c) => {
 
   await syncSourceWorkouts(sql, utenteId, true);
 
-  const workouts = await sql`
-    SELECT w.*, f.completato, f.rpe AS feedback_rpe, f.sensazione, f.durata_effettiva_minuti, f.note AS feedback_note
-    FROM calendar_workouts w
-    LEFT JOIN workout_feedback f ON f.workout_id = w.workout_id AND f.utenteid = w.utenteid
-    WHERE w.utenteid = ${utenteId} AND w.data BETWEEN ${fromDate} AND ${toDate}
-      AND (${user.ruolo === 'cliente'} OR w.utenteid = ${utenteId})
-    ORDER BY w.data ASC, w.order_index ASC, w.workout_id ASC
-  `;
+  // Ogni workout include "load": TRIMP/tempo/km pianificati ed eseguiti e profilo zone (stile CoachPeaking)
+  const workouts = await loadWorkoutsWithLoad(sql, utenteId, fromDate, toDate);
   const events = await sql`
         SELECT -dietaid AS workout_id, utenteid, ${user.userId} AS coach_userid,
           datafine AS data,
@@ -267,8 +276,18 @@ app.get('/:id', async (c) => {
   const scheda = workout.schedaid
     ? (await sql`SELECT * FROM schedeallenamento WHERE schedaid = ${workout.schedaid} LIMIT 1`)[0] || null
     : null;
+  const day = workout.data instanceof Date ? workout.data.toISOString().slice(0, 10) : String(workout.data).slice(0, 10);
+  const withLoad = (await loadWorkoutsWithLoad(sql, workout.utenteid, day, day)).find((row) => row.workout_id === id);
 
-  return c.json({ ...workout, esercizi: exercises, feedback: feedback[0] || null, endurance, scheda });
+  return c.json({
+    ...workout,
+    sport: withLoad?.sport || workout.sport || endurance?.sport || null,
+    load: withLoad?.load || null,
+    esercizi: exercises,
+    feedback: feedback[0] || null,
+    endurance,
+    scheda,
+  });
 });
 
 // POST /calendar - coach creates a workout for an athlete
@@ -281,6 +300,7 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
   if (!utenteId || !data || !titolo) {
     return c.json({ message: 'utenteId, data e titolo sono richiesti' }, 400);
   }
+  if (!await assertCoachOwnsAthlete(sql, user.userId, Number(utenteId))) return c.json({ message: 'Accesso negato' }, 403);
 
   const workoutDescription = tipo === 'test' && testResult
     ? `${descrizione || ''}\nRisultato: ${testResult}${testUnit ? ` ${testUnit}` : ''}`.trim()
@@ -288,10 +308,10 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
 
   const inserted = await sql`
     INSERT INTO calendar_workouts
-      (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, rpe_pianificato, colore, stato)
+      (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, rpe_pianificato, colore, stato)
     VALUES
       (${utenteId}, ${user.userId}, ${data}, ${tipo || 'forza'}, ${titolo}, ${workoutDescription || null},
-      ${durataMinuti || null}, ${rpePianificato || null}, ${colore || null}, 'pianificato')
+      ${durataMinuti || null}, ${durataMinuti ? Number(durataMinuti) * 60 : null}, ${rpePianificato || null}, ${colore || null}, 'pianificato')
     RETURNING *
   `;
   const workout = inserted[0];
@@ -317,6 +337,8 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
 app.put('/:id', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
+  const owned = await loadOwnedWorkout(sql, c.get('user'), id);
+  if (owned.error) return c.json({ message: owned.error }, owned.status);
   const body = await c.req.json();
   const { data, tipo, titolo, descrizione, durataMinuti, rpePianificato, colore, stato, testResult, testUnit } = body;
 
@@ -327,6 +349,7 @@ app.put('/:id', roleCheck('personal_trainer'), async (c) => {
       titolo = COALESCE(${titolo || null}, titolo),
       descrizione = COALESCE(${tipo === 'test' && testResult ? `${descrizione || ''}\nRisultato: ${testResult}${testUnit ? ` ${testUnit}` : ''}` : descrizione ?? null}, descrizione),
       durata_minuti = COALESCE(${durataMinuti ?? null}, durata_minuti),
+      durata_secondi = CASE WHEN ${durataMinuti ?? null}::int IS NULL THEN durata_secondi ELSE ${durataMinuti ?? null}::int * 60 END,
       rpe_pianificato = COALESCE(${rpePianificato ?? null}, rpe_pianificato),
       colore = COALESCE(${colore ?? null}, colore),
       stato = COALESCE(${stato || null}, stato),
@@ -335,6 +358,10 @@ app.put('/:id', roleCheck('personal_trainer'), async (c) => {
     RETURNING *
   `;
   if (!updated[0]) return c.json({ message: 'Workout non trovato' }, 404);
+  // Spostamento di un allenamento endurance: mantiene allineata la data della sessione
+  if (data && updated[0].endurance_session_id) {
+    await sql`UPDATE endurance_sessions SET "date" = ${data}, updated_at = NOW() WHERE session_id = ${updated[0].endurance_session_id}`;
+  }
   return c.json(updated[0]);
 });
 
@@ -342,7 +369,13 @@ app.put('/:id', roleCheck('personal_trainer'), async (c) => {
 app.delete('/:id', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
+  const owned = await loadOwnedWorkout(sql, c.get('user'), id);
+  if (owned.error) return c.json({ message: owned.error }, owned.status);
   await sql`DELETE FROM calendar_workouts WHERE workout_id = ${id}`;
+  // Senza questa pulizia la sync del calendario ricreerebbe il workout dalla sessione endurance
+  if (owned.workout.endurance_session_id) {
+    await sql`DELETE FROM endurance_sessions WHERE session_id = ${owned.workout.endurance_session_id}`;
+  }
   return c.json({ message: 'Eliminato' });
 });
 
@@ -350,6 +383,8 @@ app.delete('/:id', roleCheck('personal_trainer'), async (c) => {
 app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
+  const owned = await loadOwnedWorkout(sql, c.get('user'), id);
+  if (owned.error) return c.json({ message: owned.error }, owned.status);
   const { esercizi } = await c.req.json();
   if (!Array.isArray(esercizi)) return c.json({ message: 'esercizi deve essere un array' }, 400);
 

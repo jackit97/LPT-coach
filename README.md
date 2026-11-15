@@ -57,7 +57,13 @@ cancellazioni a cascata e indici sulle ricerche principali.
 - **Pesistica**: schede legacy, esercizi, schede calendario e template del coach.
 - **Diete**: diete, pasti e ricerca di alimenti.
 - **Pagamenti**: importo, scadenza, causale e stato.
-- **Endurance**: piani, sessioni, check-in, metriche, obiettivi e template.
+- **Endurance** (modellato su CoachPeaking): editor a blocchi per corsa, ciclismo e nuoto con zone
+  dell'atleta, libreria blocchi del coach, carico TRIMP (minuti per zona x coefficiente), carico acuto
+  (7 gg), cronico (42 gg) e performance (cronico - acuto) in `GET /endurance/load`, riepilogo
+  settimanale pianificato vs eseguito nel calendario e Coach Assistant (`GET /pt/alerts`) con alert
+  su inattivita', aderenza, variazione del carico e commenti. Forza e funzionale entrano nel carico
+  tramite durata x RPE. La logica e' in `worker/src/lib/trainingLoad.js` (replicata in
+  `app/utils/endurance.js` per i calcoli live dell'editor).
 - **Zone**: test atleta, risultati e zone di allenamento calcolate.
 - **Video**: libreria di link tutorial condivisi.
 - **Garmin FIT**: download di workout endurance in formato `.fit` tramite FitWriter.
@@ -74,6 +80,10 @@ video, endurance, test e zone. Le migrazioni disponibili sono:
 
 - `20260904_duration_seconds.sql`: aggiunge le durate in secondi.
 - `20260910_endurance_toggle.sql`: aggiunge il flag endurance per utente.
+- `20261112_library_templates.sql`: tipo/durata/endurance nei template della libreria.
+- `20261115_strava_integration.sql`: colonne e tabelle per la sincronizzazione Strava.
+- `20261116_coachpeaking_endurance.sql`: sport per allenamento, D+, video, libreria blocchi
+  (va applicata prima di pubblicare il Worker che la usa).
 
 Inizializzazione:
 
