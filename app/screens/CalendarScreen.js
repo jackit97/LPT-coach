@@ -182,17 +182,19 @@ export default function CalendarScreen({ navigation }) {
           <Text style={styles.headerSubtitle}>{fmtDay(weekStart)} – {fmtDay(rangeEnd)} {rangeEnd.getFullYear()}</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable
-            onPress={syncStrava}
-            disabled={syncingStrava}
-            style={[styles.stravaSyncHeaderBtn, syncingStrava && { opacity: 0.6 }]}
-          >
-            {syncingStrava ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.stravaSyncHeaderText}>⚡ Sync Strava</Text>
-            )}
-          </Pressable>
+          {!isCoach && (
+            <Pressable
+              onPress={syncStrava}
+              disabled={syncingStrava}
+              style={[styles.stravaSyncHeaderBtn, syncingStrava && { opacity: 0.6 }]}
+            >
+              {syncingStrava ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.stravaSyncHeaderText}>⚡ Sync Strava</Text>
+              )}
+            </Pressable>
+          )}
           <Pressable onPress={() => shiftWeeks(-WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>«</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>‹</Text></Pressable>
           <Pressable onPress={() => setWeekStart(addDays(startOfWeek(new Date()), -7))} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>

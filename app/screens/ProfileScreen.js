@@ -26,6 +26,7 @@ export default function ProfileScreen() {
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
 
   const loadStravaStatus = useCallback(async () => {
+    if (isCoach) return;
     try {
       const { data } = await api.get('/strava/status');
       setStravaStatus(data);
@@ -41,9 +42,10 @@ export default function ProfileScreen() {
     } catch (e) {
       // not connected or offline
     }
-  }, []);
+  }, [isCoach]);
 
   useEffect(() => {
+    if (isCoach) return;
     const loadSavedStravaConfig = async () => {
       try {
         const raw = await AsyncStorage.getItem('strava-config');
@@ -61,10 +63,11 @@ export default function ProfileScreen() {
 
     loadSavedStravaConfig();
     loadStravaStatus();
-  }, [loadStravaStatus]);
+  }, [isCoach, loadStravaStatus]);
 
   // Handle OAuth code on web redirect (e.g. ?code=xxx)
   useEffect(() => {
+    if (isCoach) return;
     const handleAuthRedirect = async () => {
       let code = null;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
