@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Switch, Linking, Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Switch, Linking, Platform, AppState } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import DateField from '../components/DateField';
 import { useAuth } from '../context/AuthContext';
@@ -14,15 +14,28 @@ export default function ProfileScreen() {
   const [togglingEndurance, setTogglingEndurance] = useState(false);
   const [syncingStrava, setSyncingStrava] = useState(false);
   const [stravaStatus, setStravaStatus] = useState(null);
-  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
-  const [stravaConfig, setStravaConfig] = useState({
-    connected: false,
-    clientId: '',
-    clientSecret: '',
-    redirectUri: Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/',
-    syncMode: 'auto',
-  });
-  const [stats, setStats] = useState({ sessions: 18, distanceKm: 246.4, trimp: 132, avgRpe: 7.3 });
+  const [connectingStrava, setConnectingStrava] = useState(false);
+  const [stats, setStats] = useState({ sessions: 0, distanceKm: 0, trimp: 0, avgRpe: null });
+
+  // Riepilogo reale degli ultimi 30 giorni (prima i valori erano fissi)
+  useFocusEffect(useCallback(() => {
+    if (isCoach) return;
+    const to = new Date();
+    const from = new Date(); from.setDate(from.getDate() - 29);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    api.get('/calendar', { params: { from: iso(from), to: iso(to) } })
+      .then(({ data }) => {
+        const done = (data || []).filter((w) => w.load && w.load.secondi_eseguiti > 0);
+        const rpes = done.map((w) => Number(w.feedback_rpe)).filter((v) => v > 0);
+        setStats({
+          sessions: done.length,
+          distanceKm: done.reduce((sum, w) => sum + (w.load.metri_eseguiti || 0), 0) / 1000,
+          trimp: done.reduce((sum, w) => sum + (w.load.trimp_eseguito || 0), 0),
+          avgRpe: rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null,
+        });
+      })
+      .catch(() => {});
+  }, [isCoach]));
 
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
 
@@ -31,94 +44,24 @@ export default function ProfileScreen() {
     try {
       const { data } = await api.get('/strava/status');
       setStravaStatus(data);
-      if (data?.connected) {
-        setStravaConfig((curr) => ({
-          ...curr,
-          connected: true,
-          clientId: data.clientId || curr.clientId,
-          redirectUri: data.redirectUri || curr.redirectUri,
-          syncMode: data.sync_mode || curr.syncMode,
-        }));
-      }
     } catch (e) {
-      // not connected or offline
+      // non collegato o offline
     }
   }, [isCoach]);
 
+  // Lo stato viene ricaricato quando si torna sulla schermata o nell'app (es. dopo l'autorizzazione su Strava)
+  useFocusEffect(useCallback(() => { loadStravaStatus(); }, [loadStravaStatus]));
   useEffect(() => {
-    if (isCoach) return;
-    const loadSavedStravaConfig = async () => {
-      try {
-        const raw = await AsyncStorage.getItem('strava-config');
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        setStravaConfig((current) => ({
-          ...current,
-          ...parsed,
-          redirectUri: parsed.redirectUri || (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/'),
-        }));
-      } catch (error) {
-        // ignore invalid saved config
-      }
+    if (isCoach) return undefined;
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') loadStravaStatus(); });
+    const onVisible = () => { if (typeof document !== 'undefined' && document.visibilityState === 'visible') loadStravaStatus(); };
+    if (Platform.OS === 'web' && typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      subscription.remove();
+      if (Platform.OS === 'web' && typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
     };
-
-    loadSavedStravaConfig();
-    loadStravaStatus();
   }, [isCoach, loadStravaStatus]);
 
-  // Handle OAuth code on web redirect (e.g. ?code=xxx)
-  useEffect(() => {
-    if (isCoach) return;
-    const handleAuthRedirect = async () => {
-      let code = null;
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        code = params.get('code');
-      }
-
-      if (!code) return;
-
-      setSyncingStrava(true);
-      try {
-        const raw = await AsyncStorage.getItem('strava-config');
-        const saved = raw ? JSON.parse(raw) : {};
-        const clientId = saved.clientId || stravaConfig.clientId;
-        const clientSecret = saved.clientSecret || stravaConfig.clientSecret;
-        const redirectUri = saved.redirectUri || stravaConfig.redirectUri;
-
-        const { data } = await api.post('/strava/connect', {
-          code,
-          clientId,
-          clientSecret,
-          redirectUri,
-          syncMode: saved.syncMode || stravaConfig.syncMode || 'auto',
-        });
-
-        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-
-        setStravaStatus({
-          connected: true,
-          athlete: data.athlete,
-          last_sync: new Date().toISOString(),
-          importedCount: data.importedCount,
-        });
-        setStravaConfig((curr) => ({ ...curr, connected: true }));
-
-        Alert.alert(
-          'Strava collegato!',
-          `Account ${data.athlete?.firstname || ''} ${data.athlete?.lastname || ''} collegato con successo! Importate ${data.importedCount || 0} attività nel calendario.`
-        );
-      } catch (err) {
-        Alert.alert('Errore collegamento Strava', err?.response?.data?.message || 'Scambio del codice Strava non riuscito.');
-      } finally {
-        setSyncingStrava(false);
-      }
-    };
-
-    handleAuthRedirect();
-  }, [stravaConfig.clientId, stravaConfig.clientSecret, stravaConfig.redirectUri, stravaConfig.syncMode]);
   const [days, setDays] = useState([]);
   const toggleDay = (day) => setDays((current) => current.includes(day) ? current.filter((item) => item !== day) : [...current, day]);
   useEffect(() => { setDays((profile.giorni_allenamento || '').split(',').map((day) => day.trim()).filter(Boolean)); }, [profile.giorni_allenamento]);
@@ -137,51 +80,29 @@ export default function ProfileScreen() {
     finally { setTogglingEndurance(false); }
   };
 
-  const persistStravaConfig = async (nextConfig) => {
-    try {
-      await AsyncStorage.setItem('strava-config', JSON.stringify(nextConfig));
-    } catch (error) {
-      // ignore storage failure and keep in-memory state only
-    }
-  };
-
+  // Un tocco: apre l'app Strava (se installata) o la pagina di accesso Strava. Dopo l'autorizzazione
+  // Strava rimanda a /strava-callback, che completa il collegamento sul server e riporta in LPT Coach.
   const connectStrava = async () => {
-    const effectiveClientId = stravaConfig.clientId || stravaStatus?.defaultClientId;
-    const effectiveRedirectUri = stravaConfig.redirectUri || (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin + '/' : 'https://lpt-coach.pages.dev/');
-
-    if (!effectiveClientId) {
-      setShowAdvancedCredentials(true);
-      Alert.alert(
-        'Strava',
-        'Configura il Client ID dell\'app Strava sotto la sezione "Impostazioni avanzate" per avviare il collegamento (oppure impostalo come variabile d\'ambiente sul server).'
-      );
-      return;
-    }
-
-    await persistStravaConfig({
-      ...stravaConfig,
-      clientId: effectiveClientId,
-      redirectUri: effectiveRedirectUri,
-    });
-
-    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(effectiveRedirectUri)}&response_type=code&approval_prompt=auto&scope=${encodeURIComponent('read,activity:read_all,profile:read_all')}`;
-
+    setConnectingStrava(true);
     try {
-      const canOpen = await Linking.canOpenURL(authUrl);
-      if (!canOpen) {
-        Alert.alert('Strava', 'Impossibile aprire Strava in questo dispositivo. Copia il link manualmente.');
+      const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+      const { data } = await api.post('/strava/authorize', {
+        platform: isWeb ? 'web' : 'native',
+        origin: isWeb ? window.location.origin : undefined,
+      });
+      if (isWeb) {
+        window.location.href = data.url;
         return;
       }
-
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.open(authUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        await Linking.openURL(authUrl);
+      try {
+        await Linking.openURL(data.appUrl);
+      } catch {
+        await Linking.openURL(data.url);
       }
-
-      Alert.alert('Strava', 'Ti stiamo portando alla pagina di autorizzazione Strava. Completa l\'accesso per autorizzare LPT Coach.');
-    } catch (error) {
-      Alert.alert('Errore', 'Non è stato possibile aprire la pagina Strava.');
+    } catch (err) {
+      Alert.alert('Strava', err?.response?.data?.message || 'Non è stato possibile avviare il collegamento con Strava.');
+    } finally {
+      setConnectingStrava(false);
     }
   };
 
@@ -207,9 +128,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await api.post('/strava/disconnect');
-            setStravaStatus({ connected: false });
-            setStravaConfig((curr) => ({ ...curr, connected: false }));
-            await persistStravaConfig({ ...stravaConfig, connected: false });
+            setStravaStatus({ connected: false, hasServerApp: stravaStatus?.hasServerApp });
             Alert.alert('Strava', 'Account Strava scollegato');
           } catch (err) {
             Alert.alert('Errore', err?.response?.data?.message || 'Impossibile scollegare Strava');
@@ -244,7 +163,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>RPE medio</Text>
-              <Text style={styles.statValue}>{stats.avgRpe.toFixed(1)}</Text>
+              <Text style={styles.statValue}>{stats.avgRpe ? stats.avgRpe.toFixed(1) : '—'}</Text>
             </View>
           </View>
         </View>
@@ -305,66 +224,16 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <View style={{ marginTop: spacing.sm }}>
-                <Pressable style={styles.stravaQuickConnectBtn} onPress={connectStrava}>
-                  <Text style={styles.stravaQuickConnectText}>Collega account Strava</Text>
+                <Pressable style={[styles.stravaQuickConnectBtn, connectingStrava && { opacity: 0.6 }]} onPress={connectStrava} disabled={connectingStrava}>
+                  {connectingStrava ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaQuickConnectText}>Connetti con Strava</Text>}
                 </Pressable>
+                <Text style={styles.stravaHint}>Si apre l'app Strava (o il sito): accedi, autorizza LPT Coach e verrai riportato qui.</Text>
+                {stravaStatus && stravaStatus.hasServerApp === false && (
+                  <Text style={styles.stravaWarning}>Il collegamento non è ancora attivo: il coach deve configurare l'app Strava sul server.</Text>
+                )}
               </View>
             )}
 
-            <Pressable
-              onPress={() => setShowAdvancedCredentials((prev) => !prev)}
-              style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
-            >
-              <Text style={{ fontSize: 11, color: colors.textMuted, textDecorationLine: 'underline' }}>
-                {showAdvancedCredentials ? 'Nascondi impostazioni avanzate API' : 'Impostazioni avanzate API (Client ID / Secret)'}
-              </Text>
-            </Pressable>
-
-            {showAdvancedCredentials && (
-              <View style={styles.advancedBox}>
-                <Text style={styles.stravaCredHint}>
-                  Se hai inserito `STRAVA_CLIENT_ID` e `STRAVA_CLIENT_SECRET` sul server o Worker, questi campi sono opzionali. Altrimenti inseriscili qui una sola volta.
-                </Text>
-
-                <Text style={styles.label}>Client ID</Text>
-                <TextInput
-                  value={stravaConfig.clientId}
-                  onChangeText={(value) => {
-                    const next = { ...stravaConfig, clientId: value };
-                    setStravaConfig(next);
-                    persistStravaConfig(next);
-                  }}
-                  style={styles.input}
-                  placeholder={stravaStatus?.defaultClientId || 'es. 123456'}
-                  keyboardType="numeric"
-                />
-
-                <Text style={styles.label}>Client Secret</Text>
-                <TextInput
-                  value={stravaConfig.clientSecret}
-                  onChangeText={(value) => {
-                    const next = { ...stravaConfig, clientSecret: value };
-                    setStravaConfig(next);
-                    persistStravaConfig(next);
-                  }}
-                  style={styles.input}
-                  placeholder="Inserisci secret Strava"
-                  secureTextEntry
-                />
-
-                <Text style={styles.label}>Redirect URI (automatico)</Text>
-                <TextInput
-                  value={stravaConfig.redirectUri}
-                  onChangeText={(value) => {
-                    const next = { ...stravaConfig, redirectUri: value };
-                    setStravaConfig(next);
-                    persistStravaConfig(next);
-                  }}
-                  style={styles.input}
-                  placeholder="https://..."
-                />
-              </View>
-            )}
           </View>
 
           {/* Placeholder for Garmin connection as on CoachPeaking */}
@@ -453,8 +322,8 @@ const styles = StyleSheet.create({
   stravaSyncBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
   stravaQuickConnectBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignSelf: 'flex-start' },
   stravaQuickConnectText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
-  advancedBox: { marginTop: spacing.sm, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: radius.md, padding: spacing.sm },
-  stravaCredHint: { fontSize: 11, color: colors.textMuted, marginBottom: spacing.xs, lineHeight: 15 },
+  stravaHint: { fontSize: 11, color: colors.textMuted, marginTop: spacing.xs, lineHeight: 15 },
+  stravaWarning: { fontSize: 11, color: colors.danger, marginTop: spacing.xs, fontWeight: '700' },
   warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
   warningText: { color: '#92400E', fontWeight: '600' },
   logoutBtn: { marginTop: spacing.xxl, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xxl },

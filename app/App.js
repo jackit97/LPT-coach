@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindowDimensions } from 'react-native';
+import { View, ActivityIndicator, Pressable, Text, TextInput, Platform, useWindowDimensions, Alert, Linking } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AthleteProvider } from './context/AthleteContext';
 import { colors } from './theme';
@@ -318,7 +318,32 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Ritorno dal collegamento Strava: web (?strava=connected) o app nativa (lptcoach://strava-connected?...)
+function useStravaReturnNotice() {
+  useEffect(() => {
+    const notify = (url) => {
+      if (!url || !/strava=(connected|error)/.test(url)) return;
+      const ok = /strava=connected/.test(url);
+      const imported = (url.match(/[?&]n=(\d+)/) || [])[1];
+      const title = ok ? 'Strava collegato' : 'Strava';
+      const text = ok ? `Account collegato${imported ? `: importate ${imported} attività nel calendario` : ''}.` : 'Collegamento non riuscito, riprova dal Profilo.';
+      // Alert di react-native-web non mostra nulla: sul web si usa l'alert del browser
+      if (Platform.OS === 'web' && typeof window !== 'undefined') setTimeout(() => window.alert(`${title}\n${text}`), 600);
+      else Alert.alert(title, text);
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      notify(window.location.search);
+      if (/strava=/.test(window.location.search) && window.history?.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+      return undefined;
+    }
+    Linking.getInitialURL().then(notify).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => notify(url));
+    return () => subscription.remove();
+  }, []);
+}
+
 export default function App() {
+  useStravaReturnNotice();
   useEffect(() => {
     if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {

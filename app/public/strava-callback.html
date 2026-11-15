@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LPT Coach · Collegamento Strava</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #F4F6F9; color: #101828; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+    .card { background: #fff; border: 1px solid #E2E6ED; border-radius: 16px; padding: 28px 24px; max-width: 380px; width: calc(100% - 40px); text-align: center; }
+    .logo { width: 56px; height: 56px; border-radius: 28px; background: #FC4C02; color: #fff; font-size: 28px; display: inline-flex; align-items: center; justify-content: center; }
+    h1 { font-size: 20px; margin: 14px 0 6px; }
+    p { color: #667085; font-size: 14px; line-height: 1.45; margin: 0 0 18px; }
+    a.btn { display: inline-block; background: #0B3D91; color: #fff; text-decoration: none; font-weight: 700; padding: 12px 20px; border-radius: 10px; }
+    .spinner { width: 28px; height: 28px; border: 3px solid #E2E6ED; border-top-color: #FC4C02; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">⚡</div>
+    <h1 id="title">Collegamento a Strava…</h1>
+    <div id="spinner" class="spinner"></div>
+    <p id="message">Stiamo completando il collegamento del tuo account.</p>
+    <a id="back" class="btn hidden" href="/">Torna a LPT Coach</a>
+  </div>
+  <script>
+    // Sostituito in build da scripts/prepare-web-pwa.js con EXPO_PUBLIC_API_BASE
+    var API_BASE = '__API_BASE__';
+    if (API_BASE.indexOf('__') === 0) API_BASE = 'https://lpt-worker.gc-jack1997.workers.dev';
+
+    var params = new URLSearchParams(window.location.search);
+    var title = document.getElementById('title');
+    var message = document.getElementById('message');
+    var back = document.getElementById('back');
+    var spinner = document.getElementById('spinner');
+
+    function done(ok, text, platform, extra) {
+      spinner.classList.add('hidden');
+      title.textContent = ok ? 'Strava collegato!' : 'Collegamento non riuscito';
+      message.textContent = text;
+      var query = 'strava=' + (ok ? 'connected' : 'error') + (extra ? '&n=' + encodeURIComponent(extra) : '');
+      if (platform === 'native') {
+        // Torna all'app installata (scheme definito in app.json)
+        back.href = 'lptcoach://strava-connected?' + query;
+        back.classList.remove('hidden');
+        window.location.href = back.href;
+      } else {
+        back.href = '/?' + query;
+        back.classList.remove('hidden');
+        if (ok) setTimeout(function () { window.location.replace(back.href); }, 1500);
+      }
+    }
+
+    fetch(API_BASE + '/strava/oauth/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: params.get('code'), state: params.get('state'), scope: params.get('scope'), error: params.get('error') })
+    })
+      .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+      .then(function (r) {
+        var platform = r.data && r.data.platform;
+        if (!platform) {
+          try { platform = JSON.parse(atob((params.get('state') || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).platform; } catch (e) { platform = 'web'; }
+        }
+        if (r.ok) {
+          var name = r.data.athlete ? (r.data.athlete.firstname || '') : '';
+          done(true, 'Ciao ' + name + ', il tuo account è collegato. Importate ' + (r.data.importedCount || 0) + ' attività nel calendario.', platform, String(r.data.importedCount || 0));
+        } else {
+          done(false, (r.data && r.data.message) || 'Riprova dal profilo di LPT Coach.', platform);
+        }
+      })
+      .catch(function () { done(false, 'Errore di rete. Riprova dal profilo di LPT Coach.', 'web'); });
+  </script>
+</body>
+</html>

@@ -1,10 +1,58 @@
 import { Hono } from 'hono';
 import { db } from '../db.js';
+import { sign, verify } from 'hono/jwt';
 import { authenticate } from '../auth.js';
 import { assertAccessToAthlete, resolveTargetUserId } from '../utils.js';
 
 const app = new Hono();
-app.use('*', authenticate());
+// Il callback OAuth arriva dalla pagina /strava-callback senza token: l'utente e' identificato dallo "state" firmato.
+app.use('*', async (c, next) => (c.req.path.endsWith('/oauth/callback') ? next() : authenticate()(c, next)));
+
+const STRAVA_SCOPE = 'read,activity:read_all,profile:read_all';
+const DEFAULT_APP_ORIGIN = 'https://lpt-coach.pages.dev';
+const STATE_TTL_SECONDS = 15 * 60;
+
+function appOrigin(env, requested) {
+  // Accetta solo origin http(s) senza path: e' il dominio registrato come "Authorization Callback Domain" su Strava
+  try {
+    const url = new URL(requested || env.APP_ORIGIN || DEFAULT_APP_ORIGIN);
+    if (!/^https?:$/.test(url.protocol)) throw new Error('protocol');
+    return url.origin;
+  } catch {
+    return env.APP_ORIGIN || DEFAULT_APP_ORIGIN;
+  }
+}
+
+// Salva i token ottenuti da Strava e importa subito le ultime attivita'.
+async function saveConnection(sql, userId, tokenData, { clientId, clientSecret, redirectUri, syncMode }) {
+  const integrationData = {
+    client_id: clientId,
+    // il secret resta solo se fornito dall'utente (vecchio flusso); con le variabili del Worker non serve salvarlo
+    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    redirect_uri: redirectUri,
+    sync_mode: syncMode || 'auto',
+    access_token: tokenData.access_token,
+    refresh_token: tokenData.refresh_token,
+    expires_at: tokenData.expires_at,
+    athlete: tokenData.athlete,
+    connected_at: new Date().toISOString(),
+    last_sync: null,
+  };
+  await sql`
+    INSERT INTO endurance_integrations (user_id, provider, connected, data_json, updated_at)
+    VALUES (${userId}, 'strava', 1, ${JSON.stringify(integrationData)}, NOW())
+    ON CONFLICT (user_id, provider) DO UPDATE SET connected = 1, data_json = EXCLUDED.data_json, updated_at = NOW()
+  `;
+  const coachRows = await sql`SELECT pt_userid FROM pt_clienti WHERE cliente_userid = ${userId} AND attivo = 1 LIMIT 1`;
+  const coachId = coachRows.length ? coachRows[0].pt_userid : null;
+  let syncResult = { importedCount: 0, totalFetched: 0 };
+  try {
+    syncResult = await syncStravaActivities(sql, userId, tokenData.access_token, coachId, integrationData);
+  } catch (err) {
+    console.error('Strava initial sync error:', err);
+  }
+  return syncResult;
+}
 
 async function getValidAccessToken(sql, userId, integrationData, env) {
   let { access_token, refresh_token, expires_at, client_id, client_secret } = integrationData;
@@ -191,6 +239,77 @@ async function syncStravaActivities(sql, userId, accessToken, coachId, integrati
   return { importedCount, totalFetched: activities.length };
 }
 
+// POST /strava/authorize { platform: 'web' | 'native', origin }
+// Restituisce i link di autorizzazione: "appUrl" apre direttamente l'app Strava (mobile),
+// "url" e' la pagina web di Strava. Dopo l'accesso Strava rimanda a <origin>/strava-callback.
+app.post('/authorize', async (c) => {
+  const user = c.get('user');
+  if (user.ruolo !== 'cliente') return c.json({ message: 'Solo gli atleti possono collegare Strava' }, 403);
+  const clientId = c.env.STRAVA_CLIENT_ID;
+  if (!clientId || !c.env.STRAVA_CLIENT_SECRET) {
+    return c.json({ message: 'Strava non è ancora configurato: il coach deve impostare STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET sul Worker.' }, 503);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const platform = body.platform === 'native' ? 'native' : 'web';
+  const redirectUri = `${appOrigin(c.env, platform === 'web' ? body.origin : null)}/strava-callback`;
+  const state = await sign({
+    uid: user.userId,
+    purpose: 'strava-connect',
+    platform,
+    ruri: redirectUri,
+    exp: Math.floor(Date.now() / 1000) + STATE_TTL_SECONDS,
+  }, c.env.JWT_SECRET || 'dev-secret');
+  const params = new URLSearchParams({
+    client_id: String(clientId),
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    approval_prompt: 'auto',
+    scope: STRAVA_SCOPE,
+    state,
+  }).toString();
+  return c.json({
+    url: platform === 'native' ? `https://www.strava.com/oauth/mobile/authorize?${params}` : `https://www.strava.com/oauth/authorize?${params}`,
+    appUrl: `strava://oauth/mobile/authorize?${params}`,
+  });
+});
+
+// POST /strava/oauth/callback { code, state, scope } - chiamato dalla pagina /strava-callback (senza login)
+app.post('/oauth/callback', async (c) => {
+  const { code, state, scope, error } = await c.req.json().catch(() => ({}));
+  if (error) return c.json({ message: error === 'access_denied' ? 'Autorizzazione annullata su Strava.' : `Strava ha restituito un errore: ${error}` }, 400);
+  if (!code || !state) return c.json({ message: 'Parametri di autorizzazione mancanti' }, 400);
+  let payload;
+  try {
+    payload = await verify(state, c.env.JWT_SECRET || 'dev-secret', 'HS256');
+  } catch {
+    return c.json({ message: 'Link di collegamento scaduto: riprova da LPT Coach.' }, 400);
+  }
+  if (payload.purpose !== 'strava-connect' || !payload.uid) return c.json({ message: 'Richiesta non valida' }, 400);
+  if (scope && !String(scope).includes('activity:read')) {
+    return c.json({ message: 'Per importare gli allenamenti devi lasciare attivo il permesso di lettura delle attività.', platform: payload.platform }, 400);
+  }
+  const clientId = c.env.STRAVA_CLIENT_ID;
+  const clientSecret = c.env.STRAVA_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return c.json({ message: 'Strava non configurato sul server' }, 503);
+
+  const tokenRes = await fetch('https://www.strava.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, grant_type: 'authorization_code' }),
+  });
+  const tokenData = await tokenRes.json().catch(() => ({}));
+  if (!tokenRes.ok) return c.json({ message: tokenData.message || 'Scambio token Strava fallito', platform: payload.platform }, 400);
+
+  const sql = db(c.env);
+  const result = await saveConnection(sql, payload.uid, tokenData, { clientId, redirectUri: payload.ruri });
+  return c.json({
+    connected: true,
+    platform: payload.platform,
+    athlete: tokenData.athlete ? { firstname: tokenData.athlete.firstname, lastname: tokenData.athlete.lastname } : null,
+    importedCount: result.importedCount,
+  });
+});
+
 // GET /strava/status?utenteId=123
 app.get('/status', async (c) => {
   const user = c.get('user');
@@ -214,7 +333,7 @@ app.get('/status', async (c) => {
     return c.json({
       connected: false,
       sync_mode: 'auto',
-      hasServerApp: Boolean(defaultClientId),
+      hasServerApp: Boolean(defaultClientId && c.env.STRAVA_CLIENT_SECRET),
       defaultClientId,
     });
   }
@@ -228,7 +347,7 @@ app.get('/status', async (c) => {
     last_sync: parsed.last_sync || rows[0].updated_at,
     sync_mode: parsed.sync_mode || 'auto',
     clientId: parsed.client_id || defaultClientId,
-    hasServerApp: Boolean(defaultClientId),
+    hasServerApp: Boolean(defaultClientId && c.env.STRAVA_CLIENT_SECRET),
     defaultClientId,
   });
 });
@@ -271,41 +390,12 @@ app.post('/connect', async (c) => {
     }, 400);
   }
 
-  const integrationData = {
-    client_id: effectiveClientId,
-    client_secret: effectiveClientSecret,
-    redirect_uri: redirectUri || 'https://lpt-coach.pages.dev/',
-    sync_mode: syncMode || 'auto',
-    access_token: tokenData.access_token,
-    refresh_token: tokenData.refresh_token,
-    expires_at: tokenData.expires_at,
-    athlete: tokenData.athlete,
-    connected_at: new Date().toISOString(),
-    last_sync: null,
-  };
-
-  await sql`
-    INSERT INTO endurance_integrations (user_id, provider, connected, data_json, updated_at)
-    VALUES (${user.userId}, 'strava', 1, ${JSON.stringify(integrationData)}, NOW())
-    ON CONFLICT (user_id, provider) DO UPDATE SET
-      connected = 1,
-      data_json = EXCLUDED.data_json,
-      updated_at = NOW()
-  `;
-
-  // Find coach if any
-  const coachRows = await sql`
-    SELECT pt_userid FROM pt_clienti WHERE cliente_userid = ${user.userId} AND attivo = 1 LIMIT 1
-  `;
-  const coachId = coachRows.length ? coachRows[0].pt_userid : null;
-
-  // Auto-sync initial activities
-  let syncResult = { importedCount: 0, totalFetched: 0 };
-  try {
-    syncResult = await syncStravaActivities(sql, user.userId, tokenData.access_token, coachId, integrationData);
-  } catch (err) {
-    console.error('Strava initial sync error:', err);
-  }
+  const syncResult = await saveConnection(sql, user.userId, tokenData, {
+    clientId: effectiveClientId,
+    clientSecret: clientSecret || null,
+    redirectUri: redirectUri || DEFAULT_APP_ORIGIN,
+    syncMode,
+  });
 
   return c.json({
     connected: true,

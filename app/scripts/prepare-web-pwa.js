@@ -25,3 +25,9 @@ const swDest = path.join(__dirname, '..', 'dist', 'sw.js');
 if (fs.existsSync(swSrc)) {
   fs.copyFileSync(swSrc, swDest);
 }
+// Pagina di ritorno OAuth Strava: inserisce l'URL del Worker usato dalla build.
+const callbackPath = path.join(__dirname, '..', 'dist', 'strava-callback.html');
+if (fs.existsSync(callbackPath)) {
+  const apiBase = process.env.EXPO_PUBLIC_API_BASE || 'https://lpt-worker.gc-jack1997.workers.dev';
+  fs.writeFileSync(callbackPath, fs.readFileSync(callbackPath, 'utf8').replace('__API_BASE__', apiBase));
+}

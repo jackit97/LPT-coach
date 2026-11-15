@@ -66,6 +66,13 @@ cancellazioni a cascata e indici sulle ricerche principali.
   `app/utils/endurance.js` per i calcoli live dell'editor).
 - **Zone**: test atleta, risultati e zone di allenamento calcolate.
 - **Video**: libreria di link tutorial condivisi.
+- **Strava (collegamento con un tocco)**: l'atleta preme "Connetti con Strava" nel Profilo; si apre
+  l'app Strava (o il sito), accede e autorizza, Strava rimanda a `/strava-callback` (pagina statica in
+  `app/public/strava-callback.html`) che completa lo scambio dei token sul Worker
+  (`POST /strava/oauth/callback`, utente identificato da uno `state` firmato valido 15 minuti) e riporta
+  in LPT Coach (web o app tramite `lptcoach://`). Richiede sul Worker i secret `STRAVA_CLIENT_ID` e
+  `STRAVA_CLIENT_SECRET` e, nelle impostazioni API di Strava, "Authorization Callback Domain" =
+  `lpt-coach.pages.dev`.
 - **Garmin FIT**: download di workout endurance in formato `.fit` tramite FitWriter.
 
 Il modulo endurance puo' essere disabilitato dal profilo coach. Il flag `utenti.endurance_enabled`
