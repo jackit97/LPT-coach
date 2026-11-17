@@ -26,6 +26,6 @@ enabled = true
 
 # Foto dei check (consigliato): crea il bucket con `npx wrangler r2 bucket create lpt-check-photos`
 # e poi togli il commento qui sotto. Senza bucket le foto vengono salvate nel database.
-# [[r2_buckets]]
-# binding = "CHECK_PHOTOS"
-# bucket_name = "lpt-check-photos"
+[[r2_buckets]]
+binding = "CHECK_PHOTOS"
+bucket_name = "lpt-check-photos"

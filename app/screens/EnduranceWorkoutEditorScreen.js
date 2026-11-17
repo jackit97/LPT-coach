@@ -890,18 +890,6 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               placeholderTextColor="#aaa"
             />
 
-            <Text style={[styles.bottomCardTitle, { marginTop: spacing.md }]}>Video (url)</Text>
-            {videoUrls.map((url, vi) => (
-              <View key={vi} style={styles.videoItemRow}>
-                <Text style={styles.videoItemText} numberOfLines={1}>{url}</Text>
-                <Pressable onPress={() => setVideoUrls(videoUrls.filter((_, i) => i !== vi))}>
-                  <Text style={{ color: '#dc2626', fontWeight: '700' }}>✕</Text>
-                </Pressable>
-              </View>
-            ))}
-            <Pressable style={styles.addVideoBtn} onPress={() => setVideoModal(true)}>
-              <Text style={styles.addVideoText}>+ Aggiungi video</Text>
-            </Pressable>
           </View>
 
         </View>

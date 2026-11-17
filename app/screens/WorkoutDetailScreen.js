@@ -140,10 +140,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 
   const sport = sportInfo(workout.sport);
   const typeColor = sport?.color || workoutTypeColors[workout.tipo] || colors.primary;
-  let videoUrls = [];
-  if (workout.endurance?.video_urls_json) {
-    try { videoUrls = JSON.parse(workout.endurance.video_urls_json) || []; } catch { videoUrls = []; }
-  }
+
   let structuredSteps = [];
   if (workout.endurance?.steps_json) {
     try { structuredSteps = JSON.parse(workout.endurance.steps_json); } catch { structuredSteps = []; }
@@ -266,11 +263,6 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           {!!workout.endurance.target && <Text style={styles.detailLine}>Obiettivo: {workout.endurance.target}</Text>}
           {!!workout.endurance.rpe_target && <Text style={styles.detailLine}>RPE obiettivo: {workout.endurance.rpe_target}</Text>}
           {!!workout.endurance.elevation_m && <Text style={styles.detailLine}>Dislivello: +{workout.endurance.elevation_m} m</Text>}
-          {videoUrls.map((url, index) => (
-            <View key={url} style={{ marginTop: spacing.sm }}>
-              <PlayButton url={url} title={workout.titolo} label={videoUrls.length > 1 ? `Guarda video ${index + 1}` : 'Guarda il video'} />
-            </View>
-          ))}
           {!!workout.endurance.description && <Text style={styles.paragraph}>{workout.endurance.description}</Text>}
           {!!workout.endurance.steps_text && <Text style={styles.paragraph}>{workout.endurance.steps_text}</Text>}
           {structuredSteps.map((step, index) => (
@@ -290,7 +282,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
             <View key={ex.exercise_id} style={styles.exerciseRow}>
               <View style={styles.exerciseHeader}>
                 <Text style={[styles.exerciseName, { flex: 1 }]}>{ex.nome}</Text>
-                {!!ex.video_url && <PlayButton url={ex.video_url} title={ex.nome} />}
+                {/* video solo per gli allenamenti di pesistica/forza */}
+                {!!ex.video_url && workout.tipo !== 'endurance' && <PlayButton url={ex.video_url} title={ex.nome} />}
               </View>
               <Text style={styles.exerciseMeta}>
                 {[ex.serie && `${ex.serie} serie`, ex.ripetizioni && `${ex.ripetizioni} rip`, ex.carico, ex.recupero && `rec ${ex.recupero}`]
