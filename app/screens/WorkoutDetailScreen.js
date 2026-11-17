@@ -5,7 +5,8 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography, workoutTypeColors, statusColors } from '../theme';
 import RpeSelector from '../components/RpeSelector';
-import PlayButton from '../components/VideoPlayer';
+import ExerciseSheet from '../components/ExerciseSheet';
+import { Ionicons } from '@expo/vector-icons';
 import { ZONE_COLORS, sportInfo, formatHMS, formatKm } from '../utils/endurance';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
@@ -105,6 +106,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     }
   };
 
+  const [openExercise, setOpenExercise] = useState(null);
+  const onExerciseNoteSaved = (id, note) => {
+    setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, note_atleta: note } : ex)) }));
+  };
   const [librarySaved, setLibrarySaved] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
   const saveToLibrary = async () => {
@@ -279,22 +284,35 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         <View style={styles.section}>
           <Text style={typography.h3}>Esercizi</Text>
           {workout.esercizi.map((ex) => (
-            <View key={ex.exercise_id} style={styles.exerciseRow}>
+            <Pressable key={ex.exercise_id} style={({ pressed }) => [styles.exerciseRow, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(ex)}>
               <View style={styles.exerciseHeader}>
                 <Text style={[styles.exerciseName, { flex: 1 }]}>{ex.nome}</Text>
                 {/* video solo per gli allenamenti di pesistica/forza */}
-                {!!ex.video_url && workout.tipo !== 'endurance' && <PlayButton url={ex.video_url} title={ex.nome} />}
+                {!!ex.video_url && workout.tipo !== 'endurance' && (
+                  <View style={styles.playBadge}><Ionicons name="play" size={15} color="#fff" style={{ marginLeft: 2 }} /></View>
+                )}
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </View>
               <Text style={styles.exerciseMeta}>
                 {[ex.serie && `${ex.serie} serie`, ex.ripetizioni && `${ex.ripetizioni} rip`, ex.carico, ex.recupero && `rec ${ex.recupero}`]
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
-              {!!ex.note && <Text style={styles.exerciseNote}>{ex.note}</Text>}
-            </View>
+              {!!ex.note && <Text style={styles.exerciseNote} numberOfLines={2}>{ex.note}</Text>}
+              {!!ex.note_atleta && <Text style={styles.athleteNote} numberOfLines={1}>📝 {isCoach ? 'Nota atleta' : 'La mia nota'}: {ex.note_atleta}</Text>}
+            </Pressable>
           ))}
         </View>
       )}
+
+      <ExerciseSheet
+        visible={!!openExercise}
+        exercise={openExercise ? { ...openExercise, video_url: workout.tipo !== 'endurance' ? openExercise.video_url : null } : null}
+        source="workout"
+        isCoach={isCoach}
+        onClose={() => setOpenExercise(null)}
+        onSaved={onExerciseNoteSaved}
+      />
 
       {isCoach ? (
         <View style={styles.coachActions}>
@@ -376,6 +394,8 @@ const styles = StyleSheet.create({
   exerciseRow: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
   exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   savedButton: { backgroundColor: '#ECFDF5' },
+  playBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' },
+  athleteNote: { fontSize: 12, color: colors.accent, fontWeight: '600', marginTop: 4 },
   exerciseName: { fontWeight: '700', fontSize: 14, color: colors.text },
   exerciseMeta: { ...typography.caption, marginTop: 2 },
   exerciseNote: { ...typography.caption, marginTop: 4, fontStyle: 'italic' },

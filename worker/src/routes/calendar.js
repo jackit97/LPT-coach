@@ -177,16 +177,28 @@ app.get('/strength-sheets', async (c) => {
   utenteId = Number(utenteId);
   if (user.ruolo === 'personal_trainer' && !await assertCoachOwnsAthlete(sql, user.userId, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
 
+  // Il video arriva dalla libreria del coach: prima quello collegato all'esercizio del catalogo
+  // (stesso nome, maiuscole/spazi ignorati), altrimenti un video non collegato con lo stesso titolo.
   const rows = await sql`
-    SELECT s.*, e.esercizioid AS catalog_exercise_id, e.nomeesercizio, e.serie, e.ripetizioni,
+    SELECT s.*, e.esercizioid AS esercizioid, e.nomeesercizio, e.serie, e.ripetizioni,
            e.descrizione AS exercise_description, e.recupero, e.noteutente, e.videourl AS legacy_video_url,
-           v.videoid, v.titolo AS video_title, v.videourl AS catalog_video_url
+           e.note_atleta, e.note_atleta_at,
+           vid.videoid, vid.titolo AS video_title, vid.videourl AS catalog_video_url
     FROM schedeallenamento s
     LEFT JOIN esercizischeda e ON e.schedaid = s.schedaid
-    LEFT JOIN esercizifull ef ON ef.nomeesercizio = e.nomeesercizio
-    LEFT JOIN videotutorial v ON v.esercizioid = ef.esercizioid
+    LEFT JOIN LATERAL (
+      SELECT v.videoid, v.titolo, v.videourl
+      FROM videotutorial v
+      LEFT JOIN esercizifull ef ON ef.esercizioid = v.esercizioid
+      WHERE e.nomeesercizio IS NOT NULL AND (
+        LOWER(TRIM(ef.nomeesercizio)) = LOWER(TRIM(e.nomeesercizio))
+        OR (v.esercizioid IS NULL AND LOWER(TRIM(v.titolo)) = LOWER(TRIM(e.nomeesercizio)))
+      )
+      ORDER BY (ef.esercizioid IS NOT NULL) DESC, v.videoid DESC
+      LIMIT 1
+    ) vid ON TRUE
     WHERE s.utenteid = ${utenteId}
-    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC, v.videoid ASC
+    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
   `;
   const groups = new Map();
   for (const row of rows) {
@@ -201,6 +213,7 @@ app.get('/strength-sheets', async (c) => {
         esercizioid: row.esercizioid, nome: row.nomeesercizio, serie: row.serie, ripetizioni: row.ripetizioni,
         descrizione: row.exercise_description, recupero: row.recupero, note: row.noteutente,
         video_url: row.legacy_video_url || row.catalog_video_url, video_title: row.video_title,
+        note_atleta: row.note_atleta, note_atleta_at: row.note_atleta_at,
       });
     }
   }
@@ -249,6 +262,34 @@ app.delete('/strength-sheets/:id', roleCheck('personal_trainer'), async (c) => {
   return c.json({ message: 'Scheda eliminata' });
 });
 
+// PUT /calendar/exercise-notes { source: 'scheda' | 'workout', id, note }
+// L'atleta salva le proprie note sul singolo esercizio (carichi usati, sensazioni, dubbi per il coach).
+app.put('/exercise-notes', async (c) => {
+  const user = c.get('user');
+  if (user.ruolo !== 'cliente') return c.json({ message: 'Le note esercizio le scrive l\'atleta' }, 403);
+  const { source, id, note } = await c.req.json().catch(() => ({}));
+  const text = String(note ?? '').trim().slice(0, 2000) || null;
+  const sql = db(c.env);
+  let rows;
+  if (source === 'scheda') {
+    rows = await sql`
+      UPDATE esercizischeda e SET note_atleta = ${text}, note_atleta_at = NOW()
+      FROM schedeallenamento s
+      WHERE e.esercizioid = ${Number(id)} AND s.schedaid = e.schedaid AND s.utenteid = ${user.userId}
+      RETURNING e.esercizioid AS id, e.note_atleta, e.note_atleta_at
+    `;
+  } else {
+    rows = await sql`
+      UPDATE calendar_workout_exercises x SET note_atleta = ${text}, note_atleta_at = NOW()
+      FROM calendar_workouts w
+      WHERE x.exercise_id = ${Number(id)} AND w.workout_id = x.workout_id AND w.utenteid = ${user.userId}
+      RETURNING x.exercise_id AS id, x.note_atleta, x.note_atleta_at
+    `;
+  }
+  if (!rows[0]) return c.json({ message: 'Esercizio non trovato' }, 404);
+  return c.json(rows[0]);
+});
+
 // GET /calendar/:id - full detail (exercises + feedback)
 app.get('/:id', async (c) => {
   const user = c.get('user');
@@ -272,8 +313,9 @@ app.get('/:id', async (c) => {
     SELECT x.*, COALESCE(NULLIF(x.video_url, ''), (
       SELECT v.videourl FROM videotutorial v
       LEFT JOIN esercizifull ef ON ef.esercizioid = v.esercizioid
-      WHERE LOWER(TRIM(v.titolo)) = LOWER(TRIM(x.nome)) OR LOWER(TRIM(ef.nomeesercizio)) = LOWER(TRIM(x.nome))
-      ORDER BY v.videoid DESC LIMIT 1
+      WHERE LOWER(TRIM(ef.nomeesercizio)) = LOWER(TRIM(x.nome))
+         OR (v.esercizioid IS NULL AND LOWER(TRIM(v.titolo)) = LOWER(TRIM(x.nome)))
+      ORDER BY (ef.esercizioid IS NOT NULL) DESC, v.videoid DESC LIMIT 1
     )) AS video_url
     FROM calendar_workout_exercises x WHERE x.workout_id = ${id} ORDER BY x.order_index ASC, x.exercise_id ASC
   `;

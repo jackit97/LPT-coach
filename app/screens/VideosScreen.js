@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { VideoPlayerModal } from '../components/VideoPlayer';
+import ExercisePicker from '../components/ExercisePicker';
 import { colors, spacing, radius, typography } from '../theme';
 import { parseVideo } from '../utils/video';
 
@@ -23,6 +24,8 @@ export default function VideosScreen() {
   const [videourl, setVideourl] = useState('');
   const [descrizione, setDescrizione] = useState('');
   const [saving, setSaving] = useState(false);
+  const [exercise, setExercise] = useState(null); // { id, nome } esercizio del catalogo
+  const [picker, setPicker] = useState(null); // 'new' | videoid da ricollegare
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,17 +49,39 @@ export default function VideosScreen() {
   const preview = parseVideo(videourl);
 
   const createVideo = async () => {
-    if (!titolo.trim() || !videourl.trim()) return Alert.alert('Errore', 'Titolo e link del video sono richiesti');
+    if (!exercise) return Alert.alert('Esercizio', 'Scegli l\'esercizio a cui collegare il video');
+    if (!videourl.trim()) return Alert.alert('Errore', 'Inserisci il link del video');
     setSaving(true);
     try {
-      await api.post('/videos', { titolo: titolo.trim(), videourl: videourl.trim(), descrizione });
+      await api.post('/videos', {
+        titolo: titolo.trim() || exercise.nome,
+        videourl: videourl.trim(),
+        descrizione,
+        esercizioId: exercise.id || null,
+        esercizioNome: exercise.id ? null : exercise.nome,
+      });
       setModalOpen(false);
-      setTitolo(''); setVideourl(''); setDescrizione('');
+      setTitolo(''); setVideourl(''); setDescrizione(''); setExercise(null);
       await load();
     } catch (e) {
       Alert.alert('Errore', e?.response?.data?.message || 'Impossibile aggiungere il video');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onPickExercise = async (item) => {
+    const target = picker;
+    setPicker(null);
+    if (target === 'new') {
+      setExercise(item);
+      return;
+    }
+    try {
+      await api.put(`/videos/${target}`, { esercizioId: item.id || null, esercizioNome: item.id ? null : item.nome });
+      await load();
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Collegamento non riuscito');
     }
   };
 
@@ -82,6 +107,17 @@ export default function VideosScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle} numberOfLines={2}>{item.titolo}</Text>
               {!!item.descrizione && <Text style={styles.cardDesc} numberOfLines={2}>{item.descrizione}</Text>}
+              {item.esercizio_nome ? (
+                <View style={styles.linkRow}>
+                  <Ionicons name="link" size={13} color={colors.success} />
+                  <Text style={styles.linkText}>Esercizio: {item.esercizio_nome}</Text>
+                </View>
+              ) : isCoach ? (
+                <Pressable style={styles.linkRow} onPress={() => setPicker(item.videoid)}>
+                  <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
+                  <Text style={[styles.linkText, { color: colors.warning }]}>Non collegato · tocca per scegliere l'esercizio</Text>
+                </Pressable>
+              ) : null}
             </View>
             {isCoach && (
               <Pressable onPress={() => deleteVideo(item)} hitSlop={8} style={styles.deleteBtn} accessibilityLabel="Elimina video">
@@ -122,13 +158,22 @@ export default function VideosScreen() {
 
       <VideoPlayerModal url={playing?.videourl} title={playing?.titolo} visible={!!playing} onClose={() => setPlaying(null)} />
 
+      {/* su iOS un popup va aperto dentro quello gia' visibile: due istanze, una per contesto */}
+      <ExercisePicker visible={typeof picker === 'number'} onClose={() => setPicker(null)} onSelect={onPickExercise} />
+
       <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Nuovo video tutorial</Text>
-            <Text style={styles.fieldLabel}>Titolo</Text>
-            <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder="Titolo" />
-            <Text style={styles.hint}>Usa il nome dell'esercizio: il video comparirà da solo negli allenamenti che lo contengono.</Text>
+            <Text style={styles.fieldLabel}>Esercizio</Text>
+            <Pressable style={[styles.input, styles.exerciseField]} onPress={() => setPicker('new')}>
+              <Ionicons name="barbell-outline" size={18} color={exercise ? colors.primary : colors.textMuted} />
+              <Text style={{ flex: 1, color: exercise ? colors.text : colors.textMuted, fontWeight: exercise ? '700' : '400' }}>{exercise ? exercise.nome : 'Scegli esercizio'}</Text>
+              <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+            </Pressable>
+            <Text style={styles.hint}>Il video comparirà con il tasto ▶ in tutte le schede e gli allenamenti con questo esercizio.</Text>
+            <Text style={styles.fieldLabel}>Titolo (facoltativo)</Text>
+            <TextInput value={titolo} onChangeText={setTitolo} style={styles.input} placeholder={exercise ? exercise.nome : 'Titolo'} />
             <Text style={styles.fieldLabel}>Link del video</Text>
             <TextInput value={videourl} onChangeText={setVideourl} autoCapitalize="none" style={styles.input} placeholder="Link video" />
             {!!videourl.trim() && (
@@ -138,6 +183,7 @@ export default function VideosScreen() {
             )}
             <Text style={styles.fieldLabel}>Descrizione</Text>
             <TextInput value={descrizione} onChangeText={setDescrizione} style={[styles.input, styles.textArea]} multiline placeholder="Descrizione" />
+            <ExercisePicker visible={picker === 'new'} onClose={() => setPicker(null)} onSelect={onPickExercise} />
             <View style={styles.modalActions}>
               <Pressable style={styles.secondaryButton} onPress={() => setModalOpen(false)}><Text style={styles.secondaryButtonText}>Annulla</Text></Pressable>
               <Pressable style={styles.primaryButton} onPress={createVideo} disabled={saving}>
@@ -166,6 +212,9 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
   cardDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   deleteBtn: { padding: 4 },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  linkText: { fontSize: 12, fontWeight: '700', color: colors.success },
+  exerciseField: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   empty: { ...typography.caption, textAlign: 'center', marginTop: spacing.xl },
   fab: { position: 'absolute', right: spacing.xl, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', elevation: 4 },
   modalOverlay: { flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },

@@ -41,6 +41,24 @@ function PlayerSurface({ info }) {
   );
 }
 
+// Player dentro una pagina/popup (16:9), usato nella scheda dell'esercizio.
+export function InlinePlayer({ url, width }) {
+  const info = parseVideo(url);
+  if (!info) return null;
+  return (
+    <View style={{ width: width || '100%', aspectRatio: 16 / 9, backgroundColor: '#000', borderRadius: radius.md, overflow: 'hidden' }}>
+      {info.kind !== 'unknown' ? <PlayerSurface info={info} /> : (
+        <View style={styles.unknown}>
+          <Text style={styles.fallback}>Questo link non si può riprodurre nell'app.</Text>
+          <Pressable style={styles.externalBtn} onPress={() => Linking.openURL(url)}>
+            <Text style={styles.externalText}>Apri il link</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // Player a schermo intero (modale) con titolo e chiusura.
 export function VideoPlayerModal({ url, title, visible, onClose }) {
   const { width, height } = useWindowDimensions();

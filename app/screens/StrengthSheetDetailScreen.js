@@ -1,14 +1,30 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
-import PlayButton from '../components/VideoPlayer';
+import ExerciseSheet from '../components/ExerciseSheet';
 import { useAuth } from '../context/AuthContext';
+import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
 
 export default function StrengthSheetDetailScreen({ route, navigation }) {
-  const { sheet } = route.params;
   const { isCoach } = useAuth();
-  const [savedDays, setSavedDays] = React.useState({});
+  const { targetUserId } = useAthlete();
+  const [sheet, setSheet] = useState(route.params.sheet);
+  const [savedDays, setSavedDays] = useState({});
+  const [openExercise, setOpenExercise] = useState(null);
+
+  // Ricarica la scheda per avere video e note sempre aggiornati
+  useFocusEffect(useCallback(() => {
+    api.get('/calendar/strength-sheets', { params: isCoach ? { utenteId: targetUserId } : {} })
+      .then(({ data }) => {
+        const fresh = (data || []).find((item) => item.nome === route.params.sheet.nome);
+        if (fresh) setSheet(fresh);
+      })
+      .catch(() => {});
+  }, [isCoach, targetUserId, route.params.sheet.nome]));
+
   // Ogni giorno della scheda diventa un allenamento di forza riutilizzabile in libreria
   const saveDayToLibrary = async (day) => {
     try {
@@ -23,24 +39,82 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
     { text: 'Annulla', style: 'cancel' },
     { text: 'Elimina', style: 'destructive', onPress: async () => { try { await Promise.all(sheet.giorni.map((day) => api.delete(`/calendar/strength-sheets/${day.schedaid}`))); navigation.goBack(); } catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile eliminare la scheda'); } } },
   ]);
-  return <ScrollView style={styles.screen} contentContainerStyle={{ padding: spacing.lg }}>
-    <Text style={typography.h1}>{sheet.nome}</Text>
-    <Text style={typography.caption}>{sheet.giorni.length} giorni · {sheet.datainizio ? String(sheet.datainizio).slice(0, 10) : 'senza data'}</Text>
-    {isCoach && <Pressable style={styles.deleteButton} onPress={deleteSheet}><Text style={styles.deleteText}>Elimina scheda</Text></Pressable>}
-    {sheet.giorni.map((day) => <View key={day.schedaid} style={styles.day}>
-      <View style={styles.dayHeader}>
-        <Text style={[typography.h2, { flex: 1 }]}>{day.nome}</Text>
-        {isCoach && <Pressable style={styles.libraryButton} onPress={() => saveDayToLibrary(day)} disabled={savedDays[day.schedaid]}><Text style={styles.libraryText}>{savedDays[day.schedaid] ? '✓ In libreria' : 'Salva in libreria'}</Text></Pressable>}
-      </View>
-      {day.esercizi.map((exercise) => <View key={exercise.esercizioid} style={styles.exercise}>
-        <View style={styles.exerciseHeader}><Text style={styles.exerciseName}>{exercise.nome}</Text>{!!exercise.video_url && <PlayButton url={exercise.video_url} title={exercise.nome} />}</View>
-        <Text style={typography.caption}>{exercise.serie || '—'} serie · {exercise.ripetizioni || '—'} ripetizioni · recupero {exercise.recupero || '—'}</Text>
-        {!!exercise.descrizione && <Text style={styles.notes}>{exercise.descrizione}</Text>}
-        {!!exercise.note && <Text style={styles.notes}>{exercise.note}</Text>}
-      </View>)}
-      {!day.esercizi.length && <Text style={typography.caption}>Nessun esercizio associato.</Text>}
-    </View>)}
-  </ScrollView>;
+
+  const onNoteSaved = (id, note, at) => {
+    setSheet((current) => ({
+      ...current,
+      giorni: current.giorni.map((day) => ({
+        ...day,
+        esercizi: day.esercizi.map((exercise) => (exercise.esercizioid === id ? { ...exercise, note_atleta: note, note_atleta_at: at } : exercise)),
+      })),
+    }));
+    setOpenExercise((current) => (current && current.esercizioid === id ? { ...current, note_atleta: note } : current));
+  };
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Text style={typography.h1}>{sheet.nome}</Text>
+      <Text style={typography.caption}>{sheet.giorni.length} giorni · {sheet.datainizio ? String(sheet.datainizio).slice(0, 10) : 'senza data'}</Text>
+      {!isCoach && <Text style={styles.hint}>Tocca un esercizio per vedere indicazioni e video e scrivere le tue note.</Text>}
+      {isCoach && <Pressable style={styles.deleteButton} onPress={deleteSheet}><Text style={styles.deleteText}>Elimina scheda</Text></Pressable>}
+      {sheet.giorni.map((day) => (
+        <View key={day.schedaid} style={styles.day}>
+          <View style={styles.dayHeader}>
+            <Text style={[typography.h2, { flex: 1 }]}>{day.nome}</Text>
+            {isCoach && <Pressable style={styles.libraryButton} onPress={() => saveDayToLibrary(day)} disabled={savedDays[day.schedaid]}><Text style={styles.libraryText}>{savedDays[day.schedaid] ? '✓ In libreria' : 'Salva in libreria'}</Text></Pressable>}
+          </View>
+          {day.esercizi.map((exercise, index) => (
+            <Pressable key={exercise.esercizioid || `${day.schedaid}-${index}`} style={({ pressed }) => [styles.exercise, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(exercise)}>
+              <View style={styles.exerciseHeader}>
+                <Text style={styles.exerciseName}>{exercise.nome}</Text>
+                {!!exercise.video_url && (
+                  <View style={styles.playBadge}><Ionicons name="play" size={16} color="#fff" style={{ marginLeft: 2 }} /></View>
+                )}
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </View>
+              <Text style={styles.prescription}>
+                {[exercise.serie && `${exercise.serie} serie`, exercise.ripetizioni && `${exercise.ripetizioni} rip`, exercise.recupero && `rec ${exercise.recupero}`].filter(Boolean).join(' · ') || 'Apri per i dettagli'}
+              </Text>
+              {(!!exercise.descrizione || !!exercise.note) && <Text style={styles.notes} numberOfLines={2}>{exercise.descrizione || exercise.note}</Text>}
+              {!!exercise.note_atleta && (
+                <View style={styles.noteChip}>
+                  <Ionicons name="create-outline" size={13} color={colors.accent} />
+                  <Text style={styles.noteChipText} numberOfLines={1}>{isCoach ? 'Nota atleta: ' : 'La mia nota: '}{exercise.note_atleta}</Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+          {!day.esercizi.length && <Text style={typography.caption}>Nessun esercizio associato.</Text>}
+        </View>
+      ))}
+      <ExerciseSheet
+        visible={!!openExercise}
+        exercise={openExercise}
+        source="scheda"
+        isCoach={isCoach}
+        onClose={() => setOpenExercise(null)}
+        onSaved={onNoteSaved}
+      />
+    </ScrollView>
+  );
 }
 
-const styles = StyleSheet.create({ screen: { flex: 1, backgroundColor: colors.bg }, day: { marginTop: spacing.xl }, exercise: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm }, exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, exerciseName: { ...typography.h3, flex: 1 }, play: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }, playText: { color: colors.textInverse, fontSize: 15 }, notes: { ...typography.body, marginTop: spacing.xs }, dayHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, libraryButton: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 }, libraryText: { color: colors.primary, fontWeight: '700', fontSize: 12 }, deleteButton: { alignSelf: 'flex-start', marginTop: spacing.md, backgroundColor: '#FEE2E2', borderRadius: radius.md, padding: spacing.sm }, deleteText: { color: colors.danger, fontWeight: '700' } });
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.lg, paddingBottom: 60, maxWidth: 900, width: '100%', alignSelf: 'center' },
+  hint: { ...typography.caption, marginTop: spacing.sm, color: colors.accent, fontWeight: '600' },
+  day: { marginTop: spacing.xl },
+  dayHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  exercise: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, borderLeftColor: '#2563EB', borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  exerciseName: { ...typography.h3, flex: 1 },
+  playBadge: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' },
+  prescription: { fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 4 },
+  notes: { ...typography.caption, marginTop: 4 },
+  noteChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, backgroundColor: colors.primaryLight, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start', maxWidth: '100%' },
+  noteChipText: { fontSize: 12, color: colors.accent, fontWeight: '600', flexShrink: 1 },
+  libraryButton: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  libraryText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+  deleteButton: { alignSelf: 'flex-start', marginTop: spacing.md, backgroundColor: '#FEE2E2', borderRadius: radius.md, padding: spacing.sm },
+  deleteText: { color: colors.danger, fontWeight: '700' },
+});

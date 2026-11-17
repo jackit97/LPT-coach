@@ -100,6 +100,7 @@ video, endurance, test e zone. Le migrazioni disponibili sono:
 - `20260910_endurance_toggle.sql`: aggiunge il flag endurance per utente.
 - `20261112_library_templates.sql`: tipo/durata/endurance nei template della libreria.
 - `20261115_strava_integration.sql`: colonne e tabelle per la sincronizzazione Strava.
+- `20261118_esercizi_note_video.sql`: note dell'atleta sugli esercizi, collegamento video-esercizio.
 - `20261117_notifiche_check.sql`: notifiche, check fotografici, RPE nei template della libreria.
 - `20261116_coachpeaking_endurance.sql`: sport per allenamento, D+, video, libreria blocchi
   (va applicata prima di pubblicare il Worker che la usa).
