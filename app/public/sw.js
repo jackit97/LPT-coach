@@ -1,17 +1,26 @@
-const CACHE_NAME = 'lpt-coach-v4';
+// __BUILD_ID__ viene sostituito ad ogni build (scripts/prepare-web-pwa.js): un sw.js diverso
+// fa scattare l'aggiornamento della PWA gia' installata.
+const BUILD_ID = '__BUILD_ID__';
+const CACHE_NAME = `lpt-coach-${BUILD_ID}`;
 const urlsToCache = [
   '/',
   '/favicon.ico',
   '/manifest.webmanifest'
 ];
 
-// Installazione: scarica asset base e attiva subito
+// Installazione: scarica gli asset base. La nuova versione resta "in attesa" finche' l'utente
+// non preme OK nel popup di aggiornamento (messaggio SKIP_WAITING); alla prima installazione si attiva subito.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+      .then(() => self.clients.matchAll({ includeUncontrolled: true }))
+      .then((clients) => { if (!clients.length) return self.skipWaiting(); return undefined; })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // Attivazione: elimina tutte le vecchie cache precedenti e prende il controllo
@@ -30,6 +39,9 @@ self.addEventListener('activate', (event) => {
 // Strategia Network-First per HTML e navigazione (evita schermate bianche su deploy/aggiornamenti)
 self.addEventListener('fetch', (event) => {
   const isNavigate = event.request.mode === 'navigate' || event.request.destination === 'document';
+
+  // Il file di versione non va mai servito dalla cache
+  if (new URL(event.request.url).pathname === '/version.json') return;
 
   if (isNavigate) {
     event.respondWith(

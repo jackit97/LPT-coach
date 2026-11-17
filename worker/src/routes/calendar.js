@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
 import { loadWorkoutsWithLoad } from '../lib/athleteData.js';
+import { notify, coachOf, userName, notifyNewWorkout } from '../lib/notify.js';
 import { isoDay } from '../lib/trainingLoad.js';
 
 const app = new Hono();
@@ -35,10 +36,11 @@ app.post('/functional', roleCheck('personal_trainer'), async (c) => {
     const exercise = esercizi[index];
     if (!exercise?.nome) continue;
     await sql`
-      INSERT INTO calendar_workout_exercises (workout_id, nome, ripetizioni, carico, note, order_index)
-      VALUES (${inserted[0].workout_id}, ${exercise.nome}, ${exercise.ripetizioni || null}, ${exercise.carico || null}, ${exercise.note || null}, ${index})
+      INSERT INTO calendar_workout_exercises (workout_id, nome, ripetizioni, carico, note, video_url, order_index)
+      VALUES (${inserted[0].workout_id}, ${exercise.nome}, ${exercise.ripetizioni || null}, ${exercise.carico || null}, ${exercise.note || null}, ${exercise.videoUrl || null}, ${index})
     `;
   }
+  await notifyNewWorkout(sql, inserted[0], user.userId);
   return c.json(inserted[0], 201);
 });
 
@@ -265,8 +267,15 @@ app.get('/:id', async (c) => {
     if (!owns) return c.json({ message: 'Accesso negato' }, 403);
   }
 
+  // Se all'esercizio non e' stato associato un video, usa quello della libreria con lo stesso nome
   const exercises = await sql`
-    SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id} ORDER BY order_index ASC, exercise_id ASC
+    SELECT x.*, COALESCE(NULLIF(x.video_url, ''), (
+      SELECT v.videourl FROM videotutorial v
+      LEFT JOIN esercizifull ef ON ef.esercizioid = v.esercizioid
+      WHERE LOWER(TRIM(v.titolo)) = LOWER(TRIM(x.nome)) OR LOWER(TRIM(ef.nomeesercizio)) = LOWER(TRIM(x.nome))
+      ORDER BY v.videoid DESC LIMIT 1
+    )) AS video_url
+    FROM calendar_workout_exercises x WHERE x.workout_id = ${id} ORDER BY x.order_index ASC, x.exercise_id ASC
   `;
   const feedback = await sql`
     SELECT * FROM workout_feedback WHERE workout_id = ${id} AND utenteid = ${workout.utenteid} LIMIT 1
@@ -326,11 +335,12 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
           (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
         VALUES
           (${workout.workout_id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
-           ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || null}, ${i})
+           ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i})
       `;
     }
   }
 
+  await notifyNewWorkout(sql, workout, user.userId);
   return c.json(workout);
 });
 
@@ -398,7 +408,7 @@ app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
         (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
       VALUES
         (${id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
-         ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || null}, ${i})
+         ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i})
     `;
   }
   const rows = await sql`SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id} ORDER BY order_index ASC`;
@@ -435,6 +445,15 @@ app.post('/:id/feedback', async (c) => {
     UPDATE calendar_workouts SET stato = ${completato ? 'completato' : 'saltato'}, updated_at = NOW()
     WHERE workout_id = ${id}
   `;
+
+  const coachId = workout.coach_userid || await coachOf(sql, user.userId);
+  await notify(sql, coachId, {
+    tipo: 'feedback',
+    mittenteId: user.userId,
+    titolo: `${await userName(sql, user.userId)} ha ${completato ? 'completato' : 'saltato'} "${workout.titolo}"`,
+    messaggio: [rpe ? `RPE ${rpe}` : null, sensazione ? `sensazione ${sensazione}` : null, note ? `"${String(note).slice(0, 140)}"` : null].filter(Boolean).join(' · ') || null,
+    link: { screen: 'WorkoutDetail', params: { workoutId: id, athleteId: user.userId } },
+  });
 
   return c.json(upserted[0]);
 });

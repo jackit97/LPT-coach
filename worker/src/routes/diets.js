@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { resolveTargetUserId, assertAccessToAthlete } from '../utils.js';
+import { notify, fmtDay } from '../lib/notify.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -166,6 +167,13 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
   `;
   const diet = inserted[0];
   if (Array.isArray(pasti)) await insertMeals(sql, diet.dietaid, pasti);
+  await notify(sql, Number(utenteId), {
+    tipo: 'dieta',
+    mittenteId: c.get('user').userId,
+    titolo: `Nuova dieta: ${nome}`,
+    messaggio: datainizio ? `Valida dal ${fmtDay(datainizio)}${datafine ? ` al ${fmtDay(datafine)}` : ''}` : null,
+    link: { screen: 'DietDetail', params: { dietId: diet.dietaid } },
+  });
   return c.json(diet);
 });
 

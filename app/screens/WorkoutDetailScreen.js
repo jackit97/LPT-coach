@@ -5,6 +5,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography, workoutTypeColors, statusColors } from '../theme';
 import RpeSelector from '../components/RpeSelector';
+import PlayButton from '../components/VideoPlayer';
 import { ZONE_COLORS, sportInfo, formatHMS, formatKm } from '../utils/endurance';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
@@ -104,12 +105,18 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     }
   };
 
+  const [librarySaved, setLibrarySaved] = useState(false);
+  const [savingLibrary, setSavingLibrary] = useState(false);
   const saveToLibrary = async () => {
+    setSavingLibrary(true);
     try {
       await api.post(`/workouts/templates/from-workout/${workoutId}`, {});
+      setLibrarySaved(true);
       Alert.alert('Libreria', 'Allenamento salvato in libreria');
     } catch (error) {
       Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare in libreria');
+    } finally {
+      setSavingLibrary(false);
     }
   };
 
@@ -259,7 +266,11 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           {!!workout.endurance.target && <Text style={styles.detailLine}>Obiettivo: {workout.endurance.target}</Text>}
           {!!workout.endurance.rpe_target && <Text style={styles.detailLine}>RPE obiettivo: {workout.endurance.rpe_target}</Text>}
           {!!workout.endurance.elevation_m && <Text style={styles.detailLine}>Dislivello: +{workout.endurance.elevation_m} m</Text>}
-          {videoUrls.map((url) => <Text key={url} style={styles.detailLine}>Video: {url}</Text>)}
+          {videoUrls.map((url, index) => (
+            <View key={url} style={{ marginTop: spacing.sm }}>
+              <PlayButton url={url} title={workout.titolo} label={videoUrls.length > 1 ? `Guarda video ${index + 1}` : 'Guarda il video'} />
+            </View>
+          ))}
           {!!workout.endurance.description && <Text style={styles.paragraph}>{workout.endurance.description}</Text>}
           {!!workout.endurance.steps_text && <Text style={styles.paragraph}>{workout.endurance.steps_text}</Text>}
           {structuredSteps.map((step, index) => (
@@ -277,14 +288,16 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           <Text style={typography.h3}>Esercizi</Text>
           {workout.esercizi.map((ex) => (
             <View key={ex.exercise_id} style={styles.exerciseRow}>
-              <Text style={styles.exerciseName}>{ex.nome}</Text>
+              <View style={styles.exerciseHeader}>
+                <Text style={[styles.exerciseName, { flex: 1 }]}>{ex.nome}</Text>
+                {!!ex.video_url && <PlayButton url={ex.video_url} title={ex.nome} />}
+              </View>
               <Text style={styles.exerciseMeta}>
                 {[ex.serie && `${ex.serie} serie`, ex.ripetizioni && `${ex.ripetizioni} rip`, ex.carico, ex.recupero && `rec ${ex.recupero}`]
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
               {!!ex.note && <Text style={styles.exerciseNote}>{ex.note}</Text>}
-              {!!ex.video_url && <Text style={styles.exerciseNote}>Video: {ex.video_url}</Text>}
             </View>
           ))}
         </View>
@@ -295,8 +308,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate(workout.tipo === 'endurance' ? 'EnduranceWorkoutEditor' : 'WorkoutEditor', { workoutId: workout.workout_id })}>
             <Text style={styles.secondaryButtonText}>Modifica</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={saveToLibrary}>
-            <Text style={styles.secondaryButtonText}>Salva in libreria</Text>
+          <Pressable style={[styles.secondaryButton, librarySaved && styles.savedButton]} onPress={saveToLibrary} disabled={savingLibrary}>
+            <Text style={[styles.secondaryButtonText, librarySaved && { color: colors.success }]}>
+              {savingLibrary ? 'Salvataggio…' : librarySaved ? '✓ In libreria' : 'Salva in libreria'}
+            </Text>
           </Pressable>
           <Pressable style={styles.dangerButton} onPress={deleteWorkout}>
             <Text style={styles.dangerButtonText}>Elimina</Text>
@@ -366,6 +381,8 @@ const styles = StyleSheet.create({
   stepRow: { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: spacing.sm, marginTop: spacing.xs },
   stepTitle: { color: colors.text, fontWeight: '700', fontSize: 13 },
   exerciseRow: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  savedButton: { backgroundColor: '#ECFDF5' },
   exerciseName: { fontWeight: '700', fontSize: 14, color: colors.text },
   exerciseMeta: { ...typography.caption, marginTop: 2 },
   exerciseNote: { ...typography.caption, marginTop: 4, fontStyle: 'italic' },

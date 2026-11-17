@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndic
 import api from '../api/client';
 import DateField from '../components/DateField';
 import RpeSelector from '../components/RpeSelector';
+import OptionPicker from '../components/OptionPicker';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography, workoutTypeColors } from '../theme';
 import { trimpFromRpe } from '../utils/endurance';
@@ -50,6 +51,14 @@ export default function WorkoutEditorScreen({ route, navigation }) {
   }, [isEdit, editId]);
 
   const plannedTrimp = durataMinuti ? trimpFromRpe(durataMinuti, rpePianificato) : 0;
+
+  // Video tutorial del coach da collegare agli esercizi
+  const [videos, setVideos] = useState([]);
+  useEffect(() => { api.get('/videos').then(({ data }) => setVideos(data || [])).catch(() => setVideos([])); }, []);
+  const videoOptions = [
+    { value: '', label: 'Nessun video (usa quello con lo stesso nome, se c\'è)' },
+    ...videos.map((video) => ({ value: video.videourl, label: video.titolo })),
+  ];
 
   const addExercise = () => setEsercizi((prev) => [...prev, { nome: '', serie: '', ripetizioni: '', carico: '', recupero: '', note: '' }]);
   const updateExercise = (idx, field, value) => {
@@ -182,6 +191,15 @@ export default function WorkoutEditorScreen({ route, navigation }) {
               <TextInput value={String(ex.recupero ?? '')} onChangeText={(v) => updateExercise(idx, 'recupero', v)} placeholder="Recupero" style={[styles.input, styles.quarter]} />
             </View>
             <TextInput value={ex.note ?? ''} onChangeText={(v) => updateExercise(idx, 'note', v)} placeholder="Note" style={styles.input} />
+            <OptionPicker
+              title="Video tutorial"
+              value={ex.video_url || ''}
+              options={videoOptions}
+              onChange={(value) => updateExercise(idx, 'video_url', value)}
+              style={styles.videoPicker}
+              textStyle={styles.videoPickerText}
+              renderLabel={(option) => `🎬 ${option?.value ? option.label : 'Video: automatico'}`}
+            />
           </View>
         ))}
       </View>
@@ -210,6 +228,8 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   chipText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   section: { marginTop: spacing.xl },
+  videoPicker: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surfaceAlt, alignSelf: 'flex-start' },
+  videoPickerText: { fontSize: 12, fontWeight: '700', color: colors.text },
   loadPreview: { marginTop: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm },
   loadPreviewLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' },
   loadPreviewValue: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 2 },

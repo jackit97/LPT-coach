@@ -2,6 +2,9 @@ import { neon } from '@neondatabase/serverless';
 
 const TABLE_NAMES = [
   'athlete_test_results',
+  'body_check_photo_data',
+  'body_check_photos',
+  'body_checks',
   'calendar_workout_exercises',
   'calendar_workouts',
   'diete',
@@ -21,6 +24,7 @@ const TABLE_NAMES = [
   'esercizischeda',
   'food_and_nutritional_value',
   'foodcompositionraw',
+  'notifiche',
   'pagamenti',
   'pastidieta',
   'profiloutente',

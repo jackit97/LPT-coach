@@ -13,6 +13,24 @@ import { useEffect } from 'react';
 // Avoid white-on-white inputs: some Android/Chrome auto-dark modes invert unstyled text fields.
 TextInput.defaultProps = TextInput.defaultProps || {};
 TextInput.defaultProps.placeholderTextColor = colors.textMuted;
+// Su web/PWA Alert.alert di react-native-web non fa nulla: messaggi di conferma ("Salvato in libreria")
+// e richieste di conferma ("Elimina?") non comparivano. Li mappiamo su alert/confirm del browser.
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  Alert.alert = (title, message, buttons) => {
+    const text = [title, message].filter(Boolean).join('\n\n');
+    const list = Array.isArray(buttons) ? buttons : [];
+    if (list.length <= 1) {
+      window.alert(text);
+      list[0]?.onPress?.();
+      return;
+    }
+    const cancel = list.find((button) => button.style === 'cancel');
+    const confirmButton = list.find((button) => button !== cancel) || list[list.length - 1];
+    if (window.confirm(text)) confirmButton?.onPress?.();
+    else cancel?.onPress?.();
+  };
+}
+
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const meta = document.createElement('meta');
   meta.name = 'color-scheme';
@@ -46,7 +64,12 @@ import TemplatesScreen from './screens/TemplatesScreen';
 import WorkoutLibraryScreen from './screens/WorkoutLibraryScreen';
 import TemplateDetailScreen from './screens/TemplateDetailScreen';
 import ZonesScreen from './screens/ZonesScreen';
+import AppUpdater from './components/AppUpdater';
 import MoreScreen from './screens/MoreScreen';
+import ChecksScreen from './screens/ChecksScreen';
+import CheckDetailScreen from './screens/CheckDetailScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
+import { NotificationsProvider, useNotifications } from './context/NotificationsContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -61,7 +84,7 @@ function BackButton({ navigation, route }) {
       style={{ paddingRight: 12, paddingVertical: 6 }}
       hitSlop={8}
     >
-      <Ionicons name="chevron-back" size={24} color={colors.textInverse} />
+      <Ionicons name="arrow-back" size={24} color={colors.textInverse} />
     </Pressable>
   );
 }
@@ -72,15 +95,39 @@ const screenOptions = ({ navigation, route }) => ({
   headerTitleStyle: { fontWeight: '700', fontSize: 18 },
   headerTitleAlign: 'left',
   headerShadowVisible: false,
-  headerRight: () => <ProfileButton navigation={navigation} />,
+  headerRight: () => <HeaderActions navigation={navigation} />,
   headerLeft: () => <BackButton navigation={navigation} route={route} />,
 });
+
+// Campanella con il numero di notifiche non lette
+function NotificationBell({ navigation }) {
+  const { unread } = useNotifications();
+  return (
+    <Pressable onPress={() => navigation.navigate('NotificationsTab', { screen: 'NotificationsHome' })} style={{ paddingHorizontal: 8 }} hitSlop={8} accessibilityLabel="Notifiche">
+      <Ionicons name={unread ? 'notifications' : 'notifications-outline'} size={25} color={colors.textInverse} />
+      {unread > 0 && (
+        <View style={{ position: 'absolute', top: -4, right: 2, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: colors.primary }}>
+          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{unread > 99 ? '99+' : unread}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
 
 function ProfileButton({ navigation }) {
   return (
     <Pressable onPress={() => navigation.navigate('Profile')} style={{ paddingHorizontal: 8 }} hitSlop={8} accessibilityLabel="Profilo">
       <Ionicons name="person-circle-outline" size={28} color={colors.textInverse} />
     </Pressable>
+  );
+}
+
+function HeaderActions({ navigation }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <NotificationBell navigation={navigation} />
+      <ProfileButton navigation={navigation} />
+    </View>
   );
 }
 
@@ -105,7 +152,7 @@ function CalendarStack() {
       <Stack.Screen
         name="Calendar"
         component={CalendarScreen}
-        options={({ navigation }) => ({ title: 'Calendario', headerRight: () => <ProfileButton navigation={navigation} /> })}
+        options={{ title: 'Calendario' }}
       />
       <Stack.Screen name="NewActivity" component={NewActivityScreen} options={{ title: 'Nuova attività' }} />
       <Stack.Screen name="DayWorkouts" component={DayWorkoutsScreen} options={{ title: 'Workout del giorno' }} />
@@ -217,6 +264,26 @@ function ClientsTabStack() {
   );
 }
 
+function ChecksStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="ChecksHome" component={ChecksScreen} options={{ title: 'Check fotografici' }} />
+      <Stack.Screen name="CheckDetail" component={CheckDetailScreen} options={{ title: 'Check' }} />
+      <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
+function NotificationsStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="NotificationsHome" component={NotificationsScreen} options={{ title: 'Notifiche' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
 function MoreStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
@@ -252,18 +319,20 @@ function MainTabs() {
     >
       <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
       {isCoach && <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'people')} />}
-      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'library')} />}
+      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'bookmarks')} />}
       {!isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />}
-      <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'nutrition')} />
+      <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />
       {!isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
-      <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'grid')} />
+      <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
 
       {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
       {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
       {isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={hiddenTab('Pesistica')} />}
       {isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={hiddenTab('Zone')} />}
       {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />}
-      {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />}
+      <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />
+      <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
+      <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
       <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
     </Tab.Navigator>
   );
@@ -291,7 +360,9 @@ function RootNavigator() {
 
   return (
     <AthleteProvider>
-      <MainTabs />
+      <NotificationsProvider>
+        <MainTabs />
+      </NotificationsProvider>
     </AthleteProvider>
   );
 }
@@ -384,22 +455,10 @@ function useStravaReturnNotice() {
 
 export default function App() {
   useStravaReturnNotice();
-  useEffect(() => {
-    if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            console.log('ServiceWorker registrato con successo:', registration.scope);
-          })
-          .catch((error) => {
-            console.log('Registrazione ServiceWorker fallita:', error);
-          });
-      });
-    }
-  }, []);
 
   return (
     <ErrorBoundary>
+      <AppUpdater />
       <AuthProvider>
         <NavigationContainer>
           <StatusBar style="light" />

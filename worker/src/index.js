@@ -12,12 +12,14 @@ import workoutsRoutes from './routes/workouts.js';
 import ptRoutes from './routes/pt.js';
 import zonesRoutes from './routes/zones.js';
 import stravaRoutes from './routes/strava.js';
+import notificationsRoutes from './routes/notifications.js';
+import checksRoutes from './routes/checks.js';
 import { isDbConfigured, DbNotConfiguredError } from './db.js';
 
 const app = new Hono();
 
 app.use('*', async (c, next) => {
-  const middleware = cors({ origin: c.env.CORS_ORIGIN || '*', allowHeaders: ['Content-Type', 'Authorization'] });
+  const middleware = cors({ origin: c.env.CORS_ORIGIN || '*', allowHeaders: ['Content-Type', 'Authorization'], allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
   return middleware(c, next);
 });
 
@@ -36,6 +38,8 @@ app.route('/workouts', workoutsRoutes);
 app.route('/pt', ptRoutes);
 app.route('/zones', zonesRoutes);
 app.route('/strava', stravaRoutes);
+app.route('/notifications', notificationsRoutes);
+app.route('/checks', checksRoutes);
 
 app.notFound((c) => c.json({ message: 'Not found' }, 404));
 app.onError((err, c) => {

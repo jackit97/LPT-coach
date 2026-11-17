@@ -43,7 +43,14 @@
       }
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "LPT Coach usa le foto per inviare i check al tuo coach.",
+          "cameraPermission": "LPT Coach usa la fotocamera per scattare le foto del check."
+        }
+      ]
     ],
     "extra": {
       "eas": {

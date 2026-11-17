@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
+import { notifyNewWorkout } from '../lib/notify.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -91,6 +92,7 @@ app.post('/duplicate/:id', async (c) => {
     durataSecondi: w.durata_secondi, rpe: w.rpe_pianificato, colore: w.colore, sport: w.sport,
     esercizi: snap.esercizi, endurance: snap.endurance,
   });
+  await notifyNewWorkout(sql, created, user.userId);
   return c.json(created, 201);
 });
 
@@ -110,9 +112,9 @@ app.post('/templates/from-workout/:id', async (c) => {
     sport: snap.endurance.sport || w.sport, elevation_m: snap.endurance.elevation_m, video_urls_json: snap.endurance.video_urls_json,
   }) : null;
   const templates = await sql`
-    INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo, durata_minuti, durata_secondi, endurance_json)
+    INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo, durata_minuti, durata_secondi, endurance_json, rpe_pianificato)
     VALUES (${user.userId}, ${(nomeTemplate || w.titolo).trim()}, ${w.descrizione || null}, ${w.tipo || 'forza'},
-      ${w.durata_minuti || null}, ${w.durata_secondi || null}, ${enduranceJson})
+      ${w.durata_minuti || null}, ${w.durata_secondi || null}, ${enduranceJson}, ${w.rpe_pianificato || null})
     RETURNING templateid
   `;
   const templateId = templates[0].templateid;
@@ -123,6 +125,32 @@ app.post('/templates/from-workout/:id', async (c) => {
         (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
       VALUES (${templateId}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.note || null},
         ${ex.video_url || null}, ${ex.recupero || null}, ${ex.carico || null}, ${i})
+    `;
+  }
+  return c.json(await getTemplate(sql, templateId, user.userId), 201);
+});
+
+// POST /workouts/templates/from-sheet/:schedaid - salva in libreria un giorno di una scheda palestra
+app.post('/templates/from-sheet/:schedaid', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const schedaId = Number(c.req.param('schedaid'));
+  const sheets = await sql`SELECT * FROM schedeallenamento WHERE schedaid = ${schedaId}`;
+  const sheet = sheets[0];
+  if (!sheet || !await assertCoachOwnsAthlete(sql, user.userId, sheet.utenteid)) return c.json({ message: 'Scheda non trovata' }, 404);
+  const exercises = await sql`SELECT * FROM esercizischeda WHERE schedaid = ${schedaId} ORDER BY esercizioid ASC`;
+  const templates = await sql`
+    INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo)
+    VALUES (${user.userId}, ${String(sheet.nomescheda || 'Scheda palestra').trim()}, ${sheet.notegenerali || null}, 'forza')
+    RETURNING templateid
+  `;
+  const templateId = templates[0].templateid;
+  for (let i = 0; i < exercises.length; i += 1) {
+    const ex = exercises[i];
+    await sql`
+      INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, orderindex)
+      VALUES (${templateId}, ${ex.nomeesercizio}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.descrizione || ex.noteutente || null},
+        ${ex.videourl || null}, ${ex.recupero || null}, ${i})
     `;
   }
   return c.json(await getTemplate(sql, templateId, user.userId), 201);
@@ -213,12 +241,14 @@ app.post('/templates/:id/assign', async (c) => {
     descrizione: template.notegenerali,
     durataMinuti: template.durata_minuti,
     durataSecondi: template.durata_secondi,
+    rpe: template.rpe_pianificato,
     esercizi: template.esercizi.map((e) => ({
       nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico,
       recupero: e.recupero, note: e.descrizione, video_url: e.videourl,
     })),
     endurance,
   });
+  await notifyNewWorkout(sql, workout, user.userId);
   return c.json(workout, 201);
 });
 

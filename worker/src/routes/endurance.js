@@ -5,6 +5,7 @@ import { authenticate, roleCheck } from '../auth.js';
 import { resolveTargetUserId, assertAccessToAthlete, assertCoachOwnsAthlete } from '../utils.js';
 import { loadMergedZones, loadAthleteLoad } from '../lib/athleteData.js';
 import { todayIso, addDaysIso } from '../lib/trainingLoad.js';
+import { notifyNewWorkout } from '../lib/notify.js';
 
 const { FitWriter } = FitWriterPkg;
 const app = new Hono();
@@ -217,6 +218,7 @@ app.post('/workouts', roleCheck('personal_trainer'), async (c) => {
     VALUES (${utenteId}, ${user.userId}, ${session.session_id}, ${date}, 'endurance', ${title}, ${description || null}, ${durationMinutes}, ${durationSeconds || null}, ${rpeTarget || null}, ${sportKey}, 'pianificato')
     RETURNING *
   `;
+  await notifyNewWorkout(sql, workout[0], user.userId);
   return c.json({ ...workout[0], session }, 201);
 });
 

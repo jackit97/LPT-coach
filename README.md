@@ -73,6 +73,17 @@ cancellazioni a cascata e indici sulle ricerche principali.
   in LPT Coach (web o app tramite `lptcoach://`). Richiede sul Worker i secret `STRAVA_CLIENT_ID` e
   `STRAVA_CLIENT_SECRET` e, nelle impostazioni API di Strava, "Authorization Callback Domain" =
   `lpt-coach.pages.dev`.
+- **Notifiche**: tabella `notifiche`, campanella con badge nell'intestazione (aggiornata ogni minuto) e
+  schermata dedicata. Vengono create per nuovi allenamenti, feedback, diete, pagamenti e check.
+- **Check fotografici**: il coach richiede un check, l'atleta carica fronte/lato/retro (ridimensionate a
+  1280 px), invia peso e note; il coach confronta con il check precedente e commenta. Le foto vanno nel
+  bucket R2 `CHECK_PHOTOS` se collegato (vedi `worker/wrangler.toml`), altrimenti nel database, e sono
+  servite con URL firmati a scadenza.
+- **Video**: player integrato (YouTube "nocookie", Vimeo, Cloudflare Stream, Bunny Stream, file mp4) negli
+  esercizi, nelle schede e nella libreria video; un video con lo stesso nome dell'esercizio viene
+  collegato automaticamente.
+- **Aggiornamento PWA**: ogni build genera un id univoco (`version.json`, `sw.js`, meta `app-version`);
+  quando viene pubblicata una versione nuova l'app mostra un popup con il solo tasto OK e si aggiorna.
 - **Garmin FIT**: download di workout endurance in formato `.fit` tramite FitWriter.
 
 Il modulo endurance puo' essere disabilitato dal profilo coach. Il flag `utenti.endurance_enabled`
@@ -89,6 +100,7 @@ video, endurance, test e zone. Le migrazioni disponibili sono:
 - `20260910_endurance_toggle.sql`: aggiunge il flag endurance per utente.
 - `20261112_library_templates.sql`: tipo/durata/endurance nei template della libreria.
 - `20261115_strava_integration.sql`: colonne e tabelle per la sincronizzazione Strava.
+- `20261117_notifiche_check.sql`: notifiche, check fotografici, RPE nei template della libreria.
 - `20261116_coachpeaking_endurance.sql`: sport per allenamento, D+, video, libreria blocchi
   (va applicata prima di pubblicare il Worker che la usa).
 

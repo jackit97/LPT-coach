@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
-import { resolveTargetUserId, assertAccessToAthlete } from '../utils.js';
+import { resolveTargetUserId, assertAccessToAthlete, assertCoachOwnsAthlete } from '../utils.js';
+import { notify, fmtDay } from '../lib/notify.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -29,6 +30,7 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const { utenteId, importo, scadenza, causale, stato, datapagamento } = await c.req.json();
   if (!utenteId || !importo) return c.json({ message: 'utenteId e importo sono richiesti' }, 400);
+  if (!await assertCoachOwnsAthlete(sql, user.userId, Number(utenteId))) return c.json({ message: 'Accesso negato' }, 403);
 
   const inserted = await sql`
     INSERT INTO pagamenti (utenteid, datapagamento, importo, scadenza, causale, creatodaid, stato)
@@ -36,6 +38,13 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
             ${user.userId}, ${stato || 'In sospeso'})
     RETURNING *
   `;
+  await notify(sql, Number(utenteId), {
+    tipo: 'pagamento',
+    mittenteId: user.userId,
+    titolo: `Nuovo pagamento: ${causale || 'quota'}`,
+    messaggio: `${Number(importo).toFixed(2)} €${scadenza ? ` · scadenza ${fmtDay(scadenza)}` : ''}`,
+    link: { screen: 'PaymentsHome', params: {} },
+  });
   return c.json(inserted[0]);
 });
 
