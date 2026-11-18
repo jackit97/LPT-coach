@@ -179,7 +179,10 @@ app.get('/strength-sheets', async (c) => {
 
   // Il video arriva dalla libreria del coach: prima quello collegato all'esercizio del catalogo
   // (stesso nome, maiuscole/spazi ignorati), altrimenti un video non collegato con lo stesso titolo.
-  const rows = await sql`
+  // Se la migrazione 20261118 (note_atleta) non e' ancora stata applicata la scheda deve comunque comparire.
+  let rows;
+  try {
+    rows = await sql`
     SELECT s.*, e.esercizioid AS esercizioid, e.nomeesercizio, e.serie, e.ripetizioni,
            e.descrizione AS exercise_description, e.recupero, e.noteutente, e.videourl AS legacy_video_url,
            e.note_atleta, e.note_atleta_at,
@@ -200,6 +203,30 @@ app.get('/strength-sheets', async (c) => {
     WHERE s.utenteid = ${utenteId}
     ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
   `;
+  } catch (error) {
+    if (!/note_atleta/.test(String(error?.message))) throw error;
+    rows = await sql`
+    SELECT s.*, e.esercizioid AS esercizioid, e.nomeesercizio, e.serie, e.ripetizioni,
+           e.descrizione AS exercise_description, e.recupero, e.noteutente, e.videourl AS legacy_video_url,
+           NULL::text AS note_atleta, NULL::timestamp AS note_atleta_at,
+           vid.videoid, vid.titolo AS video_title, vid.videourl AS catalog_video_url
+    FROM schedeallenamento s
+    LEFT JOIN esercizischeda e ON e.schedaid = s.schedaid
+    LEFT JOIN LATERAL (
+      SELECT v.videoid, v.titolo, v.videourl
+      FROM videotutorial v
+      LEFT JOIN esercizifull ef ON ef.esercizioid = v.esercizioid
+      WHERE e.nomeesercizio IS NOT NULL AND (
+        LOWER(TRIM(ef.nomeesercizio)) = LOWER(TRIM(e.nomeesercizio))
+        OR (v.esercizioid IS NULL AND LOWER(TRIM(v.titolo)) = LOWER(TRIM(e.nomeesercizio)))
+      )
+      ORDER BY (ef.esercizioid IS NOT NULL) DESC, v.videoid DESC
+      LIMIT 1
+    ) vid ON TRUE
+    WHERE s.utenteid = ${utenteId}
+    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
+  `;
+  }
   const groups = new Map();
   for (const row of rows) {
     const match = String(row.nomescheda || '').match(/^(.*?)(?:\s+-\s+Giorno\s+([A-Za-z0-9]+))?$/i);
@@ -271,6 +298,7 @@ app.put('/exercise-notes', async (c) => {
   const text = String(note ?? '').trim().slice(0, 2000) || null;
   const sql = db(c.env);
   let rows;
+  try {
   if (source === 'scheda') {
     rows = await sql`
       UPDATE esercizischeda e SET note_atleta = ${text}, note_atleta_at = NOW()
@@ -285,6 +313,10 @@ app.put('/exercise-notes', async (c) => {
       WHERE x.exercise_id = ${Number(id)} AND w.workout_id = x.workout_id AND w.utenteid = ${user.userId}
       RETURNING x.exercise_id AS id, x.note_atleta, x.note_atleta_at
     `;
+  }
+  } catch (error) {
+    if (/note_atleta/.test(String(error?.message))) return c.json({ message: 'Note non ancora attive: va applicata la migrazione 20261118_esercizi_note_video.sql' }, 503);
+    throw error;
   }
   if (!rows[0]) return c.json({ message: 'Esercizio non trovato' }, 404);
   return c.json(rows[0]);

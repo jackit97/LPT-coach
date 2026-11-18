@@ -12,6 +12,7 @@ export default function StrengthScreen({ navigation }) {
   const { selectedAthlete, targetUserId } = useAthlete();
   const [sheets, setSheets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     if (!targetUserId) { setSheets([]); setLoading(false); return; }
@@ -19,6 +20,9 @@ export default function StrengthScreen({ navigation }) {
     try {
       const { data } = await api.get('/calendar/strength-sheets', { params: { utenteId: targetUserId } });
       setSheets(data || []);
+      setError(null);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.response?.data?.message || 'Impossibile caricare le schede. Riprova.');
     } finally {
       setLoading(false);
     }
@@ -48,7 +52,9 @@ export default function StrengthScreen({ navigation }) {
           keyExtractor={(item) => item.nome}
           contentContainerStyle={{ padding: spacing.lg }}
           ListHeaderComponent={<Text style={styles.heading}>{isCoach ? `Pesistica di ${selectedAthlete?.nome}` : 'I miei allenamenti di pesistica'}</Text>}
-          ListEmptyComponent={<Text style={styles.empty}>Nessuna scheda di pesistica assegnata.</Text>}
+          ListEmptyComponent={error ? (
+            <Pressable onPress={load}><Text style={[styles.empty, { color: colors.danger || '#c62828' }]}>{error}{'\n'}Tocca per riprovare.</Text></Pressable>
+          ) : <Text style={styles.empty}>Nessuna scheda di pesistica assegnata.</Text>}
           renderItem={({ item }) => (
             <Pressable style={styles.card} onPress={() => navigation.navigate('StrengthSheetDetail', { sheet: item })}>
               <Text style={typography.h3}>{item.nome}</Text>
