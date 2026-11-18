@@ -131,7 +131,12 @@ app.get('/', async (c) => {
   const fromDate = from || '1970-01-01';
   const toDate = to || '2999-12-31';
 
-  await syncSourceWorkouts(sql, utenteId, true);
+  // La generazione delle occorrenze da schede/piani non deve mai svuotare il calendario
+  try {
+    await syncSourceWorkouts(sql, utenteId, true);
+  } catch (error) {
+    console.error('syncSourceWorkouts', utenteId, error?.message);
+  }
 
   // Ogni workout include "load": TRIMP/tempo/km pianificati ed eseguiti e profilo zone (stile CoachPeaking)
   const workouts = await loadWorkoutsWithLoad(sql, utenteId, fromDate, toDate);

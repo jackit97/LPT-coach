@@ -34,6 +34,7 @@ export default function CalendarScreen({ navigation }) {
   const [assistant, setAssistant] = useState(null);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [statsOpen, setStatsOpen] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const rangeEnd = addDays(weekStart, WEEKS_SHOWN * 7 - 1);
   const fromISO = toISODate(weekStart);
@@ -50,8 +51,9 @@ export default function CalendarScreen({ navigation }) {
     try {
       const { data } = await api.get('/calendar', { params: { utenteId: targetUserId, from, to } });
       setWorkouts(enduranceEnabled ? (data || []) : (data || []).filter((w) => w.tipo !== 'endurance'));
+      setLoadError(null);
     } catch (e) {
-      // keep silent, show empty calendar
+      setLoadError(e?.response?.data?.detail || e?.response?.data?.message || 'Impossibile caricare il calendario.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -194,6 +196,11 @@ export default function CalendarScreen({ navigation }) {
       {!isCoach && !profileComplete && (
         <Pressable style={styles.profileWarning} onPress={() => navigation.navigate('Profile')}>
           <Text style={styles.profileWarningText}>Completa il tuo profilo per essere aggiunto tra gli atleti del coach. Tocca qui.</Text>
+        </Pressable>
+      )}
+      {!!loadError && (
+        <Pressable style={styles.profileWarning} onPress={() => { setLoading(true); load(); }}>
+          <Text style={styles.profileWarningText}>Errore nel caricamento: {loadError} · Tocca per riprovare</Text>
         </Pressable>
       )}
       <View style={styles.header}>
