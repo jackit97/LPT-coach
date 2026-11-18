@@ -5,8 +5,9 @@ import { authenticate, roleCheck } from '../auth.js';
 const app = new Hono();
 app.use('*', authenticate());
 
-// GET /videos - library of video tutorials (shared across the coach's athletes)
-app.get('/', async (c) => {
+// GET /videos - libreria video, solo per il coach. Gli atleti vedono i video solo dentro le schede
+// (l'URL arriva insieme all'esercizio da /calendar/strength-sheets e /calendar/:id).
+app.get('/', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const rows = await sql`
     SELECT v.*, ef.nomeesercizio AS esercizio_nome

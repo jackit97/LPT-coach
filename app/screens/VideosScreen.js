@@ -25,7 +25,7 @@ export default function VideosScreen() {
   const [descrizione, setDescrizione] = useState('');
   const [saving, setSaving] = useState(false);
   const [exercise, setExercise] = useState(null); // { id, nome } esercizio del catalogo
-  const [picker, setPicker] = useState(null); // 'new' | videoid da ricollegare
+  const [picker, setPicker] = useState(null); // 'new' | videoid da collegare/ricollegare
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +85,18 @@ export default function VideosScreen() {
     }
   };
 
+  const relinkVideo = videos.find((video) => video.videoid === picker);
+  const unlinkVideo = async () => {
+    const target = picker;
+    setPicker(null);
+    try {
+      await api.put(`/videos/${target}`, { scollega: true });
+      await load();
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Operazione non riuscita');
+    }
+  };
+
   const deleteVideo = (video) => {
     Alert.alert('Elimina video', `Eliminare "${video.titolo}"?`, [
       { text: 'Annulla', style: 'cancel' },
@@ -108,10 +120,14 @@ export default function VideosScreen() {
               <Text style={styles.cardTitle} numberOfLines={2}>{item.titolo}</Text>
               {!!item.descrizione && <Text style={styles.cardDesc} numberOfLines={2}>{item.descrizione}</Text>}
               {item.esercizio_nome ? (
-                <View style={styles.linkRow}>
+                <Pressable style={styles.linkRow} onPress={() => setPicker(item.videoid)} accessibilityLabel="Cambia esercizio collegato">
                   <Ionicons name="link" size={13} color={colors.success} />
                   <Text style={styles.linkText}>Esercizio: {item.esercizio_nome}</Text>
-                </View>
+                  <View style={styles.changeChip}>
+                    <Ionicons name="swap-horizontal" size={12} color={colors.primary} />
+                    <Text style={styles.changeText}>Cambia</Text>
+                  </View>
+                </Pressable>
               ) : isCoach ? (
                 <Pressable style={styles.linkRow} onPress={() => setPicker(item.videoid)}>
                   <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
@@ -159,7 +175,14 @@ export default function VideosScreen() {
       <VideoPlayerModal url={playing?.videourl} title={playing?.titolo} visible={!!playing} onClose={() => setPlaying(null)} />
 
       {/* su iOS un popup va aperto dentro quello gia' visibile: due istanze, una per contesto */}
-      <ExercisePicker visible={typeof picker === 'number'} onClose={() => setPicker(null)} onSelect={onPickExercise} />
+      <ExercisePicker
+        visible={typeof picker === 'number'}
+        title={relinkVideo?.esercizio_nome ? 'Cambia esercizio collegato' : 'Collega a un esercizio'}
+        currentId={relinkVideo?.esercizioid}
+        onUnlink={relinkVideo?.esercizioid ? unlinkVideo : undefined}
+        onClose={() => setPicker(null)}
+        onSelect={onPickExercise}
+      />
 
       <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -213,7 +236,9 @@ const styles = StyleSheet.create({
   cardDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   deleteBtn: { padding: 4 },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
-  linkText: { fontSize: 12, fontWeight: '700', color: colors.success },
+  linkText: { fontSize: 12, fontWeight: '700', color: colors.success, flexShrink: 1 },
+  changeChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 6, borderWidth: 1, borderColor: colors.primary, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
+  changeText: { fontSize: 11, fontWeight: '800', color: colors.primary },
   exerciseField: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   empty: { ...typography.caption, textAlign: 'center', marginTop: spacing.xl },
   fab: { position: 'absolute', right: spacing.xl, bottom: spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', elevation: 4 },

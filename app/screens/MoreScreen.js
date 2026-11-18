@@ -12,7 +12,9 @@ export function moreSections({ isCoach, enduranceEnabled }) {
     enduranceEnabled && isCoach && { tab: 'ZonesTab', screen: 'ZonesHome', icon: 'speedometer', color: '#F59E0B', title: 'Zone e test', desc: 'Test atletici e zone di allenamento' },
     isCoach && enduranceEnabled && { tab: 'TemplatesTab', screen: 'TemplatesHome', icon: 'albums', color: '#7C3AED', title: 'Template piani', desc: 'Piani endurance riutilizzabili' },
     { tab: 'ChecksTab', screen: 'ChecksHome', icon: 'camera', color: '#0D9488', title: 'Check fotografici', desc: isCoach ? 'Richiedi le foto e commenta i progressi' : 'Carica le foto richieste dal coach' },
-    { tab: 'VideosTab', screen: 'VideosHome', icon: 'play-circle', color: '#DC2626', title: 'Video tutorial', desc: isCoach ? 'Libreria di video esercizi' : 'I video degli esercizi del coach' },
+    // Solo coach: gli atleti vedono i video dentro le schede, toccando l'esercizio
+    isCoach && { tab: 'VideosTab', screen: 'VideosHome', icon: 'play-circle', color: '#DC2626', title: 'Video tutorial', desc: 'Carica i video e collegali agli esercizi' },
+    isCoach && { tab: 'ExercisesTab', screen: 'ExercisesHome', icon: 'list', color: '#4F46E5', title: 'Catalogo esercizi', desc: 'Aggiungi, rinomina o elimina gli esercizi' },
     { tab: 'NotificationsTab', screen: 'NotificationsHome', icon: 'notifications', color: '#2563EB', title: 'Notifiche', desc: 'Novità su allenamenti, check e diete' },
     { tab: 'PaymentsTab', screen: 'PaymentsHome', icon: 'card', color: '#EA580C', title: 'Pagamenti', desc: isCoach ? 'Scadenze e incassi degli atleti' : 'Le tue scadenze' },
   ].filter(Boolean);

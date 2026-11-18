@@ -5,7 +5,7 @@ import api from '../api/client';
 import { colors, radius, spacing } from '../theme';
 
 // Scelta di un esercizio dal catalogo (tabella esercizifull), con possibilita' di crearne uno nuovo.
-export default function ExercisePicker({ visible, onClose, onSelect }) {
+export default function ExercisePicker({ visible, onClose, onSelect, onUnlink, currentId, title = 'Scegli l\'esercizio' }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -35,13 +35,19 @@ export default function ExercisePicker({ visible, onClose, onSelect }) {
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.card}>
           <View style={styles.header}>
-            <Text style={styles.title}>Scegli l'esercizio</Text>
+            <Text style={styles.title}>{title}</Text>
             <Pressable onPress={onClose} hitSlop={10}><Ionicons name="close" size={24} color={colors.textMuted} /></Pressable>
           </View>
           <View style={styles.search}>
             <Ionicons name="search" size={18} color={colors.textMuted} />
             <TextInput value={query} onChangeText={setQuery} placeholder="Cerca esercizio" style={{ flex: 1, paddingVertical: spacing.sm }} autoFocus />
           </View>
+          {!!onUnlink && (
+            <Pressable style={styles.create} onPress={onUnlink}>
+              <Ionicons name="unlink-outline" size={20} color={colors.danger} />
+              <Text style={[styles.createText, { color: colors.danger }]}>Scollega dall'esercizio attuale</Text>
+            </Pressable>
+          )}
           {!!query.trim() && !exact && (
             <Pressable style={styles.create} onPress={() => onSelect({ id: null, nome: query.trim() })}>
               <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
@@ -56,9 +62,10 @@ export default function ExercisePicker({ visible, onClose, onSelect }) {
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={<Text style={styles.empty}>Nessun esercizio trovato.</Text>}
               renderItem={({ item }) => (
-                <Pressable style={styles.row} onPress={() => onSelect(item)}>
-                  <Ionicons name="barbell-outline" size={18} color={colors.primary} />
+                <Pressable style={[styles.row, item.id === currentId && styles.rowCurrent]} onPress={() => onSelect(item)}>
+                  <Ionicons name={item.id === currentId ? 'checkmark-circle' : 'barbell-outline'} size={18} color={item.id === currentId ? colors.success : colors.primary} />
                   <Text style={styles.rowText}>{item.nome}</Text>
+                  {item.id === currentId && <Text style={styles.currentTag}>attuale</Text>}
                 </Pressable>
               )}
             />
@@ -78,6 +85,8 @@ const styles = StyleSheet.create({
   create: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
   createText: { color: colors.primary, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
-  rowText: { fontSize: 15, color: colors.text, fontWeight: '600' },
+  rowText: { flex: 1, fontSize: 15, color: colors.text, fontWeight: '600' },
+  rowCurrent: { backgroundColor: '#ECFDF5' },
+  currentTag: { fontSize: 11, fontWeight: '800', color: colors.success },
   empty: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
 });
