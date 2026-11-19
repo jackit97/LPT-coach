@@ -5,6 +5,7 @@ import { assertCoachOwnsAthlete } from '../utils.js';
 import { loadWorkoutsWithLoad } from '../lib/athleteData.js';
 import { notify, coachOf, userName, notifyNewWorkout } from '../lib/notify.js';
 import { isoDay } from '../lib/trainingLoad.js';
+import { executionsFor, reportFor } from './reports.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -368,11 +369,22 @@ app.get('/:id', async (c) => {
   const day = isoDay(workout.data);
   const withLoad = (await loadWorkoutsWithLoad(sql, workout.utenteid, day, day)).find((row) => row.workout_id === id);
 
+  // Forza: video di esecuzione e dubbi dell'atleta + stato del report inviato al coach
+  const isStrength = workout.tipo !== 'endurance' && exercises.length > 0;
+  const executions = isStrength ? await executionsFor(c, sql, id) : {};
+  const report = isStrength ? await reportFor(sql, id) : null;
+
   return c.json({
     ...workout,
     sport: withLoad?.sport || workout.sport || endurance?.sport || null,
-    load: withLoad?.load || null,
-    esercizi: exercises,
+    // il dettaglio carico serve solo per l'endurance
+    load: workout.tipo === 'endurance' ? (withLoad?.load || null) : null,
+    esercizi: exercises.map((exercise) => ({
+      ...exercise,
+      esecuzione_dubbi: executions[exercise.exercise_id]?.dubbi || null,
+      esecuzione_video_url: executions[exercise.exercise_id]?.video_url || null,
+    })),
+    report,
     feedback: feedback[0] || null,
     endurance,
     scheda,

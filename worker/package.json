@@ -10,6 +10,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.222.0",
     "@hono/node-server": "^1.13.7",
     "@markw65/fit-file-writer": "^0.1.10",
     "@neondatabase/serverless": "^0.9.5",

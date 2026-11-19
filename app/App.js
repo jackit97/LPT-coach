@@ -68,6 +68,8 @@ import AppUpdater from './components/AppUpdater';
 import MoreScreen from './screens/MoreScreen';
 import ExercisesScreen from './screens/ExercisesScreen';
 import ChecksScreen from './screens/ChecksScreen';
+import ReportsScreen from './screens/ReportsScreen';
+import ReportDetailScreen from './screens/ReportDetailScreen';
 import CheckDetailScreen from './screens/CheckDetailScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import { NotificationsProvider, useNotifications } from './context/NotificationsContext';
@@ -274,6 +276,16 @@ function ExercisesStack() {
   );
 }
 
+function ReportsStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="ReportsHome" component={ReportsScreen} options={{ title: 'Report atleti' }} />
+      <Stack.Screen name="ReportDetail" component={ReportDetailScreen} options={{ title: 'Report allenamento' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
 function ChecksStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
@@ -342,6 +354,7 @@ function MainTabs() {
       {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />}
       {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />}
       {isCoach && <Tab.Screen name="ExercisesTab" component={ExercisesStack} options={hiddenTab('Esercizi')} />}
+      {isCoach && <Tab.Screen name="ReportsTab" component={ReportsStack} options={hiddenTab('Report')} />}
       <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
       <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
       <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />

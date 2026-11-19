@@ -1,21 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Image, useWindowDimensions, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { InlinePlayer } from './VideoPlayer';
 import { parseVideo } from '../utils/video';
+import { pickExecutionVideo, uploadExecutionVideo, MAX_VIDEO_MB } from '../utils/videoUpload';
 import { colors, radius, spacing } from '../theme';
 
 // Popup dell'esercizio: indicazioni del coach (serie, ripetizioni, carico, recupero, note),
 // video tutorial e note personali dell'atleta.
 // source: 'scheda' (esercizischeda.esercizioid) | 'workout' (calendar_workout_exercises.exercise_id)
-export default function ExerciseSheet({ visible, exercise, source, isCoach, onClose, onSaved }) {
+// allowExecution: allenamento di forza del calendario -> video di esecuzione e dubbi per il coach.
+export default function ExerciseSheet({ visible, exercise, source, isCoach, onClose, onSaved, allowExecution = false, onExecutionChange }) {
   const { width, height } = useWindowDimensions();
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState(null);
+  // video di esecuzione + dubbi
+  const [doubts, setDoubts] = useState('');
+  const [doubtsSaved, setDoubtsSaved] = useState(false);
+  const [savingDoubts, setSavingDoubts] = useState(false);
+  const [execPlaying, setExecPlaying] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [execError, setExecError] = useState(null);
 
   useEffect(() => {
     if (!visible || !exercise) return;
@@ -23,6 +32,11 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
     setSaved(false);
     setPlaying(false);
     setError(null);
+    setDoubts(exercise.esecuzione_dubbi || '');
+    setDoubtsSaved(false);
+    setExecPlaying(false);
+    setUploadProgress(null);
+    setExecError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, exercise?.esercizioid, exercise?.exercise_id]);
 
@@ -51,6 +65,67 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
       setSaving(false);
     }
   };
+
+  const execUrl = exercise.esecuzione_video_url || null;
+
+  const saveDoubts = async () => {
+    setSavingDoubts(true);
+    setExecError(null);
+    try {
+      const { data } = await api.put(`/reports/exercises/${id}/dubbi`, { dubbi: doubts });
+      setDoubtsSaved(true);
+      onExecutionChange?.(id, { esecuzione_dubbi: data.dubbi, esecuzione_video_url: data.video_url });
+    } catch (e) {
+      setExecError(e?.response?.data?.message || 'Salvataggio non riuscito');
+    } finally {
+      setSavingDoubts(false);
+    }
+  };
+
+  const uploadVideo = async (camera = false) => {
+    setExecError(null);
+    try {
+      const video = await pickExecutionVideo({ camera });
+      if (!video) return;
+      setUploadProgress(0);
+      const data = await uploadExecutionVideo(id, video, setUploadProgress);
+      setExecPlaying(false);
+      onExecutionChange?.(id, { esecuzione_dubbi: data.dubbi, esecuzione_video_url: data.video_url });
+    } catch (e) {
+      setExecError(e?.response?.data?.message || e?.message || 'Caricamento non riuscito');
+    } finally {
+      setUploadProgress(null);
+    }
+  };
+
+  const removeVideo = () => {
+    Alert.alert('Elimina video', 'Vuoi eliminare il video di esecuzione?', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Elimina',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { data } = await api.delete(`/reports/exercises/${id}/video`);
+            setExecPlaying(false);
+            onExecutionChange?.(id, { esecuzione_dubbi: data.dubbi, esecuzione_video_url: null });
+          } catch (e) {
+            setExecError(e?.response?.data?.message || 'Eliminazione non riuscita');
+          }
+        },
+      },
+    ]);
+  };
+
+  const executionPlayer = execUrl ? (
+    execPlaying ? <InlinePlayer url={execUrl} aspectRatio={4 / 5} /> : (
+      <Pressable style={[styles.poster, { aspectRatio: 16 / 10 }]} onPress={() => setExecPlaying(true)} accessibilityLabel="Guarda il video di esecuzione">
+        <View style={styles.posterShade} />
+        <View style={[styles.playCircle, { backgroundColor: colors.primary }]}><Ionicons name="play" size={30} color="#fff" style={{ marginLeft: 3 }} /></View>
+        <Text style={styles.posterText}>{isCoach ? 'Guarda l\'esecuzione' : 'Il mio video di esecuzione'}</Text>
+      </Pressable>
+    )
+  ) : null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -91,6 +166,69 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
                 </Pressable>
               )
             ) : <Text style={styles.muted}>{isCoach ? 'Nessun video: caricalo in Video tutorial scegliendo questo esercizio.' : 'Il coach non ha ancora caricato un video per questo esercizio.'}</Text>}
+
+            {allowExecution && (isCoach ? (
+              (execUrl || exercise.esecuzione_dubbi) ? (
+                <>
+                  <Text style={styles.section}>Esecuzione dell'atleta</Text>
+                  {executionPlayer}
+                  {!!exercise.esecuzione_dubbi && (
+                    <View style={styles.doubtBox}>
+                      <Text style={styles.doubtLabel}>Dubbi</Text>
+                      <Text style={styles.body}>{exercise.esecuzione_dubbi}</Text>
+                    </View>
+                  )}
+                </>
+              ) : null
+            ) : (
+              <>
+                <Text style={styles.section}>Video esecuzione per il coach</Text>
+                {executionPlayer}
+                {uploadProgress !== null ? (
+                  <View style={styles.progressBox}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text style={styles.progressText}>Caricamento {Math.round((uploadProgress || 0) * 100)}%</Text>
+                    <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.round((uploadProgress || 0) * 100)}%` }]} /></View>
+                  </View>
+                ) : (
+                  <View style={styles.execButtons}>
+                    {Platform.OS !== 'web' && (
+                      <Pressable style={styles.execBtn} onPress={() => uploadVideo(true)}>
+                        <Ionicons name="videocam-outline" size={18} color={colors.primary} />
+                        <Text style={styles.execBtnText}>Registra</Text>
+                      </Pressable>
+                    )}
+                    <Pressable style={styles.execBtn} onPress={() => uploadVideo(false)}>
+                      <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+                      <Text style={styles.execBtnText}>{execUrl ? 'Sostituisci video' : 'Carica video'}</Text>
+                    </Pressable>
+                    {!!execUrl && (
+                      <Pressable style={[styles.execBtn, { borderColor: colors.danger, flexGrow: 0 }]} onPress={removeVideo} accessibilityLabel="Elimina video">
+                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+                {!execUrl && uploadProgress === null && <Text style={styles.muted}>Fai vedere al coach come esegui l'esercizio (max {MAX_VIDEO_MB} MB, meglio 30-60 secondi).</Text>}
+                <Text style={[styles.section, { marginTop: spacing.md }]}>Dubbi per il coach</Text>
+                <TextInput
+                  value={doubts}
+                  onChangeText={(value) => { setDoubts(value); setDoubtsSaved(false); }}
+                  style={[styles.input, { minHeight: 70 }]}
+                  multiline
+                  placeholder="Cosa vuoi chiedere al coach su questo esercizio?"
+                />
+                <Pressable style={[styles.saveBtn, styles.saveBtnOutline, (savingDoubts || doubtsSaved) && { opacity: 0.7 }]} onPress={saveDoubts} disabled={savingDoubts}>
+                  {savingDoubts ? <ActivityIndicator color={colors.primary} /> : (
+                    <>
+                      <Ionicons name={doubtsSaved ? 'checkmark' : 'help-circle-outline'} size={18} color={colors.primary} />
+                      <Text style={[styles.saveText, { color: colors.primary }]}>{doubtsSaved ? 'Dubbi salvati' : 'Salva dubbi'}</Text>
+                    </>
+                  )}
+                </Pressable>
+                {!!execError && <Text style={styles.error}>{execError}</Text>}
+              </>
+            ))}
 
             <Text style={styles.section}>{isCoach ? 'Note dell\'atleta' : 'Le mie note'}</Text>
             {isCoach ? (
@@ -142,4 +280,14 @@ const styles = StyleSheet.create({
   saveBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, marginTop: spacing.sm },
   saveText: { color: '#fff', fontWeight: '800' },
   error: { color: colors.danger, marginTop: spacing.xs, fontWeight: '700' },
+  execButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.xs },
+  execBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: spacing.md, flexGrow: 1 },
+  execBtnText: { color: colors.primary, fontWeight: '800' },
+  saveBtnOutline: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.primary },
+  progressBox: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.primaryLight, alignItems: 'center', gap: 6 },
+  progressText: { fontWeight: '800', color: colors.primary },
+  progressTrack: { alignSelf: 'stretch', height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
+  progressFill: { height: 6, backgroundColor: colors.primary },
+  doubtBox: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: '#FEF3C7' },
+  doubtLabel: { fontSize: 11, fontWeight: '800', color: '#92400E', textTransform: 'uppercase', marginBottom: 2 },
 });

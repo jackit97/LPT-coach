@@ -14,12 +14,14 @@ import zonesRoutes from './routes/zones.js';
 import stravaRoutes from './routes/strava.js';
 import notificationsRoutes from './routes/notifications.js';
 import checksRoutes from './routes/checks.js';
+import activitiesRoutes from './routes/activities.js';
+import reportsRoutes from './routes/reports.js';
 import { isDbConfigured, DbNotConfiguredError } from './db.js';
 
 const app = new Hono();
 
 app.use('*', async (c, next) => {
-  const middleware = cors({ origin: c.env.CORS_ORIGIN || '*', allowHeaders: ['Content-Type', 'Authorization'], allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
+  const middleware = cors({ origin: c.env.CORS_ORIGIN || '*', allowHeaders: ['Content-Type', 'Authorization', 'X-Filename', 'X-Timezone'], exposeHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'], allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
   return middleware(c, next);
 });
 
@@ -38,6 +40,8 @@ app.route('/workouts', workoutsRoutes);
 app.route('/pt', ptRoutes);
 app.route('/zones', zonesRoutes);
 app.route('/strava', stravaRoutes);
+app.route('/activities', activitiesRoutes);
+app.route('/reports', reportsRoutes);
 app.route('/notifications', notificationsRoutes);
 app.route('/checks', checksRoutes);
 

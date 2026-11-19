@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
+import { pickFile, userTimeZone } from '../utils/files';
 import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import MonthCalendarGrid from '../components/MonthCalendarGrid';
@@ -163,6 +164,33 @@ export default function CalendarScreen({ navigation }) {
     }
   };
 
+  // Import manuale di un'attivita' (.fit/.tcx/.gpx) esportata da Garmin Connect, Apple Health, ecc.
+  const [importing, setImporting] = useState(false);
+  const importActivity = async () => {
+    const file = await pickFile({ accept: '.fit,.tcx,.gpx,.zip,application/zip,application/octet-stream,application/gpx+xml,application/vnd.garmin.tcx+xml' });
+    if (!file) return;
+    if (file.unsupported) {
+      Alert.alert('Importa attività', 'L\'import dei file è disponibile dalla versione web dell\'app (lpt-coach.pages.dev).');
+      return;
+    }
+    setImporting(true);
+    try {
+      const { data } = await api.post('/activities/import', file, {
+        params: isCoach && targetUserId ? { utenteId: targetUserId } : {},
+        headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || ''), 'X-Timezone': userTimeZone() },
+        transformRequest: [(body) => body],
+      });
+      const day = String(data?.workout?.data || '').slice(0, 10);
+      if (day) setWeekStart(addDays(startOfWeek(new Date(`${day}T12:00:00`)), -7));
+      await load();
+      Alert.alert('Attività importata', data?.message || 'Attività aggiunta al calendario');
+    } catch (e) {
+      Alert.alert('Importa attività', e?.response?.data?.message || 'Impossibile importare il file. Usa un .fit, .tcx, .gpx (o lo .zip di Garmin) di un\'attività svolta.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const condition = useMemo(() => {
     if (!loadData?.current) return null;
     const mondayISO = toISODate(startOfWeek(new Date()));
@@ -223,6 +251,16 @@ export default function CalendarScreen({ navigation }) {
               )}
             </Pressable>
           )}
+          <Pressable
+            onPress={importActivity}
+            disabled={importing}
+            style={[styles.importHeaderBtn, importing && { opacity: 0.6 }]}
+            accessibilityLabel="Importa attività da file"
+          >
+            {importing ? <ActivityIndicator size="small" color={colors.primary} /> : (
+              <Text style={styles.importHeaderText}>⤓ Importa</Text>
+            )}
+          </Pressable>
           <Pressable onPress={() => shiftWeeks(-WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>«</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>‹</Text></Pressable>
           <Pressable onPress={() => setWeekStart(addDays(startOfWeek(new Date()), -7))} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>
@@ -369,6 +407,8 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   stravaSyncHeaderBtn: { backgroundColor: '#FC4C02', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   stravaSyncHeaderText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
+  importHeaderBtn: { borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.surface, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  importHeaderText: { color: colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
   navBtn: { width: 32, height: 32, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   navBtnText: { fontSize: 18, fontWeight: '700', color: colors.primary },
   navBtnToday: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryLight },

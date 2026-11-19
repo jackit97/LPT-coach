@@ -21,6 +21,7 @@ const TABLE_NAMES = [
   'endurance_sessions',
   'endurance_zones',
   'esercizifull',
+  'esecuzioni_video',
   'esercizischeda',
   'food_and_nutritional_value',
   'foodcompositionraw',
@@ -35,6 +36,7 @@ const TABLE_NAMES = [
   'utenti',
   'videotutorial',
   'workout_feedback',
+  'workout_reports',
   'workouttemplateexercises',
   'workouttemplates',
 ];

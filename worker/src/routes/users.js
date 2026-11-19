@@ -10,7 +10,7 @@ app.get('/me', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-    SELECT u.utenteid, u.nome, u.email, u.ruolo, u.dataregistrazione, u.endurance_enabled,
+    SELECT u.utenteid, u.nome, u.email, u.ruolo, u.dataregistrazione, u.endurance_enabled, u.endurance_visibile,
            p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
            p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness,
            p.datanascita, p.sesso
@@ -19,13 +19,31 @@ app.get('/me', async (c) => {
   `;
   if (!rows[0]) return c.json({ message: 'Not found' }, 404);
   const row = rows[0];
-  let enduranceVisible = !!row.endurance_enabled;
-  if (row.ruolo === 'cliente') {
-    // Single-coach app: any athlete follows the (unique) coach's endurance setting, linked or not
-    const coachRows = await sql`SELECT endurance_enabled FROM utenti WHERE ruolo = 'personal_trainer' ORDER BY utenteid ASC`;
-    enduranceVisible = coachRows.length ? coachRows.every((coach) => coach.endurance_enabled) : true;
-  }
-  return c.json({ ...row, endurance_visible: enduranceVisible });
+  // Il coach vede sempre le sezioni endurance; per l'atleta decide il coach (sezione Atleti).
+  let enduranceVisible = true;
+  if (row.ruolo === 'cliente') enduranceVisible = await athleteEnduranceVisible(sql, row);
+  const { endurance_visibile: _ignored, ...rest } = row;
+  return c.json({ ...rest, endurance_visible: enduranceVisible });
+});
+
+// Visibilita' endurance di un atleta: scelta esplicita del coach, altrimenti la vecchia
+// impostazione globale del coach (utenti.endurance_enabled del personal trainer).
+async function athleteEnduranceVisible(sql, athlete) {
+  if (athlete.endurance_visibile === true || athlete.endurance_visibile === false) return athlete.endurance_visibile;
+  const coachRows = await sql`SELECT endurance_enabled FROM utenti WHERE ruolo = 'personal_trainer' ORDER BY utenteid ASC`;
+  return coachRows.length ? coachRows.every((coach) => coach.endurance_enabled) : true;
+}
+
+// Coach: mostra/nasconde le sezioni endurance a un singolo atleta
+app.put('/clients/:id{[0-9]+}/endurance', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const athleteId = Number(c.req.param('id'));
+  const { visible } = await c.req.json().catch(() => ({}));
+  const sql = db(c.env);
+  const link = await sql`SELECT 1 FROM pt_clienti WHERE pt_userid = ${user.userId} AND cliente_userid = ${athleteId} AND attivo = 1`;
+  if (!link.length) return c.json({ message: 'Atleta non trovato' }, 404);
+  await sql`UPDATE utenti SET endurance_visibile = ${!!visible} WHERE utenteid = ${athleteId}`;
+  return c.json({ utenteid: athleteId, endurance_visible: !!visible });
 });
 
 // Coach: toggle visibility of endurance sections for themselves and their athletes
@@ -71,7 +89,7 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-        SELECT u.utenteid, u.nome, u.email, u.dataregistrazione,
+        SELECT u.utenteid, u.nome, u.email, u.dataregistrazione, u.endurance_visibile,
           p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
           p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness
            , p.datanascita, p.sesso
@@ -81,7 +99,11 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1
     ORDER BY u.nome ASC
   `;
-  return c.json(rows);
+  const fallback = rows.some((row) => row.endurance_visibile === null || row.endurance_visibile === undefined)
+    ? await athleteEnduranceVisible(sql, {}) : true;
+  return c.json(rows.map(({ endurance_visibile: visible, ...row }) => ({
+    ...row, endurance_visible: visible === true || visible === false ? visible : fallback,
+  })));
 });
 
 // Coach: attach an existing athlete (by email) to their client list

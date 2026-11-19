@@ -466,6 +466,9 @@ app.post('/sync', async (c) => {
     if (err?.stravaStatus === 401) {
       return c.json({ message: 'Strava ha rifiutato l\'accesso: vai nel Profilo, scollega e ricollega Strava.' }, 400);
     }
+    if (err?.stravaStatus === 403 && /Inactive/i.test(err?.message || '')) {
+      return c.json({ message: 'L\'app Strava di LPT Coach risulta inattiva: chi ha creato l\'app su Strava deve avere un abbonamento Strava attivo. Il coach deve verificarlo nelle impostazioni API di Strava.' }, 503);
+    }
     if (err?.stravaStatus === 429) {
       return c.json({ message: 'Troppe richieste a Strava in questo momento: riprova tra 15 minuti.' }, 429);
     }

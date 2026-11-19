@@ -75,7 +75,7 @@ export default function WorkoutBadge({ workout, onPress, compact }) {
         <Text numberOfLines={1} style={styles.meta}>
           {formatShortDuration(seconds)}
           {meters > 0 ? ` · ${(meters / 1000).toFixed(meters >= 10000 ? 0 : 1)}km` : ''}
-          {!compact && trimp > 0 ? ` · ${trimp} TRIMP` : ''}
+          {!compact && trimp > 0 && workout.tipo === 'endurance' ? ` · ${trimp} TRIMP` : ''}
         </Text>
       )}
       {isStrava && !compact && (

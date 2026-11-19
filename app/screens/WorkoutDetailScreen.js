@@ -98,7 +98,9 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         note: note || null,
       });
       await load();
-      Alert.alert('Fatto', 'Feedback salvato');
+      const strength = workout?.tipo !== 'endurance' && (workout?.esercizi?.length || 0) > 0;
+      if (completato && strength) askSendReport();
+      else Alert.alert('Fatto', 'Feedback salvato');
     } catch (e) {
       Alert.alert('Errore', 'Impossibile salvare il feedback');
     } finally {
@@ -106,9 +108,41 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     }
   };
 
+  // Report per il coach: feedback, note, dubbi e video di esecuzione di ogni esercizio
+  const [sendingReport, setSendingReport] = useState(false);
+  const sendReport = async () => {
+    setSendingReport(true);
+    try {
+      await api.post('/reports', { workoutId });
+      await load();
+      Alert.alert('Report inviato', 'Il coach riceverà una notifica con video, note e dubbi.');
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile inviare il report');
+    } finally {
+      setSendingReport(false);
+    }
+  };
+  const askSendReport = () => {
+    const videos = (workout?.esercizi || []).filter((ex) => ex.esecuzione_video_url).length;
+    const doubts = (workout?.esercizi || []).filter((ex) => String(ex.esecuzione_dubbi || '').trim()).length;
+    const summary = [videos ? `${videos} video` : null, doubts ? `${doubts} ${doubts === 1 ? 'dubbio' : 'dubbi'}` : null].filter(Boolean).join(' e ');
+    Alert.alert(
+      'Allenamento completato',
+      `Vuoi inviare il report al coach${summary ? ` (${summary}, note e feedback)` : ' con il tuo feedback e le note'}?`,
+      [
+        { text: 'Non inviare', style: 'cancel' },
+        { text: 'Invia report', onPress: sendReport },
+      ],
+    );
+  };
+
   const [openExercise, setOpenExercise] = useState(null);
   const onExerciseNoteSaved = (id, note) => {
     setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, note_atleta: note } : ex)) }));
+  };
+  const onExecutionChange = (id, changes) => {
+    setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, ...changes } : ex)) }));
+    setOpenExercise((current) => (current && current.exercise_id === id ? { ...current, ...changes } : current));
   };
   const [librarySaved, setLibrarySaved] = useState(false);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -241,7 +275,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      <LoadDetail load={workout.load} />
+      {workout.tipo === 'endurance' && <LoadDetail load={workout.load} />}
 
       {!!workout.descrizione && (
         <View style={styles.section}>
@@ -300,6 +334,12 @@ export default function WorkoutDetailScreen({ route, navigation }) {
               </Text>
               {!!ex.note && <Text style={styles.exerciseNote} numberOfLines={2}>{ex.note}</Text>}
               {!!ex.note_atleta && <Text style={styles.athleteNote} numberOfLines={1}>📝 {isCoach ? 'Nota atleta' : 'La mia nota'}: {ex.note_atleta}</Text>}
+              {(!!ex.esecuzione_video_url || !!ex.esecuzione_dubbi) && (
+                <View style={styles.execChips}>
+                  {!!ex.esecuzione_video_url && <Text style={styles.execChip}>🎥 Video esecuzione</Text>}
+                  {!!ex.esecuzione_dubbi && <Text style={[styles.execChip, styles.execChipDoubt]} numberOfLines={1}>❓ {ex.esecuzione_dubbi}</Text>}
+                </View>
+              )}
             </Pressable>
           ))}
         </View>
@@ -312,7 +352,44 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         isCoach={isCoach}
         onClose={() => setOpenExercise(null)}
         onSaved={onExerciseNoteSaved}
+        allowExecution={workout.tipo !== 'endurance'}
+        onExecutionChange={onExecutionChange}
       />
+
+      {workout.tipo !== 'endurance' && workout.esercizi?.length > 0 && (workout.report || (!isCoach && workout.stato === 'completato')) && (
+        <View style={styles.reportCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+            <Text style={[typography.h3, { flex: 1 }]}>Report per il coach</Text>
+          </View>
+          {workout.report ? (
+            <Text style={styles.reportMeta}>
+              Inviato il {new Date(workout.report.inviato_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}
+              {' · '}{workout.report.letto_at ? 'letto dal coach' : 'non ancora letto'}
+            </Text>
+          ) : (
+            <Text style={styles.reportMeta}>Non ancora inviato. Allega video di esecuzione e dubbi dai singoli esercizi.</Text>
+          )}
+          {!!workout.report?.risposta && (
+            <View style={styles.reportReply}>
+              <Text style={styles.reportReplyLabel}>Risposta del coach</Text>
+              <Text style={styles.paragraph}>{workout.report.risposta}</Text>
+            </View>
+          )}
+          {isCoach && workout.report && (
+            <Pressable style={[styles.reportButton, styles.reportButtonSecondary, { marginTop: spacing.sm }]} onPress={() => navigation.navigate('ReportsTab', { screen: 'ReportDetail', params: { reportId: workout.report.report_id }, initial: false })}>
+              <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Apri il report</Text>
+            </Pressable>
+          )}
+          {!isCoach && workout.stato === 'completato' && (
+            <Pressable style={[styles.reportButton, { marginTop: spacing.sm }]} onPress={sendReport} disabled={sendingReport}>
+              {sendingReport ? <ActivityIndicator color={colors.textInverse} /> : (
+                <Text style={styles.primaryButtonText}>{workout.report ? 'Reinvia report aggiornato' : 'Invia report al coach'}</Text>
+              )}
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {isCoach ? (
         <View style={styles.coachActions}>
@@ -378,6 +455,15 @@ const styles = StyleSheet.create({
   zoneLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   zoneLegendDot: { width: 10, height: 10, borderRadius: 2 },
   zoneLegendText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  execChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  execChip: { fontSize: 11, fontWeight: '700', color: colors.primary, backgroundColor: colors.primaryLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden', maxWidth: '100%' },
+  execChipDoubt: { color: '#92400E', backgroundColor: '#FEF3C7' },
+  reportCard: { marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, gap: spacing.xs },
+  reportMeta: { ...typography.caption },
+  reportButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
+  reportButtonSecondary: { backgroundColor: colors.surfaceAlt },
+  reportReply: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.primaryLight },
+  reportReplyLabel: { fontSize: 11, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', marginBottom: 2 },
   loadCard: { marginTop: spacing.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   loadHeaderRow: { flexDirection: 'row', marginTop: spacing.sm, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
   loadRow: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: colors.border },

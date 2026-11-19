@@ -7,11 +7,10 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
 
 export default function ProfileScreen() {
-  const { user, logout, isCoach, enduranceEnabled, setEnduranceEnabled, profileComplete, refreshAccountStatus } = useAuth();
+  const { user, logout, isCoach, enduranceEnabled, profileComplete, refreshAccountStatus } = useAuth();
   const isAthlete = user?.ruolo === 'cliente';
   const [profile, setProfile] = useState(user || {});
   const [saving, setSaving] = useState(false);
-  const [togglingEndurance, setTogglingEndurance] = useState(false);
   const [syncingStrava, setSyncingStrava] = useState(false);
   const [stravaStatus, setStravaStatus] = useState(null);
   const [connectingStrava, setConnectingStrava] = useState(false);
@@ -71,13 +70,6 @@ export default function ProfileScreen() {
     try { await api.put('/users/me/profile', { nome: profile.nome, cognome: profile.cognome, pesokg: profile.pesokg, altezzacm: profile.altezzacm, obiettivoallenamento: profile.obiettivoallenamento, durataAllenamentoMinuti: profile.durata_allenamento_minuti, giorniAllenamento: days.join(', '), livellofitness: profile.livellofitness, datanascita: profile.datanascita || null, sesso: profile.sesso || null }); await refreshAccountStatus(); Alert.alert('Profilo salvato', 'I dati sono visibili al coach.'); }
     catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare il profilo'); }
     finally { setSaving(false); }
-  };
-
-  const toggleEndurance = async (value) => {
-    setTogglingEndurance(true);
-    try { await api.put('/users/me/endurance-settings', { enabled: value }); setEnduranceEnabled(value); }
-    catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile aggiornare la sezione endurance'); }
-    finally { setTogglingEndurance(false); }
   };
 
   // Un tocco: apre l'app Strava (se installata) o la pagina di accesso Strava. Dopo l'autorizzazione
@@ -261,11 +253,8 @@ export default function ProfileScreen() {
         <View style={styles.enduranceRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.sectionTitle}>Modulo Endurance</Text>
-            <Text style={typography.caption}>Disattivalo per nascondere le sezioni e i campi endurance a te e ai tuoi atleti.</Text>
+            <Text style={typography.caption}>Ora si attiva per singolo atleta: vai in Atleti e usa l'interruttore «Sezione endurance» sulla scheda di ognuno.</Text>
           </View>
-          {togglingEndurance ? <ActivityIndicator color={colors.primary} /> : (
-            <Switch value={enduranceEnabled} onValueChange={toggleEndurance} trackColor={{ true: colors.primary }} />
-          )}
         </View>
       )}
 

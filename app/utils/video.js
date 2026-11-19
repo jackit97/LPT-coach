@@ -48,6 +48,10 @@ export function parseVideo(rawUrl) {
     if (!match) return { kind: 'unknown', url };
     return { kind: 'bunny', id: match[2], url, embed: `https://iframe.mediadelivery.net/embed/${match[1]}/${match[2]}?autoplay=true&responsive=true` };
   }
+  // video di esecuzione caricati dagli atleti (serviti dal Worker con link firmato)
+  if (/\/reports\/execution\/\d+\/file$/.test(path)) {
+    return { kind: 'file', url };
+  }
   if (/\.(mp4|webm|mov|m4v|m3u8)$/i.test(path)) {
     return { kind: 'file', url };
   }

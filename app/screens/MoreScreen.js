@@ -11,6 +11,7 @@ export function moreSections({ isCoach, enduranceEnabled }) {
     isCoach && { tab: 'StrengthTab', screen: 'StrengthHome', icon: 'barbell', color: '#2563EB', title: 'Pesistica', desc: 'Schede palestra multi-giorno' },
     enduranceEnabled && isCoach && { tab: 'ZonesTab', screen: 'ZonesHome', icon: 'speedometer', color: '#F59E0B', title: 'Zone e test', desc: 'Test atletici e zone di allenamento' },
     isCoach && enduranceEnabled && { tab: 'TemplatesTab', screen: 'TemplatesHome', icon: 'albums', color: '#7C3AED', title: 'Template piani', desc: 'Piani endurance riutilizzabili' },
+    isCoach && { tab: 'ReportsTab', screen: 'ReportsHome', icon: 'document-text', color: '#9333EA', title: 'Report atleti', desc: 'Video di esecuzione, dubbi e feedback dagli allenamenti' },
     { tab: 'ChecksTab', screen: 'ChecksHome', icon: 'camera', color: '#0D9488', title: 'Check fotografici', desc: isCoach ? 'Richiedi le foto e commenta i progressi' : 'Carica le foto richieste dal coach' },
     // Solo coach: gli atleti vedono i video dentro le schede, toccando l'esercizio
     isCoach && { tab: 'VideosTab', screen: 'VideosHome', icon: 'play-circle', color: '#DC2626', title: 'Video tutorial', desc: 'Carica i video e collegali agli esercizi' },

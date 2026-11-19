@@ -16,6 +16,8 @@ const TYPE_STYLE = {
   check_inviato: { icon: 'images', color: '#1D4ED8' },
   check_commentato: { icon: 'chatbubbles', color: '#047857' },
   strava: { icon: 'flash', color: '#FC4C02' },
+  report: { icon: 'document-text', color: '#9333EA' },
+  report_risposta: { icon: 'chatbubbles', color: '#9333EA' },
 };
 
 // Schermata di destinazione -> tab che la contiene
@@ -23,6 +25,7 @@ const TARGET_TABS = {
   WorkoutDetail: 'CalendarTab',
   DietDetail: 'DietsTab',
   CheckDetail: 'ChecksTab',
+  ReportDetail: 'ReportsTab',
   PaymentsHome: 'PaymentsTab',
 };
 
