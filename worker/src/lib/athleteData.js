@@ -43,18 +43,37 @@ export async function saveMergedZones(sql, athleteId, zones, sourceTestResultId 
 // Workout del calendario (con sessione endurance e feedback) arricchiti con il calcolo del carico.
 export async function loadWorkoutsWithLoad(sql, athleteId, from, to, hrZones = null) {
   const zones = hrZones ? { heartRate: hrZones } : await loadMergedZones(sql, athleteId);
-  const rows = await sql`
-    SELECT w.*, f.completato, f.rpe AS feedback_rpe, f.sensazione, f.durata_effettiva_minuti, f.note AS feedback_note,
-           f.updated_at AS feedback_updated_at,
-           s.steps_json AS session_steps_json, s.sport AS session_sport
-    FROM calendar_workouts w
-    LEFT JOIN workout_feedback f ON f.workout_id = w.workout_id AND f.utenteid = w.utenteid
-    LEFT JOIN endurance_sessions s ON s.session_id = w.endurance_session_id
-    WHERE w.utenteid = ${athleteId} AND w.data BETWEEN ${from} AND ${to}
-    ORDER BY w.data ASC, w.order_index ASC, w.workout_id ASC
-  `;
+  let rows;
+  try {
+    rows = await sql`
+      SELECT w.*, f.completato, f.rpe AS feedback_rpe, f.sensazione, f.durata_effettiva_minuti, f.note AS feedback_note,
+             f.updated_at AS feedback_updated_at,
+             s.steps_json AS session_steps_json, s.sport AS session_sport,
+             st.zone_seconds_json AS stream_zone_seconds
+      FROM calendar_workouts w
+      LEFT JOIN workout_feedback f ON f.workout_id = w.workout_id AND f.utenteid = w.utenteid
+      LEFT JOIN endurance_sessions s ON s.session_id = w.endurance_session_id
+      LEFT JOIN activity_streams st ON st.workout_id = w.workout_id
+      WHERE w.utenteid = ${athleteId} AND w.data BETWEEN ${from} AND ${to}
+      ORDER BY w.data ASC, w.order_index ASC, w.workout_id ASC
+    `;
+  } catch (error) {
+    // migrazione 20261120 (activity_streams) non ancora applicata: stesso calcolo senza i campioni
+    if (!/activity_streams/.test(String(error?.message))) throw error;
+    rows = await sql`
+      SELECT w.*, f.completato, f.rpe AS feedback_rpe, f.sensazione, f.durata_effettiva_minuti, f.note AS feedback_note,
+             f.updated_at AS feedback_updated_at,
+             s.steps_json AS session_steps_json, s.sport AS session_sport
+      FROM calendar_workouts w
+      LEFT JOIN workout_feedback f ON f.workout_id = w.workout_id AND f.utenteid = w.utenteid
+      LEFT JOIN endurance_sessions s ON s.session_id = w.endurance_session_id
+      WHERE w.utenteid = ${athleteId} AND w.data BETWEEN ${from} AND ${to}
+      ORDER BY w.data ASC, w.order_index ASC, w.workout_id ASC
+    `;
+  }
   return rows.map((row) => {
-    const { session_steps_json: stepsJson, session_sport: sessionSport, ...workout } = row;
+    const { session_steps_json: stepsJson, session_sport: sessionSport, stream_zone_seconds: streamZones, ...workout } = row;
+    if (streamZones) { try { workout.secondi_zona_fc = JSON.parse(streamZones); } catch { /* ignora */ } }
     const load = computeWorkoutLoad(workout, {
       session: stepsJson || sessionSport ? { steps_json: stepsJson, sport: sessionSport } : null,
       hrZones: zones.heartRate || [],

@@ -176,7 +176,6 @@ export default function CalendarScreen({ navigation }) {
     setImporting(true);
     try {
       const { data } = await api.post('/activities/import', file, {
-        params: isCoach && targetUserId ? { utenteId: targetUserId } : {},
         headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || ''), 'X-Timezone': userTimeZone() },
         transformRequest: [(body) => body],
       });
@@ -251,6 +250,7 @@ export default function CalendarScreen({ navigation }) {
               )}
             </Pressable>
           )}
+          {!isCoach && (
           <Pressable
             onPress={importActivity}
             disabled={importing}
@@ -261,6 +261,7 @@ export default function CalendarScreen({ navigation }) {
               <Text style={styles.importHeaderText}>⤓ Importa</Text>
             )}
           </Pressable>
+          )}
           <Pressable onPress={() => shiftWeeks(-WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>«</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>‹</Text></Pressable>
           <Pressable onPress={() => setWeekStart(addDays(startOfWeek(new Date()), -7))} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>

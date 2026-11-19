@@ -93,6 +93,18 @@ export function hrToZone(avgHr, hrZones = []) {
   return hr < valid[0].min ? valid[0].key : valid[valid.length - 1].key;
 }
 
+// Secondi trascorsi in ogni zona FC a partire dai campioni dell'attivita' ({ t: [...], hr: [...] }).
+export function zoneSecondsFromSamples(samples, hrZones = []) {
+  const zoneSeconds = {};
+  if (!samples || !Array.isArray(samples.t) || !Array.isArray(samples.hr) || !hrZones.length) return zoneSeconds;
+  for (let i = 0; i < samples.t.length; i += 1) {
+    const dt = i < samples.t.length - 1 ? samples.t[i + 1] - samples.t[i] : samples.t[i] - (samples.t[i - 1] ?? samples.t[i]);
+    const zone = hrToZone(samples.hr[i], hrZones);
+    if (zone && dt > 0) zoneSeconds[zone] = (zoneSeconds[zone] || 0) + dt;
+  }
+  return zoneSeconds;
+}
+
 export function workoutPlannedSeconds(workout, analysis) {
   if (analysis?.seconds) return analysis.seconds;
   return Number(workout.durata_secondi ?? (Number(workout.durata_minuti) || 0) * 60) || 0;
@@ -130,7 +142,14 @@ export function computeWorkoutLoad(workout, { session = null, hrZones = [] } = {
     doneMeters = workout.distance_km ? Math.round(Number(workout.distance_km) * 1000) : (isExternal ? 0 : plannedMeters);
     const hrZone = hrToZone(workout.avg_hr, hrZones);
     const rpeZone = rpeToZone(workout.feedback_rpe ?? workout.rpe);
-    if (hrZone) {
+    const streamZones = workout.secondi_zona_fc && Object.values(workout.secondi_zona_fc).some((value) => value > 0) ? workout.secondi_zona_fc : null;
+    if (streamZones) {
+      // attivita' con i campioni FC: tempo reale trascorso in ogni zona (come CoachPeaking)
+      const sampled = Object.values(streamZones).reduce((sum, value) => sum + (Number(value) || 0), 0);
+      const scale = sampled > 0 && doneSeconds > 0 ? doneSeconds / sampled : 1;
+      doneTrimp = trimpFromZoneSeconds(Object.fromEntries(Object.entries(streamZones).map(([zone, sec]) => [zone, sec * scale])));
+      trimpMethod = 'fc_campioni';
+    } else if (hrZone) {
       doneTrimp = trimpFromZoneSeconds({ [hrZone]: doneSeconds });
       trimpMethod = 'fc';
     } else if (!isExternal && plannedTrimp && plannedSeconds && (!rpeZone || analysis?.trimp)) {
@@ -148,7 +167,7 @@ export function computeWorkoutLoad(workout, { session = null, hrZones = [] } = {
 
   if (workout.tipo !== 'endurance') {
     plannedTrimp = Math.round(plannedTrimp * NON_ENDURANCE_FACTOR);
-    if (trimpMethod !== 'fc') doneTrimp = Math.round(doneTrimp * NON_ENDURANCE_FACTOR);
+    if (trimpMethod !== 'fc' && trimpMethod !== 'fc_campioni') doneTrimp = Math.round(doneTrimp * NON_ENDURANCE_FACTOR);
   }
 
   return {

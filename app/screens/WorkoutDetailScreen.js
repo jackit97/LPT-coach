@@ -7,10 +7,12 @@ import { colors, spacing, radius, typography, workoutTypeColors, statusColors } 
 import RpeSelector from '../components/RpeSelector';
 import ExerciseSheet from '../components/ExerciseSheet';
 import { Ionicons } from '@expo/vector-icons';
-import { ZONE_COLORS, sportInfo, formatHMS, formatKm } from '../utils/endurance';
+import { ZONE_COLORS, sportInfo, formatHMS, formatKm, performanceStatus } from '../utils/endurance';
+import LoadChart from '../components/LoadChart';
+import ActivityCharts, { ZoneBars, LapsTable, fmtClock } from '../components/ActivityCharts';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
-const TRIMP_METHODS = { fc: 'da frequenza cardiaca', rpe: 'da RPE percepito', pianificato: 'dal pianificato sulla durata reale', stima: 'stimato' };
+const TRIMP_METHODS = { fc: 'dalla frequenza cardiaca media', fc_campioni: 'dal tempo reale in ogni zona FC', rpe: 'da RPE percepito', pianificato: 'dal pianificato sulla durata reale', stima: 'stimato' };
 
 // Dettaglio carico (CoachPeaking): confronto tra allenamento assegnato ed eseguito.
 function LoadDetail({ load }) {
@@ -40,6 +42,57 @@ function LoadDetail({ load }) {
         </View>
       ))}
       {!!load.trimp_metodo && <Text style={styles.loadNote}>TRIMP eseguito {TRIMP_METHODS[load.trimp_metodo] || ''}</Text>}
+    </View>
+  );
+}
+
+const isoAdd = (iso, days) => {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+// Impatto della seduta su carico acuto, cronico e performance (stesso grafico della home, centrato sul giorno)
+function LoadImpact({ workout }) {
+  const [data, setData] = useState(null);
+  const day = String(workout.data).slice(0, 10);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    api.get('/endurance/load', { params: { utenteId: workout.utenteid, from: isoAdd(day, -55), to: isoAdd(day, 14) } })
+      .then(({ data: result }) => { if (active) setData(result); })
+      .catch(() => { if (active) setData(null); });
+    return () => { active = false; };
+  }, [workout.utenteid, day]));
+  if (!data?.series?.length) return null;
+  const point = data.series.find((p) => p.data === day);
+  const before = data.series.find((p) => p.data === isoAdd(day, -1));
+  if (!point) return null;
+  const trimp = workout.load?.trimp_eseguito || workout.load?.trimp_pianificato || 0;
+  const delta = (key) => (before ? point[key] - before[key] : 0);
+  const fmtDelta = (value) => `${value >= 0 ? '+' : ''}${Math.round(value)}`;
+  const status = performanceStatus(point.performance);
+  const cards = [
+    { label: workout.load?.trimp_eseguito ? 'TRIMP seduta' : 'TRIMP previsto', value: trimp, color: colors.text, hint: workout.load?.trimp_eseguito ? 'carico di questo allenamento' : 'non ancora svolto' },
+    { label: 'Carico acuto', value: Math.round(point.acuto), color: '#2563eb', hint: `${fmtDelta(delta('acuto'))} rispetto al giorno prima` },
+    { label: 'Carico cronico', value: Math.round(point.cronico), color: '#c026d3', hint: `${fmtDelta(delta('cronico'))} rispetto al giorno prima` },
+    { label: 'Performance', value: `${point.performance > 0 ? '+' : ''}${Math.round(point.performance)}`, color: status.color, hint: status.label },
+  ];
+  return (
+    <View style={styles.chartSection}>
+      <Text style={typography.h3}>Impatto sul carico</Text>
+      <Text style={styles.loadNote}>Valori a fine giornata del {day.split('-').reverse().slice(0, 2).join('/')}{point.proiezione ? ' (proiezione sul pianificato)' : ''}</Text>
+      <View style={styles.impactGrid}>
+        {cards.map((card) => (
+          <View key={card.label} style={styles.impactCard}>
+            <Text style={styles.impactLabel}>{card.label}</Text>
+            <Text style={[styles.impactValue, { color: card.color }]}>{card.value}</Text>
+            <Text style={styles.impactHint}>{card.hint}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={{ marginTop: spacing.sm }}>
+        <LoadChart series={data.series} height={150} markerDate={day} markerLabel="allenamento" />
+      </View>
     </View>
   );
 }
@@ -213,13 +266,15 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </Text>
       </View>
 
-      {workout.external_provider === 'strava' && (
-        <View style={styles.stravaBanner}>
+      {(workout.external_provider === 'strava' || workout.external_provider === 'file') && (
+        <View style={[styles.stravaBanner, workout.external_provider === 'file' && styles.fileBanner]}>
           <View style={styles.stravaBannerHeader}>
-            <Text style={{ fontSize: 18 }}>⚡</Text>
+            <Text style={{ fontSize: 18 }}>{workout.external_provider === 'strava' ? '⚡' : '⌚'}</Text>
             <View>
-              <Text style={styles.stravaBannerTitle}>Attività Strava sincronizzata</Text>
-              <Text style={styles.stravaBannerSubtitle}>ID attività: {workout.external_id}</Text>
+              <Text style={[styles.stravaBannerTitle, workout.external_provider === 'file' && { color: colors.primary }]}>
+                {workout.external_provider === 'strava' ? 'Attività Strava sincronizzata' : 'Attività importata da file'}
+              </Text>
+              {workout.external_provider === 'strava' && <Text style={styles.stravaBannerSubtitle}>ID attività: {workout.external_id}</Text>}
             </View>
           </View>
           <View style={styles.stravaMetricGrid}>
@@ -276,6 +331,32 @@ export default function WorkoutDetailScreen({ route, navigation }) {
       )}
 
       {workout.tipo === 'endurance' && <LoadDetail load={workout.load} />}
+
+      {workout.tipo === 'endurance' && <LoadImpact workout={workout} />}
+
+      {workout.tipo === 'endurance' && workout.streams && (
+        <View style={styles.chartSection}>
+          <Text style={typography.h3}>Analisi attività</Text>
+          <View style={{ marginTop: spacing.sm }}>
+            <ActivityCharts streams={workout.streams} sport={workout.sport} />
+          </View>
+          {Object.keys(workout.streams.secondi_zona_fc || {}).length > 0 && (
+            <View style={{ marginTop: spacing.lg }}>
+              <Text style={styles.subTitle}>Tempo in zona FC</Text>
+              <ZoneBars zoneSeconds={workout.streams.secondi_zona_fc} zones={workout.streams.zone_fc} />
+            </View>
+          )}
+          {!Object.keys(workout.streams.secondi_zona_fc || {}).length && Array.isArray(workout.streams.hr) && (
+            <Text style={[styles.loadNote, { marginTop: spacing.sm }]}>Imposta le zone FC dell'atleta (Zone e test) per vedere il tempo in ogni zona.</Text>
+          )}
+          {workout.streams.laps?.length > 1 && (
+            <View style={{ marginTop: spacing.lg }}>
+              <Text style={styles.subTitle}>Intertempi ({workout.streams.laps.length} giri)</Text>
+              <LapsTable laps={workout.streams.laps} sport={workout.sport} />
+            </View>
+          )}
+        </View>
+      )}
 
       {!!workout.descrizione && (
         <View style={styles.section}>
@@ -455,6 +536,13 @@ const styles = StyleSheet.create({
   zoneLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   zoneLegendDot: { width: 10, height: 10, borderRadius: 2 },
   zoneLegendText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  impactGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  impactCard: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: spacing.sm },
+  impactLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' },
+  impactValue: { fontSize: 22, fontWeight: '800', marginTop: 2 },
+  impactHint: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
+  subTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6, color: colors.textMuted, textTransform: 'uppercase', marginBottom: spacing.sm },
+  fileBanner: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
   execChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   execChip: { fontSize: 11, fontWeight: '700', color: colors.primary, backgroundColor: colors.primaryLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden', maxWidth: '100%' },
   execChipDoubt: { color: '#92400E', backgroundColor: '#FEF3C7' },

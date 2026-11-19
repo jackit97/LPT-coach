@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
-import { loadWorkoutsWithLoad } from '../lib/athleteData.js';
+import { loadWorkoutsWithLoad, loadMergedZones } from '../lib/athleteData.js';
 import { notify, coachOf, userName, notifyNewWorkout } from '../lib/notify.js';
-import { isoDay } from '../lib/trainingLoad.js';
+import { isoDay, zoneSecondsFromSamples } from '../lib/trainingLoad.js';
 import { executionsFor, reportFor } from './reports.js';
 
 const app = new Hono();
@@ -328,6 +328,31 @@ app.put('/exercise-notes', async (c) => {
   return c.json(rows[0]);
 });
 
+// Dati campione dell'attivita' (import da file) + tempo trascorso in ogni zona FC dell'atleta
+async function loadStreams(sql, workout) {
+  let row;
+  try {
+    row = (await sql`SELECT samples_json, laps_json FROM activity_streams WHERE workout_id = ${workout.workout_id}`)[0];
+  } catch (error) {
+    if (/activity_streams/.test(String(error?.message))) return null; // migrazione non ancora applicata
+    throw error;
+  }
+  if (!row?.samples_json) return null;
+  let samples;
+  let laps = [];
+  try { samples = JSON.parse(row.samples_json); } catch { return null; }
+  try { laps = JSON.parse(row.laps_json || '[]'); } catch { laps = []; }
+  let hrZones = [];
+  try { hrZones = (await loadMergedZones(sql, workout.utenteid)).heartRate || []; } catch { hrZones = []; }
+  const zoneSeconds = zoneSecondsFromSamples(samples, hrZones);
+  return {
+    ...samples,
+    laps,
+    zone_fc: hrZones.map((zone) => ({ key: zone.key, min: zone.min, max: zone.max })),
+    secondi_zona_fc: zoneSeconds,
+  };
+}
+
 // GET /calendar/:id - full detail (exercises + feedback)
 app.get('/:id', async (c) => {
   const user = c.get('user');
@@ -369,6 +394,8 @@ app.get('/:id', async (c) => {
   const day = isoDay(workout.data);
   const withLoad = (await loadWorkoutsWithLoad(sql, workout.utenteid, day, day)).find((row) => row.workout_id === id);
 
+  const streams = workout.tipo === 'endurance' ? await loadStreams(sql, workout) : null;
+
   // Forza: video di esecuzione e dubbi dell'atleta + stato del report inviato al coach
   const isStrength = workout.tipo !== 'endurance' && exercises.length > 0;
   const executions = isStrength ? await executionsFor(c, sql, id) : {};
@@ -385,6 +412,7 @@ app.get('/:id', async (c) => {
       esecuzione_video_url: executions[exercise.exercise_id]?.video_url || null,
     })),
     report,
+    streams,
     feedback: feedback[0] || null,
     endurance,
     scheda,

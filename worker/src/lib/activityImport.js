@@ -39,6 +39,45 @@ function ascentFrom(elevations, threshold = 2) {
   return Math.round(total);
 }
 
+// Riduce i campioni a max ~300 punti (media per intervallo di tempo) per i grafici dell'attivita'.
+// points: [{ t: secondi dall'inizio, d: metri, hr, alt, spd: m/s, pwr: watt, cad }]
+const STREAM_KEYS = ['d', 'hr', 'alt', 'spd', 'pwr', 'cad'];
+export function buildStreams(points, maxPoints = 300) {
+  const clean = points.filter((point) => Number.isFinite(point.t)).sort((a, b) => a.t - b.t);
+  if (clean.length < 2) return null;
+  const total = clean[clean.length - 1].t - clean[0].t;
+  if (total <= 0) return null;
+  const bucket = Math.max(1, total / maxPoints);
+  const out = { t: [] };
+  STREAM_KEYS.forEach((key) => { out[key] = []; });
+  let index = 0;
+  const t0 = clean[0].t;
+  while (index < clean.length) {
+    const start = clean[index].t;
+    const group = [];
+    while (index < clean.length && clean[index].t < start + bucket) { group.push(clean[index]); index += 1; }
+    out.t.push(Math.round(start - t0));
+    for (const key of STREAM_KEYS) {
+      const values = group.map((point) => point[key]).filter((value) => Number.isFinite(value));
+      if (!values.length) { out[key].push(null); continue; }
+      // la distanza e' cumulativa: si prende l'ultimo valore del gruppo
+      const value = key === 'd' ? values[values.length - 1] : values.reduce((a, b) => a + b, 0) / values.length;
+      out[key].push(Number(value.toFixed(key === 'spd' ? 3 : 1)));
+    }
+  }
+  // velocita' mancante (es. GPX o FIT senza sensore): ricavata dalla distanza, media su 3 punti
+  if (!out.spd.some((value) => value) && out.d.some((value) => value)) {
+    out.spd = out.t.map((_, i) => {
+      const a = Math.max(0, i - 1);
+      const b = Math.min(out.t.length - 1, i + 1);
+      const dt = out.t[b] - out.t[a];
+      return dt > 0 && Number.isFinite(out.d[b]) && Number.isFinite(out.d[a]) ? Number(((out.d[b] - out.d[a]) / dt).toFixed(3)) : null;
+    });
+  }
+  for (const key of STREAM_KEYS) if (!out[key].some((value) => value !== null && value !== 0)) delete out[key];
+  return out;
+}
+
 const average = (values) => {
   const list = values.filter((value) => Number.isFinite(value) && value > 0);
   return list.length ? Math.round(list.reduce((sum, value) => sum + value, 0) / list.length) : null;
@@ -74,8 +113,31 @@ function parseFit(bytes) {
   const activity = messages.activityMesgs?.[0];
   const localOffsetSeconds = activity?.localTimestamp !== undefined && activity?.timestamp
     ? Math.round(Number(activity.localTimestamp) - (new Date(activity.timestamp).getTime() / 1000 - 631065600)) : null;
+  const startMs = new Date(start).getTime();
+  const isRun = /run|walk|hike/i.test(rawSport);
+  const streams = buildStreams(records.map((row) => ({
+    t: row.timestamp ? (new Date(row.timestamp).getTime() - startMs) / 1000 : NaN,
+    d: Number(row.distance),
+    hr: Number(row.heartRate),
+    alt: Number(row.enhancedAltitude ?? row.altitude),
+    spd: Number(row.enhancedSpeed ?? row.speed),
+    pwr: Number(row.power),
+    // Garmin salva la cadenza di corsa per singola gamba: x2 per i passi al minuto
+    cad: Number.isFinite(Number(row.cadence)) ? Number(row.cadence) * (isRun ? 2 : 1) : NaN,
+  })));
+  const laps = (messages.lapMesgs || []).map((lap) => ({
+    secondi: Math.round(Number(lap.totalTimerTime ?? lap.totalElapsedTime) || 0),
+    metri: Math.round(Number(lap.totalDistance) || 0),
+    fc_media: Number(lap.avgHeartRate) || null,
+    fc_max: Number(lap.maxHeartRate) || null,
+    velocita: Number(lap.enhancedAvgSpeed ?? lap.avgSpeed) || null,
+    dislivello: Number.isFinite(Number(lap.totalAscent)) ? Math.round(Number(lap.totalAscent)) : null,
+    potenza: Number(lap.avgPower) || null,
+  })).filter((lap) => lap.secondi > 0);
   return {
     format: 'fit',
+    streams,
+    laps,
     localOffsetSeconds: Number.isFinite(localOffsetSeconds) && Math.abs(localOffsetSeconds) <= 14 * 3600 ? localOffsetSeconds : null,
     rawSport,
     start: new Date(start),
@@ -94,6 +156,23 @@ function parseFit(bytes) {
 const tagValues = (xml, tag) => [...xml.matchAll(new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([^<]*)</(?:\\w+:)?${tag}>`, 'gi'))].map((match) => match[1].trim());
 const firstTag = (xml, tag) => tagValues(xml, tag)[0];
 const blocks = (xml, tag) => [...xml.matchAll(new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*?(?:/>|>([\\s\\S]*?)</(?:\\w+:)?${tag}>)`, 'gi'))];
+
+const laps_blocks = (xml) => blocks(xml, 'Lap').map((match) => (match[1] || '').replace(/<Track\b[\s\S]*?<\/Track>/gi, ''));
+function laps_from_tcx(list) {
+  return list.map((body) => {
+    const seconds = Number(firstTag(body, 'TotalTimeSeconds')) || 0;
+    const meters = Number(firstTag(body, 'DistanceMeters')) || 0;
+    return {
+      secondi: Math.round(seconds),
+      metri: Math.round(meters),
+      fc_media: Number(body.match(/<AverageHeartRateBpm\b[^>]*>\s*<Value>(\d+)/i)?.[1]) || null,
+      fc_max: Number(body.match(/<MaximumHeartRateBpm\b[^>]*>\s*<Value>(\d+)/i)?.[1]) || null,
+      velocita: seconds > 0 && meters > 0 ? meters / seconds : null,
+      dislivello: null,
+      potenza: Number(firstTag(body, 'AvgWatts')) || null,
+    };
+  }).filter((lap) => lap.secondi > 0);
+}
 
 function parseTcx(xml) {
   const activity = xml.match(/<Activity\b[^>]*Sport="([^"]*)"/i);
@@ -120,8 +199,25 @@ function parseTcx(xml) {
   }
   const start = new Date(startText);
   if (Number.isNaN(start.getTime())) throw new ImportError('Il file .tcx non contiene la data dell\'attività');
+  const isRun = /run/i.test(activity?.[1] || '');
+  const streams = buildStreams(points.map((point) => {
+    const time = firstTag(point, 'Time');
+    const cad = Number(firstTag(point, 'Cadence') ?? firstTag(point, 'RunCadence'));
+    return {
+      t: time ? (new Date(time).getTime() - start.getTime()) / 1000 : NaN,
+      d: Number(firstTag(point, 'DistanceMeters')),
+      hr: Number(point.match(/<HeartRateBpm\b[^>]*>\s*<Value>(\d+)/i)?.[1]),
+      alt: Number(firstTag(point, 'AltitudeMeters')),
+      spd: Number(firstTag(point, 'Speed')),
+      pwr: Number(firstTag(point, 'Watts')),
+      cad: Number.isFinite(cad) ? cad * (isRun && cad < 120 ? 2 : 1) : NaN,
+    };
+  }));
+  const lapList = laps_from_tcx(laps_blocks(xml));
   return {
     format: 'tcx',
+    streams,
+    laps: lapList,
     rawSport: activity?.[1] || '',
     start,
     durationSeconds: Math.round(durationSeconds),
@@ -144,14 +240,18 @@ function parseGpx(xml) {
       ele: Number(firstTag(body, 'ele')),
       time: firstTag(body, 'time') ? new Date(firstTag(body, 'time')) : null,
       hr: Number(firstTag(body, 'hr')),
+      cad: Number(firstTag(body, 'cad')),
+      pwr: Number(firstTag(body, 'power')),
     };
   }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
   if (!points.length) throw new ImportError('Il file .gpx non contiene un percorso registrato');
   let distanceMeters = 0;
   let movingSeconds = 0;
+  points[0].cum = 0;
   for (let i = 1; i < points.length; i += 1) {
     const step = haversine(points[i - 1], points[i]);
     distanceMeters += step;
+    points[i].cum = distanceMeters;
     const dt = points[i].time && points[i - 1].time ? (points[i].time - points[i - 1].time) / 1000 : 0;
     // pause: piu' di 30 s quasi fermi non contano nel tempo in movimento
     if (dt > 0 && !(dt > 30 && step / dt < 0.3)) movingSeconds += dt;
@@ -160,8 +260,25 @@ function parseGpx(xml) {
   const start = times[0] || (firstTag(xml, 'time') ? new Date(firstTag(xml, 'time')) : null);
   if (!start || Number.isNaN(start.getTime())) throw new ImportError('Il file .gpx non contiene gli orari: serve un\'attività registrata, non un percorso');
   const hrValues = points.map((point) => point.hr);
+  const t0 = start.getTime();
+  const isRun = /run/i.test(firstTag(xml, 'type') || '');
+  const streams = buildStreams(points.map((point, i) => {
+    const prev = points[Math.max(0, i - 3)];
+    const dt = point.time && prev.time ? (point.time - prev.time) / 1000 : 0;
+    return {
+      t: point.time ? (point.time.getTime() - t0) / 1000 : NaN,
+      d: point.cum,
+      hr: point.hr,
+      alt: point.ele,
+      spd: dt > 0 ? (point.cum - prev.cum) / dt : NaN,
+      pwr: point.pwr,
+      cad: Number.isFinite(point.cad) ? point.cad * (isRun && point.cad < 120 ? 2 : 1) : NaN,
+    };
+  }));
   return {
     format: 'gpx',
+    streams,
+    laps: [],
     rawSport: firstTag(xml, 'type') || '',
     start,
     durationSeconds: Math.round(movingSeconds || (times.length > 1 ? (times[times.length - 1] - times[0]) / 1000 : 0)),

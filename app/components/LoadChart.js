@@ -32,7 +32,8 @@ function Segment({ x1, y1, x2, y2, color, faded }) {
   );
 }
 
-export default function LoadChart({ series = [], height = 170 }) {
+// markerDate (YYYY-MM-DD): evidenzia un giorno, ad es. quello dell'allenamento aperto.
+export default function LoadChart({ series = [], height = 170, markerDate = null, markerLabel = 'allenamento' }) {
   const [width, setWidth] = useState(0);
   const lineHeight = Math.round(height * 0.62);
   const barHeight = height - lineHeight;
@@ -48,6 +49,7 @@ export default function LoadChart({ series = [], height = 170 }) {
   }, [width, series, lineHeight]);
 
   const todayIndex = series.findIndex((p) => p.proiezione) - 1;
+  const markerIndex = markerDate ? series.findIndex((p) => p.data === markerDate) : -1;
 
   return (
     <View>
@@ -90,6 +92,11 @@ export default function LoadChart({ series = [], height = 170 }) {
                 </React.Fragment>
               );
             })}
+            {markerIndex >= 0 && (
+              <View style={[styles.markerBand, { left: geometry.xFor(markerIndex) - Math.max(2, geometry.step / 2), width: Math.max(4, geometry.step) }]}>
+                <Text style={[styles.markerText, markerIndex > series.length * 0.7 && { right: 4, left: undefined }]}>{markerLabel}</Text>
+              </View>
+            )}
             {todayIndex >= 0 && (
               <View style={[styles.todayLine, { left: geometry.xFor(todayIndex) + geometry.step / 2 }]}>
                 <Text style={styles.todayText}>oggi</Text>
@@ -124,6 +131,8 @@ const styles = StyleSheet.create({
   zeroLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: '#cbd5e1' },
   axisLabel: { position: 'absolute', left: 4, fontSize: 9, color: colors.textMuted },
   todayLine: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: '#94a3b8' },
+  markerBand: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(249,115,22,0.18)', borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(249,115,22,0.55)' },
+  markerText: { position: 'absolute', top: 12, left: 4, fontSize: 9, fontWeight: '800', color: '#c2410c', width: 80 },
   todayText: { position: 'absolute', top: 2, left: 3, fontSize: 9, color: colors.textMuted },
   empty: { textAlign: 'center', marginTop: 60, color: colors.textMuted, fontSize: 12 },
   xAxis: { height: 16, position: 'relative' },

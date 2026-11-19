@@ -559,3 +559,14 @@ CREATE TABLE IF NOT EXISTS lptapp.workout_reports (
   risposta_at TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_workout_reports_coach ON lptapp.workout_reports(coach_id, inviato_at DESC);
+
+-- Dati campione delle attivita' importate (FC, passo/velocita', quota, potenza, cadenza, giri)
+-- per i grafici nel dettaglio dell'allenamento endurance.
+CREATE TABLE IF NOT EXISTS lptapp.activity_streams (
+  workout_id INT PRIMARY KEY REFERENCES lptapp.calendar_workouts(workout_id) ON DELETE CASCADE,
+  source VARCHAR(20),
+  samples_json TEXT,
+  laps_json TEXT,
+  zone_seconds_json TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

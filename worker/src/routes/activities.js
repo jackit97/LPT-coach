@@ -4,6 +4,8 @@ import { authenticate } from '../auth.js';
 import { resolveTargetUserId, assertAccessToAthlete } from '../utils.js';
 import { coachOf, notify, userName, fmtDay } from '../lib/notify.js';
 import { parseActivityUpload, localDay, ImportError } from '../lib/activityImport.js';
+import { loadMergedZones } from '../lib/athleteData.js';
+import { zoneSecondsFromSamples } from '../lib/trainingLoad.js';
 
 // Import manuale di attivita' svolte (alternativa a Strava): file .fit / .tcx / .gpx esportati
 // (anche lo .zip di "Esporta originale") da Garmin Connect, Apple Health (app di export), Coros, Suunto, Polar...
@@ -90,6 +92,23 @@ app.post('/import', async (c) => {
     VALUES (${workout.workout_id}, ${utenteId}, 1, ${durationMinutes}, ${description}, NOW())
     ON CONFLICT (workout_id, utenteid) DO NOTHING
   `;
+
+  // campioni per i grafici (FC, passo, quota, potenza, cadenza) e giri
+  if (activity.streams) {
+    try {
+      let zoneSeconds = {};
+      try { zoneSeconds = zoneSecondsFromSamples(activity.streams, (await loadMergedZones(sql, utenteId)).heartRate || []); } catch { zoneSeconds = {}; }
+      await sql`
+        INSERT INTO activity_streams (workout_id, source, samples_json, laps_json, zone_seconds_json)
+        VALUES (${workout.workout_id}, ${activity.format}, ${JSON.stringify(activity.streams)}, ${JSON.stringify(activity.laps || [])},
+                ${Object.keys(zoneSeconds).length ? JSON.stringify(zoneSeconds) : null})
+        ON CONFLICT (workout_id) DO UPDATE SET samples_json = EXCLUDED.samples_json, laps_json = EXCLUDED.laps_json,
+          zone_seconds_json = EXCLUDED.zone_seconds_json
+      `;
+    } catch (error) {
+      console.error('activity_streams non salvati:', error?.message);
+    }
+  }
 
   if (user.ruolo === 'cliente' && coachId) {
     await notify(sql, coachId, {
