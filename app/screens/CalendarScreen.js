@@ -155,7 +155,8 @@ export default function CalendarScreen({ navigation }) {
     } catch (e) {
       Alert.alert(
         'Strava',
-        e?.response?.data?.message || 'Impossibile sincronizzare Strava. Verifica il collegamento nella sezione Profilo.'
+        (e?.response?.data?.message === 'Server error' ? `Errore del server: ${e?.response?.data?.detail || 'sconosciuto'}` : e?.response?.data?.message)
+          || 'Impossibile sincronizzare Strava. Verifica il collegamento nella sezione Profilo.'
       );
     } finally {
       setSyncingStrava(false);

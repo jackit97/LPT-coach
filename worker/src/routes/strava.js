@@ -59,10 +59,16 @@ async function getValidAccessToken(sql, userId, integrationData, env) {
   const now = Math.floor(Date.now() / 1000);
 
   if (expires_at && expires_at < now + 120 && refresh_token) {
-    const clientId = client_id || env.STRAVA_CLIENT_ID;
-    const clientSecret = client_secret || env.STRAVA_CLIENT_SECRET;
+    // Il token si rinnova solo con le credenziali dell'app Strava che l'ha emesso:
+    // prima quelle salvate col collegamento (se presenti), poi quelle del Worker.
+    const candidates = [
+      [client_id, client_secret],
+      [env.STRAVA_CLIENT_ID, env.STRAVA_CLIENT_SECRET],
+      [client_id, env.STRAVA_CLIENT_SECRET],
+    ].filter(([id, secret], index, list) => id && secret
+      && list.findIndex(([otherId, otherSecret]) => String(otherId) === String(id) && otherSecret === secret) === index);
 
-    if (clientId && clientSecret) {
+    for (const [clientId, clientSecret] of candidates) {
       const res = await fetch('https://www.strava.com/oauth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,7 +80,11 @@ async function getValidAccessToken(sql, userId, integrationData, env) {
         }),
       });
 
-      if (res.ok) {
+      if (!res.ok) {
+        console.error('Strava refresh token failed', userId, clientId, res.status, await res.text());
+        continue;
+      }
+      {
         const refreshed = await res.json();
         access_token = refreshed.access_token;
         refresh_token = refreshed.refresh_token;
@@ -82,6 +92,7 @@ async function getValidAccessToken(sql, userId, integrationData, env) {
 
         const updatedData = {
           ...integrationData,
+          client_id: clientId,
           access_token,
           refresh_token,
           expires_at,
@@ -95,6 +106,8 @@ async function getValidAccessToken(sql, userId, integrationData, env) {
         return { accessToken: access_token, integrationData: updatedData };
       }
     }
+    // Token scaduto e rinnovo non riuscito: serve ricollegare l'account
+    return { accessToken: null, integrationData, expired: true };
   }
 
   return { accessToken: access_token, integrationData };
@@ -107,7 +120,9 @@ async function syncStravaActivities(sql, userId, accessToken, coachId, integrati
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Errore Strava API: ${res.status} ${errorText}`);
+    const error = new Error(`Errore Strava API: ${res.status} ${errorText}`);
+    error.stravaStatus = res.status;
+    throw error;
   }
 
   const activities = await res.json();
@@ -430,10 +445,12 @@ app.post('/sync', async (c) => {
   let integrationData = {};
   try { integrationData = JSON.parse(rows[0].data_json || '{}'); } catch {}
 
-  const { accessToken, integrationData: freshData } = await getValidAccessToken(sql, utenteId, integrationData, c.env);
+  const { accessToken, integrationData: freshData, expired } = await getValidAccessToken(sql, utenteId, integrationData, c.env);
 
   if (!accessToken) {
-    return c.json({ message: 'Token Strava non disponibile o non valido' }, 400);
+    return c.json({ message: expired
+      ? 'Il collegamento con Strava è scaduto: vai nel Profilo, scollega e ricollega Strava.'
+      : 'Token Strava non disponibile o non valido: ricollega Strava dal Profilo.' }, 400);
   }
 
   const coachRows = await sql`
@@ -441,7 +458,19 @@ app.post('/sync', async (c) => {
   `;
   const coachId = coachRows.length ? coachRows[0].pt_userid : null;
 
-  const result = await syncStravaActivities(sql, utenteId, accessToken, coachId, freshData);
+  let result;
+  try {
+    result = await syncStravaActivities(sql, utenteId, accessToken, coachId, freshData);
+  } catch (err) {
+    console.error('Strava sync error', utenteId, err?.message);
+    if (err?.stravaStatus === 401) {
+      return c.json({ message: 'Strava ha rifiutato l\'accesso: vai nel Profilo, scollega e ricollega Strava.' }, 400);
+    }
+    if (err?.stravaStatus === 429) {
+      return c.json({ message: 'Troppe richieste a Strava in questo momento: riprova tra 15 minuti.' }, 429);
+    }
+    return c.json({ message: `Sincronizzazione Strava non riuscita: ${err?.message || 'errore sconosciuto'}` }, 502);
+  }
 
   return c.json({
     message: `Sincronizzazione completata: ${result.importedCount} nuove attività importate (${result.totalFetched} trovate).`,
