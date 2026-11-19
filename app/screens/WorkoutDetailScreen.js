@@ -213,7 +213,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
   };
 
   const deleteWorkout = () => {
-    Alert.alert('Elimina workout', 'Sei sicuro?', [
+    const imported = workout?.external_provider === 'file';
+    Alert.alert(imported ? 'Elimina attività' : 'Elimina workout', imported ? 'Eliminare questa attività importata? Potrai ricaricare il file con ⤓ Importa.' : 'Sei sicuro?', [
       { text: 'Annulla', style: 'cancel' },
       {
         text: 'Elimina',
@@ -487,6 +488,13 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           </Pressable>
         </View>
       ) : (
+        <>
+        {workout.external_provider === 'file' && (
+          <Pressable style={[styles.dangerButton, styles.deleteImported]} onPress={deleteWorkout}>
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
+            <Text style={styles.dangerButtonText}>Elimina attività importata</Text>
+          </Pressable>
+        )}
         <View style={styles.section}>
           <Text style={typography.h3}>Il tuo feedback</Text>
 
@@ -517,6 +525,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
             </Pressable>
           </View>
         </View>
+        </>
       )}
     </ScrollView>
   );
@@ -542,6 +551,7 @@ const styles = StyleSheet.create({
   impactValue: { fontSize: 22, fontWeight: '800', marginTop: 2 },
   impactHint: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
   subTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6, color: colors.textMuted, textTransform: 'uppercase', marginBottom: spacing.sm },
+  deleteImported: { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xl, flex: 0, paddingVertical: spacing.md },
   fileBanner: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
   execChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   execChip: { fontSize: 11, fontWeight: '700', color: colors.primary, backgroundColor: colors.primaryLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden', maxWidth: '100%' },

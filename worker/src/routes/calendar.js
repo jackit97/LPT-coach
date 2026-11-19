@@ -496,10 +496,19 @@ app.put('/:id', roleCheck('personal_trainer'), async (c) => {
 });
 
 // DELETE /calendar/:id
-app.delete('/:id', roleCheck('personal_trainer'), async (c) => {
+app.delete('/:id', async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
-  const owned = await loadOwnedWorkout(sql, c.get('user'), id);
+  const user = c.get('user');
+  // L'atleta puo' eliminare solo le proprie attivita' importate da file (per poterle ricaricare)
+  if (user.ruolo === 'cliente') {
+    const rows = await sql`SELECT workout_id FROM calendar_workouts WHERE workout_id = ${id} AND utenteid = ${user.userId} AND external_provider = 'file'`;
+    if (!rows.length) return c.json({ message: 'Puoi eliminare solo le attività che hai importato da file' }, 403);
+    await sql`DELETE FROM calendar_workouts WHERE workout_id = ${id}`;
+    return c.json({ message: 'Eliminato' });
+  }
+  if (user.ruolo !== 'personal_trainer') return c.json({ message: 'Accesso negato' }, 403);
+  const owned = await loadOwnedWorkout(sql, user, id);
   if (owned.error) return c.json({ message: owned.error }, owned.status);
   await sql`DELETE FROM calendar_workouts WHERE workout_id = ${id}`;
   // Senza questa pulizia la sync del calendario ricreerebbe il workout dalla sessione endurance
