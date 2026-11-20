@@ -18,6 +18,7 @@ const TYPE_STYLE = {
   strava: { icon: 'flash', color: '#FC4C02' },
   report: { icon: 'document-text', color: '#9333EA' },
   report_risposta: { icon: 'chatbubbles', color: '#9333EA' },
+  consiglio: { icon: 'bulb', color: '#F59E0B' },
 };
 
 // Schermata di destinazione -> tab che la contiene
@@ -26,6 +27,8 @@ const TARGET_TABS = {
   DietDetail: 'DietsTab',
   CheckDetail: 'ChecksTab',
   ReportDetail: 'ReportsTab',
+  AthleteHome: 'HomeTab',
+  StrengthHome: 'StrengthTab',
   PaymentsHome: 'PaymentsTab',
 };
 

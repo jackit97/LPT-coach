@@ -16,6 +16,7 @@ import notificationsRoutes from './routes/notifications.js';
 import checksRoutes from './routes/checks.js';
 import activitiesRoutes from './routes/activities.js';
 import reportsRoutes from './routes/reports.js';
+import tipsRoutes from './routes/tips.js';
 import { isDbConfigured, DbNotConfiguredError } from './db.js';
 
 const app = new Hono();
@@ -42,6 +43,7 @@ app.route('/zones', zonesRoutes);
 app.route('/strava', stravaRoutes);
 app.route('/activities', activitiesRoutes);
 app.route('/reports', reportsRoutes);
+app.route('/tips', tipsRoutes);
 app.route('/notifications', notificationsRoutes);
 app.route('/checks', checksRoutes);
 

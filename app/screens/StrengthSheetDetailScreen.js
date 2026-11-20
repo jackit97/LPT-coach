@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import ExerciseSheet from '../components/ExerciseSheet';
+import LogStrengthDayModal from '../components/LogStrengthDayModal';
 import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
@@ -14,6 +15,7 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
   const [sheet, setSheet] = useState(route.params.sheet);
   const [savedDays, setSavedDays] = useState({});
   const [openExercise, setOpenExercise] = useState(null);
+  const [logDay, setLogDay] = useState(null);
 
   // Ricarica la scheda per avere video e note sempre aggiornati
   useFocusEffect(useCallback(() => {
@@ -62,6 +64,12 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
           <View style={styles.dayHeader}>
             <Text style={[typography.h2, { flex: 1 }]}>{day.nome}</Text>
             {isCoach && <Pressable style={styles.libraryButton} onPress={() => saveDayToLibrary(day)} disabled={savedDays[day.schedaid]}><Text style={styles.libraryText}>{savedDays[day.schedaid] ? '✓ In libreria' : 'Salva in libreria'}</Text></Pressable>}
+            {!isCoach && (
+              <Pressable style={styles.doneButton} onPress={() => setLogDay(day.schedaid)}>
+                <Ionicons name="checkmark" size={15} color="#fff" />
+                <Text style={styles.doneText}>L'ho fatto</Text>
+              </Pressable>
+            )}
           </View>
           {day.esercizi.map((exercise, index) => (
             <Pressable key={exercise.esercizioid || `${day.schedaid}-${index}`} style={({ pressed }) => [styles.exercise, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(exercise)}>
@@ -87,6 +95,13 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
           {!day.esercizi.length && <Text style={typography.caption}>Nessun esercizio associato.</Text>}
         </View>
       ))}
+      <LogStrengthDayModal
+        visible={!!logDay}
+        sheets={[sheet]}
+        defaultSchedaId={logDay}
+        onClose={() => setLogDay(null)}
+        onLogged={(result) => { setLogDay(null); if (result?.workout_id) navigation.navigate('CalendarTab', { screen: 'WorkoutDetail', params: { workoutId: result.workout_id }, initial: false }); }}
+      />
       <ExerciseSheet
         visible={!!openExercise}
         exercise={openExercise}
@@ -113,6 +128,8 @@ const styles = StyleSheet.create({
   notes: { ...typography.caption, marginTop: 4 },
   noteChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, backgroundColor: colors.primaryLight, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start', maxWidth: '100%' },
   noteChipText: { fontSize: 12, color: colors.accent, fontWeight: '600', flexShrink: 1 },
+  doneButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.success, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  doneText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   libraryButton: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   libraryText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
   deleteButton: { alignSelf: 'flex-start', marginTop: spacing.md, backgroundColor: '#FEE2E2', borderRadius: radius.md, padding: spacing.sm },

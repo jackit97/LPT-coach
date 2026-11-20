@@ -59,6 +59,7 @@ export default function AthleteHubScreen({ route, navigation }) {
     { key: 'check', label: 'Check', hint: 'Foto dei progressi', icon: 'camera', color: '#0D9488', badge: counts.checks, onPress: () => open('ChecksTab', 'ChecksHome') },
     { key: 'pay', label: 'Pagamenti', hint: 'Scadenze e incassi', icon: 'card', color: '#EA580C', badge: counts.payments, onPress: () => open('PaymentsTab', 'PaymentsHome') },
     { key: 'report', label: 'Report', hint: 'Video e dubbi', icon: 'document-text', color: '#9333EA', badge: counts.reports, onPress: () => navigation.navigate('ReportsTab', { screen: 'ReportsHome', params: { utenteId: athleteId, athleteName: fullName(athlete) } }) },
+    { key: 'tips', label: 'Consigli', hint: 'Messaggi nella sua Home', icon: 'bulb', color: '#F59E0B', onPress: () => navigation.navigate('CoachTips', { athleteId, athleteName: fullName(athlete) }) },
     { key: 'lib', label: 'Assegna dalla libreria', hint: 'Allenamenti e piani pronti', icon: 'library', color: '#4F46E5', onPress: () => navigation.navigate('LibraryTab', { screen: 'LibraryHome', params: { athleteId, athleteName: fullName(athlete) } }) },
   ].filter(Boolean);
   const perf = status ? performanceStatus(status.performance) : null;

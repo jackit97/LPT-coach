@@ -73,6 +73,8 @@ import LibraryScreen from './screens/LibraryScreen';
 import PlanEditorScreen from './screens/PlanEditorScreen';
 import CoachHomeScreen from './screens/CoachHomeScreen';
 import AthleteHubScreen from './screens/AthleteHubScreen';
+import AthleteHomeScreen from './screens/AthleteHomeScreen';
+import CoachTipsScreen from './screens/CoachTipsScreen';
 import ReportDetailScreen from './screens/ReportDetailScreen';
 import CheckDetailScreen from './screens/CheckDetailScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
@@ -200,12 +202,23 @@ function LibraryStack() {
   );
 }
 
+// Home dell'atleta: allenamento del giorno, messaggi del coach, prossimi allenamenti
+function AthleteHomeStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="AthleteHome" component={AthleteHomeScreen} options={{ title: 'Home' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
 // Home del coach: Coach Assistant + atleti; la pagina dell'atleta porta a tutte le sue sezioni
 function CoachHomeStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="CoachHome" component={CoachHomeScreen} options={{ title: 'Home' }} />
       <Stack.Screen name="AthleteHub" component={AthleteHubScreen} options={{ title: 'Atleta' }} />
+      <Stack.Screen name="CoachTips" component={CoachTipsScreen} options={{ title: 'Consigli' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
     </Stack.Navigator>
   );
@@ -357,7 +370,8 @@ function MainTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: '#98A2B3',
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+        // l'atleta ha fino a 6 voci: su telefono il testo si riduce per non troncare "Calendario"
+        tabBarLabelStyle: { fontSize: compact && !isCoach ? 10 : 11, fontWeight: '700', marginTop: 2 },
         tabBarIconStyle: { height: 30 },
         tabBarItemStyle: { paddingVertical: 2 },
         tabBarLabelPosition: 'below-icon',
@@ -409,6 +423,7 @@ function MainTabs() {
         </>
       ) : (
         <>
+          <Tab.Screen name="HomeTab" component={AthleteHomeStack} options={tabOptions('Home', 'home')} />
           <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
           <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />
           <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />

@@ -8,6 +8,7 @@ const TABLE_NAMES = [
   'body_checks',
   'calendar_workout_exercises',
   'calendar_workouts',
+  'coach_tips',
   'diete',
   'endurance_activities',
   'endurance_block_library',

@@ -4,7 +4,7 @@ import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
 import { loadWorkoutsWithLoad, loadMergedZones } from '../lib/athleteData.js';
 import { notify, coachOf, userName, notifyNewWorkout } from '../lib/notify.js';
-import { isoDay, zoneSecondsFromSamples } from '../lib/trainingLoad.js';
+import { isoDay, zoneSecondsFromSamples, todayIso, addDaysIso } from '../lib/trainingLoad.js';
 import { executionsFor, reportFor } from './reports.js';
 
 const app = new Hono();
@@ -233,14 +233,28 @@ app.get('/strength-sheets', async (c) => {
     ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
   `;
   }
+  // Per ogni giorno della scheda: quando e' stato fatto l'ultima volta e quando e' il prossimo in programma
+  const today = todayIso();
+  const statsRows = await sql`
+    SELECT schedaid,
+           MAX(data) FILTER (WHERE stato = 'completato') AS ultima_volta,
+           MIN(data) FILTER (WHERE stato <> 'completato' AND data >= ${today}) AS prossima_volta,
+           COUNT(*) FILTER (WHERE stato = 'completato')::int AS volte
+    FROM calendar_workouts WHERE utenteid = ${utenteId} AND schedaid IS NOT NULL
+    GROUP BY schedaid
+  `;
+  const dayStats = new Map(statsRows.map((row) => [row.schedaid, { ultima_volta: row.ultima_volta ? isoDay(row.ultima_volta) : null, prossima_volta: row.prossima_volta ? isoDay(row.prossima_volta) : null, volte: row.volte }]));
   const groups = new Map();
   for (const row of rows) {
     const match = String(row.nomescheda || '').match(/^(.*?)(?:\s+-\s+Giorno\s+([A-Za-z0-9]+))?$/i);
     const name = (match?.[1] || row.nomescheda || 'Scheda palestra').trim();
-    if (!groups.has(name)) groups.set(name, { nome: name, datainizio: row.datainizio, datafine: row.datafine, giorni: new Map() });
+    if (!groups.has(name)) groups.set(name, { nome: name, datainizio: row.datainizio, datafine: row.datafine, programmazione: row.programmazione || 'settimanale', giorni: new Map() });
     const group = groups.get(name);
     const dayName = match?.[2] ? `Giorno ${match[2]}` : 'Giorno 1';
-    if (!group.giorni.has(row.schedaid)) group.giorni.set(row.schedaid, { schedaid: row.schedaid, nome: dayName, data: row.datainizio, esercizi: [] });
+    if (!group.giorni.has(row.schedaid)) {
+      const stats = dayStats.get(row.schedaid) || {};
+      group.giorni.set(row.schedaid, { schedaid: row.schedaid, nome: dayName, data: row.datainizio, esercizi: [], ultima_volta: stats.ultima_volta || null, prossima_volta: stats.prossima_volta || null, volte: stats.volte || 0 });
+    }
     if (row.nomeesercizio && !group.giorni.get(row.schedaid).esercizi.some((exercise) => exercise.esercizioid === row.esercizioid)) {
       group.giorni.get(row.schedaid).esercizi.push({
         esercizioid: row.esercizioid, nome: row.nomeesercizio, serie: row.serie, ripetizioni: row.ripetizioni,
@@ -253,21 +267,59 @@ app.get('/strength-sheets', async (c) => {
   return c.json([...groups.values()].map((group) => ({ ...group, giorni: [...group.giorni.values()] })));
 });
 
+// Giorni della settimana dal profilo atleta ("Lunedi, Mercoledi, ...") -> numeri 1 (lun) .. 7 (dom)
+const WEEKDAYS = { lunedi: 1, martedi: 2, mercoledi: 3, giovedi: 4, venerdi: 5, sabato: 6, domenica: 7 };
+export function parseWeekdays(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(list.map((item) => {
+    if (Number.isInteger(Number(item)) && Number(item) >= 1 && Number(item) <= 7) return Number(item);
+    const key = String(item).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return WEEKDAYS[key] || WEEKDAYS[Object.keys(WEEKDAYS).find((name) => key && name.startsWith(key.slice(0, 3)))] || null;
+  }).filter(Boolean))].sort();
+}
+
+const isoWeekday = (iso) => { const day = new Date(`${iso}T12:00:00Z`).getUTCDay(); return day === 0 ? 7 : day; };
+
+// Programmazione automatica: i giorni della scheda (A, B, C...) si susseguono sui giorni disponibili
+// dell'atleta, al massimo un ciclo di allenamenti a settimana. Es. lun-ven + scheda di 4 giorni:
+// lun A, mar B, mer C, gio D, ven riposo; la settimana dopo si riparte da dove si era rimasti.
+export function autoSchedule(start, end, weekdays, dayCount) {
+  const available = new Set(weekdays);
+  const weeklyCap = Math.min(dayCount, available.size);
+  const out = [];
+  let next = 0;
+  let weekKey = null;
+  let inWeek = 0;
+  for (let day = start; day <= end && out.length < 400; day = addDaysIso(day, 1)) {
+    const weekday = isoWeekday(day);
+    const monday = addDaysIso(day, -(weekday - 1));
+    if (monday !== weekKey) { weekKey = monday; inWeek = 0; }
+    if (!available.has(weekday) || inWeek >= weeklyCap) continue;
+    out.push({ data: day, giorno: next });
+    next = (next + 1) % dayCount;
+    inWeek += 1;
+  }
+  return out;
+}
+
 app.post('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
-  const { utenteId, nome, dataInizio, datafine, giorni = [] } = await c.req.json();
+  const { utenteId, nome, dataInizio, datafine, giorni = [], programmazione, giorniSettimana } = await c.req.json();
+  const auto = programmazione === 'auto';
   if (!utenteId || !nome?.trim() || !dataInizio || !datafine || datafine < dataInizio || !Array.isArray(giorni) || !giorni.length || giorni.length > 7) {
     return c.json({ message: 'Nome, data inizio, data scadenza e da 1 a 7 giorni sono richiesti' }, 400);
   }
+  const weekdays = auto ? parseWeekdays(giorniSettimana) : [];
+  if (auto && !weekdays.length) return c.json({ message: 'Per la programmazione automatica servono i giorni di allenamento dell\'atleta' }, 400);
   const sql = db(c.env);
   if (!await assertCoachOwnsAthlete(sql, user.userId, Number(utenteId))) return c.json({ message: 'Accesso negato' }, 403);
   const created = [];
   for (let index = 0; index < giorni.length; index += 1) {
     const day = giorni[index] || {};
-    if (!day.data) continue;
+    if (!auto && !day.data) continue;
     const sheet = await sql`
       INSERT INTO schedeallenamento (utenteid, nomescheda, datainizio, datafine, attiva, notegenerali)
-      VALUES (${utenteId}, ${`${nome.trim()} - Giorno ${index + 1}`}, ${day.data || dataInizio}, ${datafine}, 1, ${day.note || null})
+      VALUES (${utenteId}, ${`${nome.trim()} - Giorno ${index + 1}`}, ${auto ? dataInizio : (day.data || dataInizio)}, ${datafine}, 1, ${day.note || null})
       RETURNING *
     `;
     const sheetRow = sheet[0];
@@ -281,7 +333,122 @@ app.post('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
     }
     created.push(sheetRow);
   }
-  return c.json({ nome: nome.trim(), giorni: created }, 201);
+
+  let occurrences = 0;
+  if (auto && created.length) {
+    try {
+      await sql`UPDATE schedeallenamento SET programmazione = 'auto' WHERE schedaid = ANY(${created.map((row) => row.schedaid)})`;
+    } catch (error) {
+      console.error('programmazione non salvata (migrazione 20261122?)', error?.message);
+    }
+    // Le occorrenze vengono create subito: la sync del calendario non le ricalcola (la scheda ha gia' allenamenti)
+    for (const entry of autoSchedule(dataInizio, datafine, weekdays, created.length)) {
+      const sheetRow = created[entry.giorno];
+      await sql`
+        INSERT INTO calendar_workouts (utenteid, coach_userid, schedaid, data, tipo, titolo, descrizione, stato)
+        VALUES (${utenteId}, ${user.userId}, ${sheetRow.schedaid}, ${entry.data}, 'forza', ${sheetRow.nomescheda}, ${sheetRow.notegenerali || null}, 'pianificato')
+      `;
+      occurrences += 1;
+    }
+    await syncSourceWorkouts(sql, Number(utenteId), true); // aggiunge gli esercizi agli allenamenti appena creati
+  }
+  await notify(sql, Number(utenteId), {
+    tipo: 'workout',
+    mittenteId: user.userId,
+    titolo: `Nuova scheda di pesistica: ${nome.trim()}`,
+    messaggio: `${created.length} giorni · dal ${dataInizio.split('-').reverse().join('/')} al ${datafine.split('-').reverse().join('/')}`,
+    link: { screen: 'StrengthHome', params: {} },
+  });
+  return c.json({ nome: nome.trim(), giorni: created, programmazione: auto ? 'auto' : 'settimanale', occorrenze: occurrences }, 201);
+});
+
+// POST /calendar/strength-sheets/log { schedaid, data } — l'atleta segna quale giorno della scheda ha fatto in una data.
+// Se in quella settimana c'era gia' quel giorno in programma (non ancora fatto) viene spostato alla data indicata,
+// altrimenti viene aggiunto. Restituisce l'allenamento da aprire per il feedback.
+app.post('/strength-sheets/log', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const { schedaid, data } = await c.req.json().catch(() => ({}));
+  if (!schedaid || !/^\d{4}-\d{2}-\d{2}$/.test(String(data || ''))) return c.json({ message: 'Giorno della scheda e data sono richiesti' }, 400);
+  const sheet = (await sql`SELECT * FROM schedeallenamento WHERE schedaid = ${Number(schedaid)}`)[0];
+  if (!sheet) return c.json({ message: 'Scheda non trovata' }, 404);
+  const allowed = user.ruolo === 'cliente' ? sheet.utenteid === user.userId : await assertCoachOwnsAthlete(sql, user.userId, sheet.utenteid);
+  if (!allowed) return c.json({ message: 'Accesso negato' }, 403);
+  if (data > addDaysIso(todayIso(), 1)) return c.json({ message: 'Puoi registrare solo allenamenti di oggi o dei giorni passati' }, 400);
+
+  const same = (await sql`SELECT workout_id FROM calendar_workouts WHERE schedaid = ${sheet.schedaid} AND data = ${data} LIMIT 1`)[0];
+  if (same) return c.json({ workout_id: same.workout_id, azione: 'esistente', message: 'Questo giorno era già in programma in quella data' });
+
+  const weekday = isoWeekday(data);
+  const monday = addDaysIso(data, -(weekday - 1));
+  const sunday = addDaysIso(monday, 6);
+  const planned = (await sql`
+    SELECT workout_id, data FROM calendar_workouts
+    WHERE schedaid = ${sheet.schedaid} AND stato <> 'completato' AND data BETWEEN ${monday} AND ${sunday}
+    ORDER BY ABS(data - ${data}::date) ASC LIMIT 1
+  `)[0];
+  if (planned) {
+    await sql`UPDATE calendar_workouts SET data = ${data}, updated_at = NOW() WHERE workout_id = ${planned.workout_id}`;
+    return c.json({ workout_id: planned.workout_id, azione: 'spostato', da: isoDay(planned.data), message: `Spostato dal ${isoDay(planned.data).split('-').reverse().slice(0, 2).join('/')} al ${data.split('-').reverse().slice(0, 2).join('/')}` });
+  }
+  const coachId = user.ruolo === 'personal_trainer' ? user.userId : await coachOf(sql, sheet.utenteid);
+  const inserted = await sql`
+    INSERT INTO calendar_workouts (utenteid, coach_userid, schedaid, data, tipo, titolo, descrizione, stato)
+    VALUES (${sheet.utenteid}, ${coachId}, ${sheet.schedaid}, ${data}, 'forza', ${sheet.nomescheda}, ${sheet.notegenerali || null}, 'pianificato')
+    RETURNING workout_id
+  `;
+  await syncSourceWorkouts(sql, sheet.utenteid, true); // copia gli esercizi del giorno
+  return c.json({ workout_id: inserted[0].workout_id, azione: 'aggiunto', message: 'Allenamento aggiunto al calendario' }, 201);
+});
+
+// GET /calendar/home?utenteId= — Home dell'atleta: allenamenti di oggi e prossimi, scheda attiva, messaggi del coach
+app.get('/home', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  let utenteId = user.userId;
+  if (user.ruolo === 'personal_trainer') {
+    utenteId = Number(c.req.query('utenteId'));
+    if (!utenteId || !await assertCoachOwnsAthlete(sql, user.userId, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
+  }
+  const today = todayIso();
+  try { await syncSourceWorkouts(sql, utenteId, true); } catch (error) { console.error('home sync', error?.message); }
+  const workouts = await loadWorkoutsWithLoad(sql, utenteId, today, addDaysIso(today, 7));
+  const training = workouts.filter((workout) => workout.load || workout.tipo === 'forza');
+  const oggi = training.filter((workout) => isoDay(workout.data) === today);
+  const prossimi = training.filter((workout) => isoDay(workout.data) > today && workout.stato !== 'completato').slice(0, 4);
+
+  const sheetRows = await sql`
+    SELECT schedaid, nomescheda, datainizio, datafine FROM schedeallenamento
+    WHERE utenteid = ${utenteId} AND datainizio <= ${today} AND (datafine IS NULL OR datafine >= ${today})
+    ORDER BY schedaid ASC
+  `;
+  const sheets = new Map();
+  for (const row of sheetRows) {
+    const match = String(row.nomescheda || '').match(/^(.*?)(?:\s+-\s+Giorno\s+([A-Za-z0-9]+))?$/i);
+    const name = (match?.[1] || row.nomescheda || 'Scheda').trim();
+    if (!sheets.has(name)) sheets.set(name, { nome: name, datafine: row.datafine, giorni: [] });
+    sheets.get(name).giorni.push({ schedaid: row.schedaid, nome: match?.[2] ? `Giorno ${match[2]}` : 'Giorno 1' });
+  }
+
+  // Dal coach: consigli, risposte ai report, commenti ai check (gli ultimi, dal piu' recente)
+  const feed = [];
+  const safe = async (query) => { try { return await query(); } catch (error) { console.error('home feed', error?.message); return []; } };
+  for (const tip of await safe(() => sql`SELECT tip_id, testo, created_at FROM coach_tips WHERE athlete_id = ${utenteId} ORDER BY created_at DESC LIMIT 5`)) {
+    feed.push({ id: `tip-${tip.tip_id}`, tipo: 'consiglio', titolo: 'Consiglio del coach', testo: tip.testo, data: tip.created_at });
+  }
+  for (const report of await safe(() => sql`
+    SELECT r.report_id, r.workout_id, r.risposta, r.risposta_at, w.titolo FROM workout_reports r JOIN calendar_workouts w ON w.workout_id = r.workout_id
+    WHERE r.athlete_id = ${utenteId} AND r.risposta IS NOT NULL ORDER BY r.risposta_at DESC LIMIT 5`)) {
+    feed.push({ id: `rep-${report.report_id}`, tipo: 'report', titolo: `Risposta al report di "${report.titolo}"`, testo: report.risposta, data: report.risposta_at, link: { screen: 'WorkoutDetail', params: { workoutId: report.workout_id } } });
+  }
+  for (const check of await safe(() => sql`
+    SELECT check_id, commento_coach, revisionato_at FROM body_checks
+    WHERE athlete_id = ${utenteId} AND commento_coach IS NOT NULL AND commento_coach <> '' ORDER BY revisionato_at DESC NULLS LAST LIMIT 3`)) {
+    feed.push({ id: `chk-${check.check_id}`, tipo: 'check', titolo: 'Commento al check fotografico', testo: check.commento_coach, data: check.revisionato_at, link: { screen: 'CheckDetail', params: { checkId: check.check_id } } });
+  }
+  feed.sort((a, b) => new Date(b.data || 0) - new Date(a.data || 0));
+
+  return c.json({ oggi: today, allenamenti_oggi: oggi, prossimi, schede_attive: [...sheets.values()], dal_coach: feed.slice(0, 8) });
 });
 
 app.delete('/strength-sheets/:id', roleCheck('personal_trainer'), async (c) => {
