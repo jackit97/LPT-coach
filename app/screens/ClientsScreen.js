@@ -8,7 +8,7 @@ import { performanceStatus } from '../utils/endurance';
 
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
 
-export default function ClientsScreen({ navigation }) {
+export default function ClientsScreen({ navigation, route }) {
   const { clients, loadingClients, loadClients, selectedAthlete, setSelectedAthlete } = useAthlete();
   const [enduranceById, setEnduranceById] = useState({});
   const [savingEndurance, setSavingEndurance] = useState(null);
@@ -79,7 +79,12 @@ export default function ClientsScreen({ navigation }) {
           renderItem={({ item }) => (
             <View style={[styles.card, selectedAthlete?.utenteid === item.utenteid && styles.cardActive]}>
             <Pressable
-              onPress={() => { setSelectedAthlete(item); if (navigation.canGoBack()) navigation.goBack(); }}
+              onPress={() => {
+                setSelectedAthlete(item);
+                // Tab "Atleti": apre la pagina dell'atleta; aperta da una sezione serve solo a scegliere l'atleta
+                if (route?.name === 'ClientsHome') navigation.navigate('HomeTab', { screen: 'AthleteHub', params: { athleteId: item.utenteid }, initial: false });
+                else if (navigation.canGoBack()) navigation.goBack();
+              }}
             >
               <Text style={typography.h3}>{item.nome}</Text>
               {!!statusById[item.utenteid] && (

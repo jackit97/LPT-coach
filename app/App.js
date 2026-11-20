@@ -69,21 +69,37 @@ import MoreScreen from './screens/MoreScreen';
 import ExercisesScreen from './screens/ExercisesScreen';
 import ChecksScreen from './screens/ChecksScreen';
 import ReportsScreen from './screens/ReportsScreen';
+import LibraryScreen from './screens/LibraryScreen';
+import PlanEditorScreen from './screens/PlanEditorScreen';
+import CoachHomeScreen from './screens/CoachHomeScreen';
+import AthleteHubScreen from './screens/AthleteHubScreen';
 import ReportDetailScreen from './screens/ReportDetailScreen';
 import CheckDetailScreen from './screens/CheckDetailScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import { NotificationsProvider, useNotifications } from './context/NotificationsContext';
+import { useAthlete } from './context/AthleteContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function BackButton({ navigation, route }) {
-  // Le sezioni aperte da "Altro" non hanno uno schermo precedente nel proprio stack: tornano ad "Altro"
-  const fromMore = !navigation.canGoBack() && route?.params?.fromMore;
-  if (!navigation.canGoBack() && !fromMore) return null;
+  // Le sezioni aperte da "Altro" (atleta) o dalla pagina dell'atleta (coach) non hanno uno schermo
+  // precedente nel proprio stack: la freccia riporta da dove si era partiti.
+  const { selectedAthlete } = useAthlete();
+  const root = !navigation.canGoBack();
+  const fromMore = root && route?.params?.fromMore;
+  const fromHub = root && route?.params?.fromHub;
+  const fromHome = root && route?.params?.fromHome;
+  if (root && !fromMore && !fromHub && !fromHome) return null;
+  const goBack = () => {
+    if (fromHub) navigation.navigate('HomeTab', { screen: 'AthleteHub', params: { athleteId: selectedAthlete?.utenteid } });
+    else if (fromHome) navigation.navigate('HomeTab', { screen: 'CoachHome' });
+    else if (fromMore) navigation.navigate('MoreTab');
+    else navigation.goBack();
+  };
   return (
     <Pressable
-      onPress={() => (fromMore ? navigation.navigate('MoreTab') : navigation.goBack())}
+      onPress={goBack}
       style={{ paddingRight: 12, paddingVertical: 6 }}
       hitSlop={8}
     >
@@ -173,7 +189,23 @@ function CalendarStack() {
 function LibraryStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      <Stack.Screen name="LibraryHome" component={WorkoutLibraryScreen} options={{ title: 'Libreria allenamenti' }} />
+      <Stack.Screen name="LibraryHome" component={LibraryScreen} options={{ title: 'Libreria' }} />
+      <Stack.Screen name="PlanEditor" component={PlanEditorScreen} options={{ title: 'Piano' }} />
+      <Stack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ title: 'Allenamento' }} />
+      <Stack.Screen name="EnduranceWorkoutEditor" component={EnduranceWorkoutEditorScreen} options={{ title: 'Allenamento endurance' }} />
+      <Stack.Screen name="FunctionalWorkoutEditor" component={FunctionalWorkoutEditorScreen} options={{ title: 'Allenamento funzionale' }} />
+      <Stack.Screen name="TemplateDetail" component={TemplateDetailScreen} options={{ title: 'Template endurance' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+    </Stack.Navigator>
+  );
+}
+
+// Home del coach: Coach Assistant + atleti; la pagina dell'atleta porta a tutte le sue sezioni
+function CoachHomeStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="CoachHome" component={CoachHomeScreen} options={{ title: 'Home' }} />
+      <Stack.Screen name="AthleteHub" component={AthleteHubScreen} options={{ title: 'Atleta' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
     </Stack.Navigator>
   );
@@ -339,25 +371,57 @@ function MainTabs() {
         },
       }}
     >
-      <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
-      {isCoach && <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'people')} />}
-      {isCoach && <Tab.Screen name="LibraryTab" component={LibraryStack} options={tabOptions('Libreria', 'bookmarks')} />}
-      {!isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />}
-      <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />
-      {!isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
-      <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
+      {isCoach ? (
+        <>
+          {/* Coach: Home (Coach Assistant + atleti), Atleti, Libreria, Report, Pagamenti */}
+          <Tab.Screen name="HomeTab" component={CoachHomeStack} options={tabOptions('Home', 'home')} />
+          <Tab.Screen name="ClientsTab" component={ClientsTabStack} options={tabOptions('Atleti', 'people')} />
+          <Tab.Screen
+            name="LibraryTab"
+            component={LibraryStack}
+            options={tabOptions('Libreria', 'library')}
+            listeners={({ navigation }) => ({ tabPress: (event) => { event.preventDefault(); navigation.navigate('LibraryTab', { screen: 'LibraryHome', params: { athleteId: null, athleteName: null } }); } })}
+          />
+          <Tab.Screen
+            name="ReportsTab"
+            component={ReportsStack}
+            options={tabOptions('Report', 'document-text')}
+            listeners={({ navigation }) => ({ tabPress: (event) => { event.preventDefault(); navigation.navigate('ReportsTab', { screen: 'ReportsHome', params: { utenteId: null, athleteName: null } }); } })}
+          />
+          <Tab.Screen
+            name="PaymentsTab"
+            component={PaymentsStack}
+            options={tabOptions('Pagamenti', 'card')}
+            listeners={({ navigation }) => ({ tabPress: (event) => { event.preventDefault(); navigation.navigate('PaymentsTab', { screen: 'PaymentsHome', params: { fromHub: false } }); } })}
+          />
 
-      {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
-      {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
-      {isCoach && <Tab.Screen name="StrengthTab" component={StrengthStack} options={hiddenTab('Pesistica')} />}
-      {isCoach && enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={hiddenTab('Zone')} />}
-      {isCoach && enduranceEnabled && <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />}
-      {isCoach && <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />}
-      {isCoach && <Tab.Screen name="ExercisesTab" component={ExercisesStack} options={hiddenTab('Esercizi')} />}
-      {isCoach && <Tab.Screen name="ReportsTab" component={ReportsStack} options={hiddenTab('Report')} />}
-      <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
-      <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
-      <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
+          {/* Sezioni dell'atleta, aperte dalla sua pagina */}
+          <Tab.Screen name="CalendarTab" component={CalendarStack} options={hiddenTab('Calendario')} />
+          <Tab.Screen name="StrengthTab" component={StrengthStack} options={hiddenTab('Pesistica')} />
+          <Tab.Screen name="DietsTab" component={DietsStack} options={hiddenTab('Diete')} />
+          <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />
+          <Tab.Screen name="ZonesTab" component={ZonesStack} options={hiddenTab('Zone')} />
+          <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
+          <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />
+          <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />
+          <Tab.Screen name="ExercisesTab" component={ExercisesStack} options={hiddenTab('Esercizi')} />
+          <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
+        </>
+      ) : (
+        <>
+          <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
+          <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />
+          <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />
+          {enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
+          <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
+
+          {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
+          {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
+          <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
+          <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
+          <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
+        </>
+      )}
     </Tab.Navigator>
   );
 }

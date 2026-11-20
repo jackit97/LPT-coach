@@ -27,6 +27,8 @@ const TABLE_NAMES = [
   'food_and_nutritional_value',
   'foodcompositionraw',
   'notifiche',
+  'library_plan_items',
+  'library_plans',
   'pagamenti',
   'pastidieta',
   'profiloutente',

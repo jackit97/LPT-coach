@@ -30,7 +30,29 @@ export default function WorkoutEditorScreen({ route, navigation }) {
   const [esercizi, setEsercizi] = useState([]);
   const [exerciseSearch, setExerciseSearch] = useState({ index: null, query: '', results: [] });
   const [saving, setSaving] = useState(false);
-  const [loadingWorkout, setLoadingWorkout] = useState(isEdit);
+  // Modalita' libreria: allenamento standard senza atleta ne' data (creazione o modifica di un template)
+  const libraryTemplateId = route.params?.libraryTemplateId || null;
+  const libraryMode = !!route.params?.libraryMode || !!libraryTemplateId;
+  const [loadingWorkout, setLoadingWorkout] = useState(isEdit || !!libraryTemplateId);
+
+  useEffect(() => {
+    if (!libraryTemplateId) return;
+    api.get(`/workouts/templates/${libraryTemplateId}`)
+      .then(({ data: template }) => {
+        setTipo(template.tipo === 'funzionale' ? 'funzionale' : 'forza');
+        setTitolo(template.nometemplate || '');
+        setDescrizione(template.notegenerali || '');
+        const seconds = Number(template.durata_secondi ?? (Number(template.durata_minuti) || 0) * 60);
+        setDurataMinuti(seconds ? String(Math.round(seconds / 60)) : '');
+        setRpePianificato(template.rpe_pianificato ? String(template.rpe_pianificato) : '');
+        setEsercizi((template.esercizi || []).map((e) => ({
+          nome: e.nomeesercizio, serie: e.serie ?? '', ripetizioni: e.ripetizioni ?? '', carico: e.carico ?? '',
+          recupero: e.recupero ?? '', note: e.descrizione ?? '', video_url: e.videourl || '',
+        })));
+      })
+      .catch(() => Alert.alert('Errore', 'Impossibile caricare l\'allenamento della libreria'))
+      .finally(() => setLoadingWorkout(false));
+  }, [libraryTemplateId]);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -93,7 +115,33 @@ export default function WorkoutEditorScreen({ route, navigation }) {
     setExerciseSearch({ index: null, query: '', results: [] });
   };
 
+  const saveToLibrary = async () => {
+    if (!titolo.trim()) return Alert.alert('Errore', 'Il titolo è richiesto');
+    setSaving(true);
+    try {
+      const payload = {
+        nomeTemplate: titolo.trim(),
+        noteGenerali: descrizione || null,
+        tipo,
+        durataMinuti: durataMinuti ? Number(durataMinuti) : null,
+        rpePianificato: rpePianificato ? Number(rpePianificato) : null,
+        esercizi: esercizi.filter((e) => e.nome).map((e) => ({
+          nome: e.nome, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero,
+          descrizione: e.note, videoUrl: e.video_url,
+        })),
+      };
+      if (libraryTemplateId) await api.put(`/workouts/templates/${libraryTemplateId}`, payload);
+      else await api.post('/workouts/templates', payload);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile salvare in libreria');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const onSave = async () => {
+    if (libraryMode) return saveToLibrary();
     if (!titolo || !data) return Alert.alert('Errore', 'Titolo e data sono richiesti');
     setSaving(true);
     try {
@@ -130,10 +178,15 @@ export default function WorkoutEditorScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: spacing.lg }}>
-      <Text style={typography.h1}>{isEdit ? 'Modifica workout' : 'Nuovo workout'}</Text>
+      <Text style={typography.h1}>{libraryMode ? (libraryTemplateId ? 'Modifica allenamento' : 'Nuovo allenamento in libreria') : isEdit ? 'Modifica workout' : 'Nuovo workout'}</Text>
+      {libraryMode && <Text style={styles.libraryHint}>Allenamento standard: lo salvi in libreria e poi lo assegni a uno o più atleti.</Text>}
 
-      <Text style={styles.fieldLabel}>Data</Text>
-      <DateField value={data} onChange={setData} style={styles.dateField} />
+      {!libraryMode && (
+        <>
+          <Text style={styles.fieldLabel}>Data</Text>
+          <DateField value={data} onChange={setData} style={styles.dateField} />
+        </>
+      )}
 
       <Text style={styles.fieldLabel}>Tipo</Text>
       <View style={styles.chipsRow}>
@@ -209,7 +262,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
           <Text style={styles.cancelButtonText}>Annulla</Text>
         </Pressable>
         <Pressable style={styles.primaryButton} onPress={onSave} disabled={saving}>
-          {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={styles.primaryButtonText}>{isEdit ? 'Salva modifiche' : 'Crea workout'}</Text>}
+          {saving ? <ActivityIndicator color={colors.textInverse} /> : <Text style={styles.primaryButtonText}>{libraryMode ? 'Salva in libreria' : isEdit ? 'Salva modifiche' : 'Crea workout'}</Text>}
         </Pressable>
       </View>
     </ScrollView>
@@ -217,6 +270,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  libraryHint: { ...typography.caption, marginTop: spacing.xs, color: colors.primary },
   screen: { flex: 1, backgroundColor: colors.bg },
   fieldLabel: { ...typography.caption, marginTop: spacing.md, marginBottom: spacing.xs },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, marginBottom: spacing.xs },

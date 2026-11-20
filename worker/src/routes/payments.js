@@ -8,6 +8,20 @@ const app = new Hono();
 app.use('*', authenticate());
 
 // GET /payments?utenteId= - list payments for an athlete
+// GET /payments/all — coach: pagamenti di tutti i suoi atleti (panoramica)
+app.get('/all', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const rows = await sql`
+    SELECT p.*, u.nome AS atleta
+    FROM pagamenti p
+    JOIN utenti u ON u.utenteid = p.utenteid
+    JOIN pt_clienti pc ON pc.cliente_userid = p.utenteid AND pc.pt_userid = ${user.userId} AND pc.attivo = 1
+    ORDER BY (p.stato = 'Pagato') ASC, p.scadenza ASC NULLS LAST, p.pagamentoid DESC
+  `;
+  return c.json(rows);
+});
+
 app.get('/', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);

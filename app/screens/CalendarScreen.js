@@ -75,8 +75,9 @@ export default function CalendarScreen({ navigation }) {
     }
   }, [targetUserId, enduranceEnabled]);
 
+  // Il Coach Assistant ora e' nella Home del coach: nel calendario dell'atleta non serve
   const loadAssistant = useCallback(async () => {
-    if (!isCoach) return;
+    if (!isCoach || true) return;
     try {
       const { data } = await api.get('/pt/alerts');
       setAssistant(data);

@@ -8,7 +8,9 @@ import { colors, spacing, radius, typography } from '../theme';
 const fmtDate = (value) => new Date(value).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
 
 // Coach: report degli allenamenti di forza inviati dagli atleti (video di esecuzione, dubbi, feedback)
-export default function ReportsScreen({ navigation }) {
+export default function ReportsScreen({ navigation, route }) {
+  const athleteFilter = route?.params?.utenteId || null;
+  const athleteName = route?.params?.athleteName || null;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -17,7 +19,7 @@ export default function ReportsScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get('/reports');
+      const { data } = await api.get('/reports', { params: athleteFilter ? { utenteId: athleteFilter } : {} });
       setItems(data || []);
       setError(null);
     } catch (e) {
@@ -26,7 +28,7 @@ export default function ReportsScreen({ navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [athleteFilter]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -37,6 +39,15 @@ export default function ReportsScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
+      {!!athleteFilter && (
+        <View style={styles.athleteBar}>
+          <Ionicons name="person" size={14} color={colors.primary} />
+          <Text style={styles.athleteBarText} numberOfLines={1}>Solo {athleteName || 'questo atleta'}</Text>
+          <Pressable onPress={() => navigation.setParams({ utenteId: null, athleteName: null })} hitSlop={6}>
+            <Text style={styles.athleteBarLink}>Mostra tutti</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={styles.filters}>
         {[['tutti', `Tutti (${items.length})`], ['da_leggere', `Da leggere (${unread})`]].map(([key, label]) => (
           <Pressable key={key} onPress={() => setFilter(key)} style={[styles.filter, filter === key && styles.filterActive]}>
@@ -85,6 +96,9 @@ export default function ReportsScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  athleteBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: colors.primaryLight, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  athleteBarText: { flex: 1, color: colors.primary, fontWeight: '700' },
+  athleteBarLink: { color: colors.primary, fontWeight: '800', textDecorationLine: 'underline' },
   filters: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   filter: { borderWidth: 1, borderColor: colors.border, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6, backgroundColor: colors.surface },
   filterActive: { backgroundColor: colors.primary, borderColor: colors.primary },

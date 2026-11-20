@@ -94,6 +94,9 @@ function emptyBlock(type = 'Lavoro', title = '') {
 export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const workoutId = route.params?.workoutId;
   const isEdit = Boolean(workoutId);
+  // Modalita' libreria: allenamento standard senza atleta ne' data
+  const libraryTemplateId = route.params?.libraryTemplateId || null;
+  const libraryMode = !!route.params?.libraryMode || !!libraryTemplateId;
   const { targetUserId, selectedAthlete } = useAthlete();
 
   const [date, setDate] = useState(route.params?.date || toISODate(new Date()));
@@ -114,7 +117,7 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
     emptyBlock('Defaticamento'),
   ]);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(isEdit);
+  const [loading, setLoading] = useState(isEdit || !!route.params?.libraryTemplateId);
   const [athleteZones, setAthleteZones] = useState({});
   const [libraryBlocks, setLibraryBlocks] = useState([]);
   const [zoneViewMode, setZoneViewMode] = useState('tempo'); // 'tempo' | 'distanza'
@@ -126,12 +129,8 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
   const [importModal, setImportModal] = useState(false);
   const [sportModal, setSportModal] = useState(false);
 
-  // Load workout if editing
-  useEffect(() => {
-    if (!workoutId) return;
-    setLoading(true);
-    api.get(`/calendar/${workoutId}`)
-      .then(({ data }) => {
+  // Riempie l'editor da un allenamento del calendario (o da uno della libreria convertito nello stesso formato)
+  const applyWorkout = (data) => {
         setDate(String(data.data).slice(0, 10));
         setTitle(data.titolo || '');
         setAutoDesc(false);
@@ -166,10 +165,38 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
             // keep defaults
           }
         }
-      })
+  };
+
+  // Load workout if editing
+  useEffect(() => {
+    if (!workoutId) return;
+    setLoading(true);
+    api.get(`/calendar/${workoutId}`)
+      .then(({ data }) => applyWorkout(data))
       .catch(() => Alert.alert('Errore', "Impossibile caricare l'allenamento"))
       .finally(() => setLoading(false));
   }, [workoutId]);
+
+  // Libreria: carica l'allenamento standard da modificare
+  useEffect(() => {
+    if (!libraryTemplateId) return;
+    setLoading(true);
+    api.get(`/workouts/templates/${libraryTemplateId}`)
+      .then(({ data: template }) => {
+        let endurance = {};
+        try { endurance = JSON.parse(template.endurance_json || '{}') || {}; } catch { endurance = {}; }
+        applyWorkout({
+          data: toISODate(new Date()),
+          titolo: template.nometemplate,
+          descrizione: template.notegenerali,
+          sport: endurance.sport,
+          rpe_pianificato: template.rpe_pianificato,
+          endurance,
+        });
+      })
+      .catch(() => Alert.alert('Errore', "Impossibile caricare l'allenamento della libreria"))
+      .finally(() => setLoading(false));
+  }, [libraryTemplateId]);
 
   // Zone dell'atleta (tutti gli sport): passo corsa /km, potenza bici W, passo nuoto /100m
   useEffect(() => {
@@ -425,8 +452,8 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
 
   // Save to backend
   const saveWorkout = async () => {
-    if (!targetUserId || !date || !title.trim()) {
-      return Alert.alert('Errore', 'Compila titolo e data.');
+    if (libraryMode ? !title.trim() : (!targetUserId || !date || !title.trim())) {
+      return Alert.alert('Errore', libraryMode ? 'Compila il titolo.' : 'Compila titolo e data.');
     }
     if (!workoutTotals.totalSeconds) {
       return Alert.alert('Errore', 'Inserisci durata o distanza di almeno un intervallo.');
@@ -476,6 +503,25 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
         videoUrls,
       };
 
+      if (libraryMode) {
+        const templatePayload = {
+          nomeTemplate: payload.title,
+          noteGenerali: payload.description,
+          tipo: 'endurance',
+          durataMinuti: payload.durationMinutes,
+          durataSecondi: payload.durationSeconds,
+          rpePianificato: payload.rpeTarget,
+          endurance: {
+            sport: payload.sport, zone: payload.zone, target: payload.target, description: payload.description,
+            rpe_target: payload.rpeTarget, steps_json: payload.stepsJson, duration_minutes: payload.durationMinutes,
+            duration_seconds: payload.durationSeconds, elevation_m: payload.elevationM, video_urls: payload.videoUrls,
+          },
+        };
+        if (libraryTemplateId) await api.put(`/workouts/templates/${libraryTemplateId}`, templatePayload);
+        else await api.post('/workouts/templates', templatePayload);
+        navigation.goBack();
+        return;
+      }
       if (isEdit) {
         await api.put(`/endurance/workouts/${workoutId}`, payload);
       } else {
@@ -513,13 +559,13 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
       {/* COACHPEAKING TOP BAR */}
       <View style={styles.topBar}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Text style={styles.backLinkText}>‹ Annulla e torna al calendario</Text>
+          <Text style={styles.backLinkText}>{libraryMode ? '‹ Annulla e torna alla libreria' : '‹ Annulla e torna al calendario'}</Text>
         </Pressable>
         <Pressable style={styles.saveTopBtn} onPress={saveWorkout} disabled={saving}>
           {saving ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.saveTopBtnText}>{isEdit ? 'Salva modifiche' : 'Salva allenamento'}</Text>
+            <Text style={styles.saveTopBtnText}>{libraryMode ? 'Salva in libreria' : isEdit ? 'Salva modifiche' : 'Salva allenamento'}</Text>
           )}
         </Pressable>
       </View>
@@ -582,10 +628,12 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
               <Text style={styles.elevUnit}>mt</Text>
             </View>
 
-            {/* Date field */}
-            <View style={{ width: 140 }}>
-              <DateField value={date} onChange={setDate} />
-            </View>
+            {/* Date field (non serve per gli allenamenti della libreria) */}
+            {!libraryMode && (
+              <View style={{ width: 140 }}>
+                <DateField value={date} onChange={setDate} />
+              </View>
+            )}
 
             {/* Calcolatore button */}
             <Pressable style={styles.calcBtn} onPress={() => setCalcModal(true)}>

@@ -22,6 +22,28 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
   const [search, setSearch] = useState({ index: null, query: '', results: [] });
   const [saving, setSaving] = useState(false);
   const [unitPickerIndex, setUnitPickerIndex] = useState(null);
+  // Modalita' libreria: allenamento standard senza atleta ne' data
+  const libraryTemplateId = route.params?.libraryTemplateId || null;
+  const libraryMode = !!route.params?.libraryMode || !!libraryTemplateId;
+  useEffect(() => {
+    if (!libraryTemplateId) return;
+    api.get(`/workouts/templates/${libraryTemplateId}`).then(({ data: template }) => {
+      setTitle(template.nometemplate || '');
+      setDescription(template.notegenerali || '');
+      setRpe(template.rpe_pianificato ? String(template.rpe_pianificato) : '');
+      const minutes = template.durata_minuti || (template.durata_secondi ? Math.round(template.durata_secondi / 60) : null);
+      setDuration(minutes ? String(minutes) : '');
+      const list = (template.esercizi || []).map((e) => {
+        const load = String(e.carico || '');
+        const meters = load.match(/^([\d.,]+)\s*m$/i);
+        const minutesMatch = load.match(/^([\d.,]+)\s*min$/i);
+        if (meters) return { nome: e.nomeesercizio, amount: meters[1], unit: 'metri', note: e.descrizione || '' };
+        if (minutesMatch) return { nome: e.nomeesercizio, amount: minutesMatch[1], unit: 'minuti', note: e.descrizione || '' };
+        return { nome: e.nomeesercizio, amount: e.ripetizioni || '', unit: 'ripetizioni', note: e.descrizione || '' };
+      });
+      setExercises(list.length ? list : [emptyExercise()]);
+    }).catch(() => Alert.alert('Errore', 'Impossibile caricare l\'allenamento della libreria'));
+  }, [libraryTemplateId]);
 
   useEffect(() => {
     if (search.index === null || search.query.trim().length < 2) { setSearch((current) => ({ ...current, results: [] })); return undefined; }
@@ -35,19 +57,33 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
 
   const updateExercise = (index, field, value) => setExercises((current) => current.map((exercise, exerciseIndex) => exerciseIndex === index ? { ...exercise, [field]: value } : exercise));
   const selectExercise = (index, result) => { updateExercise(index, 'nome', result.nome); setSearch({ index: null, query: '', results: [] }); };
+  const exercisePayload = () => exercises.filter((exercise) => exercise.nome).map((exercise) => ({ nome: exercise.nome, ripetizioni: exercise.unit === 'ripetizioni' ? exercise.amount : null, carico: exercise.unit === 'metri' ? `${exercise.amount} m` : exercise.unit === 'minuti' ? `${exercise.amount} min` : null, note: exercise.note }));
   const save = async () => {
+    if (libraryMode) {
+      if (!title.trim()) return Alert.alert('Errore', 'Il titolo è obbligatorio');
+      setSaving(true);
+      try {
+        const payload = { nomeTemplate: title.trim(), noteGenerali: description || null, tipo: 'funzionale', durataMinuti: duration ? Number(duration) : null, rpePianificato: rpe ? Number(rpe) : null, esercizi: exercisePayload().map((exercise) => ({ ...exercise, descrizione: exercise.note })) };
+        if (libraryTemplateId) await api.put(`/workouts/templates/${libraryTemplateId}`, payload);
+        else await api.post('/workouts/templates', payload);
+        navigation.goBack();
+      } catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare in libreria'); }
+      finally { setSaving(false); }
+      return;
+    }
     if (!targetUserId || !date || !title.trim()) return Alert.alert('Errore', 'Data e titolo sono obbligatori');
     setSaving(true);
     try {
-      await api.post('/calendar/functional', { utenteId: targetUserId, data: date, titolo: title.trim(), descrizione: description, durataMinuti: duration ? Number(duration) : null, rpePianificato: rpe ? Number(rpe) : null, esercizi: exercises.filter((exercise) => exercise.nome).map((exercise) => ({ nome: exercise.nome, ripetizioni: exercise.unit === 'ripetizioni' ? exercise.amount : null, carico: exercise.unit === 'metri' ? `${exercise.amount} m` : exercise.unit === 'minuti' ? `${exercise.amount} min` : null, note: exercise.note })) });
+      await api.post('/calendar/functional', { utenteId: targetUserId, data: date, titolo: title.trim(), descrizione: description, durataMinuti: duration ? Number(duration) : null, rpePianificato: rpe ? Number(rpe) : null, esercizi: exercisePayload() });
       navigation.goBack();
     } catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile salvare l\'allenamento funzionale'); }
     finally { setSaving(false); }
   };
 
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={typography.h1}>Nuovo allenamento funzionale</Text>
-    <Text style={styles.label}>Data</Text><DateField value={date} onChange={setDate} />
+    <Text style={typography.h1}>{libraryTemplateId ? 'Modifica allenamento funzionale' : libraryMode ? 'Nuovo funzionale in libreria' : 'Nuovo allenamento funzionale'}</Text>
+    {libraryMode ? <Text style={[styles.loadHint, { color: colors.primary, fontWeight: '600' }]}>Allenamento standard: lo salvi in libreria e poi lo assegni a uno o più atleti.</Text>
+      : <><Text style={styles.label}>Data</Text><DateField value={date} onChange={setDate} /></>}
     <Text style={styles.label}>Titolo</Text><TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Titolo" />
     <Text style={styles.label}>Durata totale personalizzata (minuti)</Text><TextInput value={duration} onChangeText={setDuration} keyboardType="numeric" style={styles.input} placeholder="Durata (min)" />
     <Text style={styles.label}>Intensità pianificata (RPE)</Text><RpeSelector value={rpe} onChange={setRpe} />
@@ -61,7 +97,7 @@ export default function FunctionalWorkoutEditorScreen({ route, navigation }) {
       <TextInput value={exercise.note} onChangeText={(value) => updateExercise(index, 'note', value)} style={styles.input} placeholder="Note" />
     </View>)}
     <Modal visible={unitPickerIndex !== null} transparent animationType="fade" onRequestClose={() => setUnitPickerIndex(null)}><Pressable style={styles.modalOverlay} onPress={() => setUnitPickerIndex(null)}><View style={styles.modalCard}>{UNITS.map((unit) => <Pressable key={unit} style={styles.option} onPress={() => { updateExercise(unitPickerIndex, 'unit', unit); setUnitPickerIndex(null); }}><Text style={styles.optionText}>{unit}</Text></Pressable>)}</View></Pressable></Modal>
-    <View style={styles.actions}><Pressable style={styles.cancel} onPress={() => navigation.goBack()} disabled={saving}><Text>Annulla</Text></Pressable><Pressable style={styles.save} onPress={save} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Salva allenamento</Text>}</Pressable></View>
+    <View style={styles.actions}><Pressable style={styles.cancel} onPress={() => navigation.goBack()} disabled={saving}><Text>Annulla</Text></Pressable><Pressable style={styles.save} onPress={save} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{libraryMode ? 'Salva in libreria' : 'Salva allenamento'}</Text>}</Pressable></View>
   </ScrollView>;
 }
 
