@@ -109,19 +109,25 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
 // Coach: attach an existing athlete (by email) to their client list
 app.post('/clients', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
-  const { email } = await c.req.json();
-  if (!email) return c.json({ message: 'email richiesta' }, 400);
+  const { email } = await c.req.json().catch(() => ({}));
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return c.json({ message: 'Scrivi l\'email con cui l\'atleta si è registrato' }, 400);
 
   const sql = db(c.env);
-  const athlete = await sql`SELECT utenteid FROM utenti WHERE email = ${email} AND ruolo = 'cliente' LIMIT 1`;
-  if (!athlete[0]) return c.json({ message: 'Atleta non trovato' }, 404);
+  // email confrontata senza maiuscole/spazi: "Mario.Rossi@Gmail.com " = "mario.rossi@gmail.com"
+  const found = await sql`SELECT utenteid, nome, ruolo FROM utenti WHERE LOWER(TRIM(email)) = ${clean} LIMIT 1`;
+  const athlete = found[0];
+  if (!athlete) return c.json({ message: 'Nessun account con questa email: l\'atleta deve prima registrarsi nell\'app' }, 404);
+  if (athlete.ruolo !== 'cliente') return c.json({ message: 'Questa email appartiene a un coach, non a un atleta' }, 400);
 
+  const existing = await sql`SELECT attivo FROM pt_clienti WHERE pt_userid = ${user.userId} AND cliente_userid = ${athlete.utenteid}`;
+  if (existing[0]?.attivo === 1) return c.json({ message: `${athlete.nome} è già tra i tuoi atleti`, giaCollegato: true, utenteid: athlete.utenteid });
   await sql`
     INSERT INTO pt_clienti (pt_userid, cliente_userid, attivo)
-    VALUES (${user.userId}, ${athlete[0].utenteid}, 1)
+    VALUES (${user.userId}, ${athlete.utenteid}, 1)
     ON CONFLICT (pt_userid, cliente_userid) DO UPDATE SET attivo = 1
   `;
-  return c.json({ message: 'Atleta collegato' });
+  return c.json({ message: `${athlete.nome} aggiunto ai tuoi atleti`, utenteid: athlete.utenteid }, 201);
 });
 
 export default app;

@@ -40,12 +40,16 @@ export default function ClientsScreen({ navigation, route }) {
   }, []));
 
   const addClient = async () => {
-    if (!email) return;
+    if (!email.trim()) {
+      Alert.alert('Aggiungi atleta', 'Scrivi l\'email con cui l\'atleta si è registrato nell\'app.');
+      return;
+    }
     setAdding(true);
     try {
-      await api.post('/users/clients', { email: email.trim() });
+      const { data } = await api.post('/users/clients', { email: email.trim() });
       setEmail('');
       await loadClients();
+      Alert.alert('Atleti', data?.message || 'Atleta collegato');
     } catch (e) {
       Alert.alert('Errore', e?.response?.data?.message || 'Impossibile collegare l\u2019atleta');
     } finally {
@@ -59,7 +63,10 @@ export default function ClientsScreen({ navigation, route }) {
         <TextInput
           value={email}
           onChangeText={setEmail}
-          placeholder="Email atleta esistente"
+          placeholder="Email dell'atleta registrato"
+          keyboardType="email-address"
+          autoCorrect={false}
+          onSubmitEditing={addClient}
           autoCapitalize="none"
           style={styles.input}
         />
