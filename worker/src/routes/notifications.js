@@ -18,7 +18,7 @@ app.get('/', async (c) => {
   const sql = db(c.env);
   const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
   const rows = await sql`
-    SELECT n.*, u.nome AS mittente_nome
+    SELECT n.*, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS mittente_nome
     FROM notifiche n LEFT JOIN utenti u ON u.utenteid = n.mittente_id
     WHERE n.utenteid = ${user.userId}
     ORDER BY n.created_at DESC, n.notifica_id DESC

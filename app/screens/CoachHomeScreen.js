@@ -6,9 +6,10 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
-export const fullName = (athlete) => [athlete?.nome, athlete?.cognome].filter(Boolean).join(' ') || 'Atleta';
+export { fullName };
 export const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'AT';
 
 // Home del coach: Coach Assistant (chi ha bisogno di attenzione) + elenco atleti. Toccando un atleta si apre la sua pagina.

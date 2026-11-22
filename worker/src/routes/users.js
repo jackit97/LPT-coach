@@ -10,8 +10,8 @@ app.get('/me', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-    SELECT u.utenteid, u.nome, u.email, u.ruolo, u.dataregistrazione, u.endurance_enabled, u.endurance_visibile,
-           p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
+    SELECT u.utenteid, u.nome, u.email, u.ruolo, u.dataregistrazione, u.endurance_enabled, u.endurance_visibile, u.dieta_visibile,
+           COALESCE(NULLIF(TRIM(u.cognome), ''), p.cognome) AS cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
            p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness,
            p.datanascita, p.sesso
     FROM utenti u LEFT JOIN profiloutente p ON p.utenteid = u.utenteid
@@ -22,8 +22,8 @@ app.get('/me', async (c) => {
   // Il coach vede sempre le sezioni endurance; per l'atleta decide il coach (sezione Atleti).
   let enduranceVisible = true;
   if (row.ruolo === 'cliente') enduranceVisible = await athleteEnduranceVisible(sql, row);
-  const { endurance_visibile: _ignored, ...rest } = row;
-  return c.json({ ...rest, endurance_visible: enduranceVisible });
+  const { endurance_visibile: _ignored, dieta_visibile: dietVisible, ...rest } = row;
+  return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false });
 });
 
 // Visibilita' endurance di un atleta: scelta esplicita del coach, altrimenti la vecchia
@@ -46,6 +46,18 @@ app.put('/clients/:id{[0-9]+}/endurance', roleCheck('personal_trainer'), async (
   return c.json({ utenteid: athleteId, endurance_visible: !!visible });
 });
 
+// Coach: mostra/nasconde la sezione dieta a un singolo atleta (non tutti seguono anche l'alimentazione)
+app.put('/clients/:id{[0-9]+}/dieta', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const athleteId = Number(c.req.param('id'));
+  const { visible } = await c.req.json().catch(() => ({}));
+  const sql = db(c.env);
+  const link = await sql`SELECT 1 FROM pt_clienti WHERE pt_userid = ${user.userId} AND cliente_userid = ${athleteId} AND attivo = 1`;
+  if (!link.length) return c.json({ message: 'Atleta non trovato' }, 404);
+  await sql`UPDATE utenti SET dieta_visibile = ${!!visible} WHERE utenteid = ${athleteId}`;
+  return c.json({ utenteid: athleteId, dieta_visible: !!visible });
+});
+
 // Coach: toggle visibility of endurance sections for themselves and their athletes
 app.put('/me/endurance-settings', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
@@ -60,6 +72,7 @@ app.put('/me/profile', async (c) => {
   const { nome, cognome, pesokg, altezzacm, obiettivoallenamento, durataAllenamentoMinuti, giorniAllenamento, livellofitness, datanascita, sesso } = await c.req.json();
   const sql = db(c.env);
   if (nome?.trim()) await sql`UPDATE utenti SET nome = ${nome.trim()} WHERE utenteid = ${user.userId}`;
+  if (cognome !== undefined) await sql`UPDATE utenti SET cognome = ${String(cognome || '').trim() || null} WHERE utenteid = ${user.userId}`;
   const rows = await sql`
     INSERT INTO profiloutente (utenteid, cognome, pesokg, altezzacm, obiettivoallenamento, durata_allenamento_minuti, giorni_allenamento, livellofitness, datanascita, sesso)
     VALUES (${user.userId}, ${cognome || null}, ${pesokg || null}, ${altezzacm || null}, ${obiettivoallenamento || null}, ${durataAllenamentoMinuti || null}, ${giorniAllenamento || null}, ${livellofitness || null}, ${datanascita || null}, ${sesso || null})
@@ -89,20 +102,20 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-        SELECT u.utenteid, u.nome, u.email, u.dataregistrazione, u.endurance_visibile,
-          p.cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
+        SELECT u.utenteid, u.nome, u.email, u.dataregistrazione, u.endurance_visibile, u.dieta_visibile,
+          COALESCE(NULLIF(TRIM(u.cognome), ''), p.cognome) AS cognome, p.pesokg, p.altezzacm, p.obiettivoallenamento,
           p.durata_allenamento_minuti, p.giorni_allenamento, p.livellofitness
            , p.datanascita, p.sesso
     FROM pt_clienti pc
     JOIN utenti u ON u.utenteid = pc.cliente_userid
         LEFT JOIN profiloutente p ON p.utenteid = u.utenteid
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1
-    ORDER BY u.nome ASC
+    ORDER BY u.nome ASC, u.cognome ASC
   `;
   const fallback = rows.some((row) => row.endurance_visibile === null || row.endurance_visibile === undefined)
     ? await athleteEnduranceVisible(sql, {}) : true;
-  return c.json(rows.map(({ endurance_visibile: visible, ...row }) => ({
-    ...row, endurance_visible: visible === true || visible === false ? visible : fallback,
+  return c.json(rows.map(({ endurance_visibile: visible, dieta_visibile: dietVisible, ...row }) => ({
+    ...row, endurance_visible: visible === true || visible === false ? visible : fallback, dieta_visible: dietVisible !== false,
   })));
 });
 
@@ -115,7 +128,7 @@ app.post('/clients', roleCheck('personal_trainer'), async (c) => {
 
   const sql = db(c.env);
   // email confrontata senza maiuscole/spazi: "Mario.Rossi@Gmail.com " = "mario.rossi@gmail.com"
-  const found = await sql`SELECT utenteid, nome, ruolo FROM utenti WHERE LOWER(TRIM(email)) = ${clean} LIMIT 1`;
+  const found = await sql`SELECT utenteid, TRIM(CONCAT_WS(' ', nome, cognome)) AS nome, ruolo FROM utenti WHERE LOWER(TRIM(email)) = ${clean} LIMIT 1`;
   const athlete = found[0];
   if (!athlete) return c.json({ message: 'Nessun account con questa email: l\'atleta deve prima registrarsi nell\'app' }, 404);
   if (athlete.ruolo !== 'cliente') return c.json({ message: 'Questa email appartiene a un coach, non a un atleta' }, 400);

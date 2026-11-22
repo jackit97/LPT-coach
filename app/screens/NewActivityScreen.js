@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from 'react-
 import { useAthlete } from '../context/AthleteContext';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 // Gli editor endurance/funzionale/forza sono nello stack del calendario: dopo il salvataggio si torna al calendario.
 // La scheda palestra multi-giorno resta nella tab Pesistica.
@@ -35,7 +36,7 @@ export default function NewActivityScreen({ route, navigation }) {
   const athleteId = route.params?.utenteId || selectedAthlete?.utenteid;
   const [quickNote, setQuickNote] = useState('');
 
-  const athleteLabel = selectedAthlete?.nome || 'Atleta';
+  const athleteLabel = fullName(selectedAthlete);
   const initials = useMemo(() => shortName(athleteLabel), [athleteLabel]);
 
   const handleSport = (sport) => {

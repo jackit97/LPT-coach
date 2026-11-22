@@ -24,7 +24,7 @@ export async function coachOf(sql, athleteId) {
 
 export async function userName(sql, userId) {
   try {
-    const rows = await sql`SELECT nome FROM utenti WHERE utenteid = ${userId}`;
+    const rows = await sql`SELECT TRIM(CONCAT_WS(' ', nome, cognome)) AS nome FROM utenti WHERE utenteid = ${userId}`;
     return rows[0]?.nome || 'Atleta';
   } catch {
     return 'Atleta';

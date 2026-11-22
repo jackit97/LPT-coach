@@ -5,6 +5,7 @@ import api from '../api/client';
 import DateField from '../components/DateField';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName, initials } from '../utils/names';
 
 export default function ProfileScreen() {
   const { user, logout, isCoach, enduranceEnabled, profileComplete, refreshAccountStatus } = useAuth();
@@ -132,8 +133,8 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.avatar}><Text style={styles.avatarText}>{user?.nome?.[0]?.toUpperCase() || '?'}</Text></View>
-      <Text style={typography.h2}>{user?.nome}</Text>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{initials(fullName(user, ''))}</Text></View>
+      <Text style={typography.h2}>{fullName(user, '')}</Text>
       <Text style={typography.caption}>{user?.email}</Text>
       <Text style={styles.role}>{user?.ruolo === 'personal_trainer' ? 'Coach' : 'Atleta'}</Text>
 

@@ -6,19 +6,19 @@ import { colors, spacing, radius, typography } from '../theme';
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
   const [nome, setNome] = useState('');
+  const [cognome, setCognome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [ruolo, setRuolo] = useState('cliente');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async () => {
     setError('');
-    if (!nome || !email || !password) return setError('Compila tutti i campi');
+    if (!nome.trim() || !cognome.trim() || !email.trim() || !password) return setError('Compila tutti i campi');
     setLoading(true);
     try {
-      await register(nome.trim(), email.trim(), password, ruolo);
+      await register(nome.trim(), cognome.trim(), email.trim(), password);
     } catch (e) {
       setError(e?.response?.data?.message || 'Registrazione fallita');
     } finally {
@@ -32,7 +32,10 @@ export default function RegisterScreen({ navigation }) {
       <View style={{ height: spacing.lg }} />
 
       <Text style={styles.fieldLabel}>Nome</Text>
-      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Nome e cognome" placeholderTextColor={colors.textMuted} />
+      <TextInput value={nome} onChangeText={setNome} style={styles.input} placeholder="Nome" placeholderTextColor={colors.textMuted} autoComplete="given-name" />
+
+      <Text style={styles.fieldLabel}>Cognome</Text>
+      <TextInput value={cognome} onChangeText={setCognome} style={styles.input} placeholder="Cognome" placeholderTextColor={colors.textMuted} autoComplete="family-name" />
 
       <Text style={styles.fieldLabel}>Email</Text>
       <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="Email" placeholderTextColor={colors.textMuted} />
@@ -47,13 +50,14 @@ export default function RegisterScreen({ navigation }) {
 
       <Text style={styles.fieldLabel}>Ruolo</Text>
       <View style={styles.roleRow}>
-        <Pressable style={[styles.roleChip, ruolo === 'cliente' && styles.roleChipActive]} onPress={() => setRuolo('cliente')}>
-          <Text style={[styles.roleChipText, ruolo === 'cliente' && styles.roleChipTextActive]}>Atleta</Text>
-        </Pressable>
-        <Pressable style={[styles.roleChip, ruolo === 'personal_trainer' && styles.roleChipActive]} onPress={() => setRuolo('personal_trainer')}>
-          <Text style={[styles.roleChipText, ruolo === 'personal_trainer' && styles.roleChipTextActive]}>Coach</Text>
-        </Pressable>
+        <View style={[styles.roleChip, styles.roleChipActive]}>
+          <Text style={[styles.roleChipText, styles.roleChipTextActive]}>Atleta</Text>
+        </View>
+        <View style={[styles.roleChip, styles.roleChipDisabled]} accessibilityState={{ disabled: true }}>
+          <Text style={[styles.roleChipText, styles.roleChipTextDisabled]}>Coach</Text>
+        </View>
       </View>
+      <Text style={styles.roleHint}>Gli account coach vengono creati dall'amministratore.</Text>
 
       {!!error && <Text style={styles.error}>{error}</Text>}
 
@@ -98,6 +102,9 @@ const styles = StyleSheet.create({
   roleChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
   roleChipText: { fontWeight: '600', color: colors.textMuted },
   roleChipTextActive: { color: colors.primary },
+  roleChipDisabled: { opacity: 0.45, backgroundColor: colors.surfaceAlt },
+  roleChipTextDisabled: { color: colors.textMuted },
+  roleHint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
   error: { color: colors.danger, marginTop: spacing.md },
   primaryButton: {
     backgroundColor: colors.primary,

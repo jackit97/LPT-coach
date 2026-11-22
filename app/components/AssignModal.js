@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateField from './DateField';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 const todayIso = () => {
   const d = new Date();
@@ -100,7 +101,7 @@ export default function AssignModal({ visible, mode = 'workout', title, subtitle
                 return (
                   <Pressable key={client.utenteid} onPress={() => toggle(client.utenteid)} style={[styles.athlete, active && styles.athleteActive]}>
                     <Ionicons name={active ? 'checkbox' : 'square-outline'} size={18} color={active ? colors.primary : colors.textMuted} />
-                    <Text style={[styles.athleteText, active && { color: colors.primary }]} numberOfLines={1}>{[client.nome, client.cognome].filter(Boolean).join(' ')}</Text>
+                    <Text style={[styles.athleteText, active && { color: colors.primary }]} numberOfLines={1}>{fullName(client)}</Text>
                   </Pressable>
                 );
               })}

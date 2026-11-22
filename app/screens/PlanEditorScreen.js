@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Modal, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
@@ -46,6 +47,37 @@ export default function PlanEditorScreen({ route, navigation }) {
       }
     })();
   }, [planId]);
+
+  // tornando dall'editor dell'allenamento: nomi e tipi aggiornati
+  const focusedOnce = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (focusedOnce.current) api.get('/workouts/templates/mine').then(({ data }) => setTemplates(data || [])).catch(() => {});
+    focusedOnce.current = true;
+  }, []));
+  const [itemMenu, setItemMenu] = useState(null); // elemento del piano toccato
+  const [busy, setBusy] = useState(false);
+  const editorFor = (template) => (template?.tipo === 'endurance' ? 'EnduranceWorkoutEditor' : template?.tipo === 'funzionale' ? 'FunctionalWorkoutEditor' : 'WorkoutEditor');
+  const editTemplate = (item) => {
+    const template = byTemplate.get(item.templateid) || item;
+    setItemMenu(null);
+    navigation.navigate(editorFor(template), { libraryTemplateId: item.templateid });
+  };
+  // copia dell'allenamento usata solo in questo giorno del piano, poi apre l'editor sulla copia
+  const editCopy = async (item) => {
+    setBusy(true);
+    try {
+      const template = byTemplate.get(item.templateid) || item;
+      const { data: copy } = await api.post(`/workouts/templates/${item.templateid}/duplicate`, { nomeTemplate: `${template.nometemplate} · S${item.settimana}` });
+      setTemplates((current) => [copy, ...current]);
+      setItems((current) => current.map((row) => (row.key === item.key ? { ...row, templateid: copy.templateid, nometemplate: copy.nometemplate } : row)));
+      setItemMenu(null);
+      navigation.navigate(editorFor(copy), { libraryTemplateId: copy.templateid });
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile creare la copia');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const byTemplate = useMemo(() => new Map(templates.map((t) => [t.templateid, t])), [templates]);
   const pickable = useMemo(() => {
@@ -135,7 +167,9 @@ export default function PlanEditorScreen({ route, navigation }) {
                         const template = byTemplate.get(item.templateid) || item;
                         return (
                           <View key={item.key} style={[styles.itemChip, { borderColor: colorOf(template), backgroundColor: `${colorOf(template)}14` }]}>
-                            <Text style={[styles.itemText, { color: colorOf(template) }]} numberOfLines={1}>{template.nometemplate}</Text>
+                            <Pressable onPress={() => setItemMenu(item)} style={{ flexShrink: 1 }} accessibilityLabel={`Apri ${template.nometemplate}`}>
+                              <Text style={[styles.itemText, { color: colorOf(template) }]} numberOfLines={1}>{template.nometemplate} ✎</Text>
+                            </Pressable>
                             <Pressable onPress={() => removeItem(item.key)} hitSlop={6}><Ionicons name="close" size={14} color={colorOf(template)} /></Pressable>
                           </View>
                         );
@@ -157,6 +191,37 @@ export default function PlanEditorScreen({ route, navigation }) {
           {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Salva piano</Text>}
         </Pressable>
       </View>
+
+      <Modal visible={!!itemMenu} transparent animationType="fade" onRequestClose={() => setItemMenu(null)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setItemMenu(null)}>
+          <View style={styles.menuCard}>
+            {itemMenu && (
+              <>
+                <Text style={typography.h3} numberOfLines={2}>{(byTemplate.get(itemMenu.templateid) || itemMenu).nometemplate}</Text>
+                <Text style={[typography.caption, { marginBottom: spacing.sm }]}>Settimana {itemMenu.settimana} · {DAY_NAMES[itemMenu.giorno - 1]}</Text>
+                <Pressable style={styles.menuRow} onPress={() => editTemplate(itemMenu)}>
+                  <Ionicons name="create-outline" size={20} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuTitle}>Modifica allenamento</Text>
+                    <Text style={styles.menuHint}>Cambia l'allenamento in libreria: vale per tutti i piani che lo usano</Text>
+                  </View>
+                </Pressable>
+                <Pressable style={styles.menuRow} onPress={() => editCopy(itemMenu)} disabled={busy}>
+                  {busy ? <ActivityIndicator color={colors.primary} /> : <Ionicons name="copy-outline" size={20} color={colors.primary} />}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuTitle}>Modifica solo in questo giorno</Text>
+                    <Text style={styles.menuHint}>Crea una copia (es. carichi più alti in settimana {itemMenu.settimana}) e la modifica</Text>
+                  </View>
+                </Pressable>
+                <Pressable style={styles.menuRow} onPress={() => { removeItem(itemMenu.key); setItemMenu(null); }}>
+                  <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                  <View style={{ flex: 1 }}><Text style={[styles.menuTitle, { color: colors.danger }]}>Togli da questo giorno</Text></View>
+                </Pressable>
+              </>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
 
       <Modal visible={!!picker} transparent animationType="slide" onRequestClose={() => setPicker(null)}>
         <View style={styles.overlay}>
@@ -211,6 +276,11 @@ const styles = StyleSheet.create({
   saveText: { color: '#fff', fontWeight: '800' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center' },
   pickerCard: { width: '100%', maxWidth: 640, backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  menuCard: { width: '100%', maxWidth: 440, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  menuTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  menuHint: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   pickRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   pickDot: { width: 10, height: 10, borderRadius: 5 },
   pickName: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },

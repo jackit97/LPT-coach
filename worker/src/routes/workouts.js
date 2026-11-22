@@ -209,6 +209,25 @@ app.get('/templates/:id{[0-9]+}', async (c) => {
   return c.json(template);
 });
 
+// POST /workouts/templates/:id/duplicate { nomeTemplate? } — copia di un allenamento (es. da modificare solo in un piano)
+app.post('/templates/:id{[0-9]+}/duplicate', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const source = await getTemplate(sql, Number(c.req.param('id')), user.userId);
+  if (!source) return c.json({ message: 'Allenamento non trovato' }, 404);
+  const { nomeTemplate } = await c.req.json().catch(() => ({}));
+  const rows = await sql`
+    INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo, durata_minuti, durata_secondi, endurance_json, rpe_pianificato)
+    VALUES (${user.userId}, ${String(nomeTemplate || `${source.nometemplate} (copia)`).trim().slice(0, 150)}, ${source.notegenerali}, ${source.tipo},
+            ${source.durata_minuti}, ${source.durata_secondi}, ${source.endurance_json}, ${source.rpe_pianificato})
+    RETURNING templateid
+  `;
+  await saveTemplateExercises(sql, rows[0].templateid, source.esercizi.map((e) => ({
+    nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero, descrizione: e.descrizione, videoUrl: e.videourl,
+  })));
+  return c.json(await getTemplate(sql, rows[0].templateid, user.userId), 201);
+});
+
 // POST /workouts/templates — nuovo allenamento standard creato dalla libreria
 app.post('/templates', async (c) => {
   const user = c.get('user');

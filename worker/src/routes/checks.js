@@ -58,7 +58,7 @@ app.get('/inbox', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-    SELECT b.*, u.nome AS atleta_nome
+    SELECT b.*, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS atleta_nome
     FROM body_checks b
     JOIN pt_clienti pc ON pc.cliente_userid = b.athlete_id AND pc.pt_userid = ${user.userId} AND pc.attivo = 1
     JOIN utenti u ON u.utenteid = b.athlete_id

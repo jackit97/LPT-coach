@@ -71,7 +71,7 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
     INSERT INTO calendar_workout_exercises
       (workout_id, nome, serie, ripetizioni, note, video_url, recupero, order_index)
     SELECT w.workout_id, e.nomeesercizio, e.serie, e.ripetizioni, e.noteutente, e.videourl,
-           e.recupero, ROW_NUMBER() OVER (PARTITION BY w.workout_id ORDER BY e.esercizioid) - 1
+           e.recupero, ROW_NUMBER() OVER (PARTITION BY w.workout_id ORDER BY e.order_index NULLS LAST, e.esercizioid) - 1
     FROM calendar_workouts w
     JOIN esercizischeda e ON e.schedaid = w.schedaid
     WHERE w.utenteid = ${utenteId}
@@ -207,7 +207,7 @@ app.get('/strength-sheets', async (c) => {
       LIMIT 1
     ) vid ON TRUE
     WHERE s.utenteid = ${utenteId}
-    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
+    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.order_index ASC NULLS LAST, e.esercizioid ASC
   `;
   } catch (error) {
     if (!/note_atleta/.test(String(error?.message))) throw error;
@@ -230,7 +230,7 @@ app.get('/strength-sheets', async (c) => {
       LIMIT 1
     ) vid ON TRUE
     WHERE s.utenteid = ${utenteId}
-    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.esercizioid ASC
+    ORDER BY s.datainizio ASC NULLS LAST, s.schedaid ASC, e.order_index ASC NULLS LAST, e.esercizioid ASC
   `;
   }
   // Per ogni giorno della scheda: quando e' stato fatto l'ultima volta e quando e' il prossimo in programma
@@ -253,13 +253,13 @@ app.get('/strength-sheets', async (c) => {
     const dayName = match?.[2] ? `Giorno ${match[2]}` : 'Giorno 1';
     if (!group.giorni.has(row.schedaid)) {
       const stats = dayStats.get(row.schedaid) || {};
-      group.giorni.set(row.schedaid, { schedaid: row.schedaid, nome: dayName, data: row.datainizio, esercizi: [], ultima_volta: stats.ultima_volta || null, prossima_volta: stats.prossima_volta || null, volte: stats.volte || 0 });
+      group.giorni.set(row.schedaid, { schedaid: row.schedaid, nome: dayName, note: row.notegenerali || '', data: row.datainizio, esercizi: [], ultima_volta: stats.ultima_volta || null, prossima_volta: stats.prossima_volta || null, volte: stats.volte || 0 });
     }
     if (row.nomeesercizio && !group.giorni.get(row.schedaid).esercizi.some((exercise) => exercise.esercizioid === row.esercizioid)) {
       group.giorni.get(row.schedaid).esercizi.push({
         esercizioid: row.esercizioid, nome: row.nomeesercizio, serie: row.serie, ripetizioni: row.ripetizioni,
         descrizione: row.exercise_description, recupero: row.recupero, note: row.noteutente,
-        video_url: row.legacy_video_url || row.catalog_video_url, video_title: row.video_title,
+        video_url: row.legacy_video_url || row.catalog_video_url, video_title: row.video_title, legacy_video_url: row.legacy_video_url || null,
         note_atleta: row.note_atleta, note_atleta_at: row.note_atleta_at,
       });
     }
@@ -302,6 +302,142 @@ export function autoSchedule(start, end, weekdays, dayCount) {
   return out;
 }
 
+async function insertSheetExercise(sql, schedaId, exercise, position) {
+  try {
+    await sql`
+      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl, order_index)
+      VALUES (${schedaId}, ${String(exercise.nome).trim()}, ${Number(exercise.serie) || null}, ${exercise.ripetizioni || null},
+              ${exercise.descrizione || null}, ${exercise.recupero || null}, ${exercise.note || null}, ${exercise.videoUrl || null}, ${position})
+    `;
+  } catch (error) {
+    if (!/order_index/.test(String(error?.message))) throw error; // migrazione 20261123 non ancora applicata
+    await sql`
+      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl)
+      VALUES (${schedaId}, ${String(exercise.nome).trim()}, ${Number(exercise.serie) || null}, ${exercise.ripetizioni || null},
+              ${exercise.descrizione || null}, ${exercise.recupero || null}, ${exercise.note || null}, ${exercise.videoUrl || null})
+    `;
+  }
+}
+
+// PUT /calendar/strength-sheets — modifica di una scheda gia' assegnata: nome, scadenza, note e esercizi (anche l'ordine)
+// di ogni giorno. Gli allenamenti in programma da domani in poi vengono aggiornati; quelli passati o svolti restano com'erano.
+app.put('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const { schedaIds = [], nome, datafine, giorni = [] } = await c.req.json().catch(() => ({}));
+  const ids = [...new Set(schedaIds.map(Number).filter(Boolean))];
+  if (!ids.length || !String(nome || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(datafine || ''))) {
+    return c.json({ message: 'Nome, scadenza e giorni della scheda sono richiesti' }, 400);
+  }
+  const rows = await sql`SELECT * FROM schedeallenamento WHERE schedaid = ANY(${ids})`;
+  if (rows.length !== ids.length || new Set(rows.map((row) => row.utenteid)).size !== 1) return c.json({ message: 'Scheda non trovata' }, 404);
+  const athleteId = rows[0].utenteid;
+  if (!await assertCoachOwnsAthlete(sql, user.userId, athleteId)) return c.json({ message: 'Accesso negato' }, 403);
+  const start = rows.map((row) => isoDay(row.datainizio)).sort()[0];
+  if (datafine < start) return c.json({ message: 'La scadenza deve essere dopo l\'inizio della scheda' }, 400);
+  const oldEnd = rows.map((row) => isoDay(row.datafine)).sort().reverse()[0];
+  const today = todayIso();
+  const cleanName = String(nome).trim();
+
+  for (const row of rows) {
+    const day = giorni.find((item) => Number(item.schedaid) === row.schedaid) || {};
+    const label = String(row.nomescheda || '').match(/\s+-\s+Giorno\s+([A-Za-z0-9]+)$/i)?.[1];
+    await sql`
+      UPDATE schedeallenamento SET nomescheda = ${label ? `${cleanName} - Giorno ${label}` : cleanName},
+        notegenerali = ${day.note !== undefined ? (day.note || null) : row.notegenerali}, datafine = ${datafine}
+      WHERE schedaid = ${row.schedaid}
+    `;
+    if (!Array.isArray(day.esercizi)) continue;
+    // esercizi: quelli esistenti (con esercizioid) vengono aggiornati e mantengono le note dell'atleta
+    const existing = await sql`SELECT esercizioid FROM esercizischeda WHERE schedaid = ${row.schedaid}`;
+    const keep = new Set();
+    let position = 0;
+    for (const exercise of day.esercizi) {
+      if (!String(exercise?.nome || '').trim()) continue;
+      const id = Number(exercise.esercizioid);
+      if (id && existing.some((item) => item.esercizioid === id)) {
+        keep.add(id);
+        await sql`
+          UPDATE esercizischeda SET nomeesercizio = ${String(exercise.nome).trim()}, serie = ${Number(exercise.serie) || null},
+            ripetizioni = ${exercise.ripetizioni || null}, descrizione = ${exercise.descrizione || null}, recupero = ${exercise.recupero || null},
+            noteutente = ${exercise.note || null}
+          WHERE esercizioid = ${id}
+        `;
+        try { await sql`UPDATE esercizischeda SET order_index = ${position} WHERE esercizioid = ${id}`; } catch (error) { if (!/order_index/.test(String(error?.message))) throw error; }
+      } else {
+        await insertSheetExercise(sql, row.schedaid, exercise, position);
+      }
+      position += 1;
+    }
+    for (const item of existing) {
+      if (!keep.has(item.esercizioid)) await sql`DELETE FROM esercizischeda WHERE esercizioid = ${item.esercizioid}`;
+    }
+  }
+
+  // Allenamenti futuri non svolti: titolo e note aggiornati, esercizi ricopiati dalla scheda (nel nuovo ordine)
+  const future = await sql`
+    SELECT w.workout_id, w.schedaid FROM calendar_workouts w
+    WHERE w.schedaid = ANY(${ids}) AND w.stato <> 'completato' AND w.data > ${today}
+  `;
+  const updatedRows = await sql`SELECT schedaid, nomescheda, notegenerali FROM schedeallenamento WHERE schedaid = ANY(${ids})`;
+  const byId = new Map(updatedRows.map((row) => [row.schedaid, row]));
+  for (const workout of future) {
+    const row = byId.get(workout.schedaid);
+    await sql`UPDATE calendar_workouts SET titolo = ${row.nomescheda}, descrizione = ${row.notegenerali || null}, updated_at = NOW() WHERE workout_id = ${workout.workout_id}`;
+    await sql`DELETE FROM calendar_workout_exercises WHERE workout_id = ${workout.workout_id}`;
+  }
+
+  // Scadenza anticipata: tolti gli allenamenti in programma dopo la nuova data
+  let removed = 0;
+  if (datafine < oldEnd) {
+    const deleted = await sql`
+      DELETE FROM calendar_workouts WHERE schedaid = ANY(${ids}) AND stato <> 'completato' AND data > ${datafine} RETURNING workout_id
+    `;
+    removed = deleted.length;
+  }
+  // Scadenza posticipata: si continua la programmazione fino alla nuova data
+  let added = 0;
+  if (datafine > oldEnd) {
+    const ordered = [...rows].sort((a, b) => a.schedaid - b.schedaid);
+    const last = (await sql`SELECT schedaid, data FROM calendar_workouts WHERE schedaid = ANY(${ids}) ORDER BY data DESC, workout_id DESC LIMIT 1`)[0];
+    const auto = rows.some((row) => row.programmazione === 'auto');
+    let entries = [];
+    if (auto) {
+      // giorni scelti alla creazione della scheda; se mancano, quelli del profilo dell'atleta
+      let weekdays = parseWeekdays(rows.find((row) => row.giorni_settimana)?.giorni_settimana);
+      if (!weekdays.length) {
+        const profile = (await sql`SELECT giorni_allenamento FROM profiloutente WHERE utenteid = ${athleteId}`)[0];
+        weekdays = parseWeekdays(profile?.giorni_allenamento);
+      }
+      const from = addDaysIso(last ? isoDay(last.data) : oldEnd, 1);
+      const nextIndex = last ? (ordered.findIndex((row) => row.schedaid === last.schedaid) + 1) % ordered.length : 0;
+      if (weekdays.length) {
+        entries = autoSchedule(from, datafine, weekdays, ordered.length).map((entry) => ({ data: entry.data, row: ordered[(entry.giorno + nextIndex) % ordered.length] }));
+      }
+    } else {
+      for (const row of ordered) {
+        const lastOfDay = (await sql`SELECT MAX(data) AS data FROM calendar_workouts WHERE schedaid = ${row.schedaid}`)[0]?.data;
+        for (let day = addDaysIso(lastOfDay ? isoDay(lastOfDay) : isoDay(row.datainizio), 7); day <= datafine; day = addDaysIso(day, 7)) {
+          entries.push({ data: day, row });
+        }
+      }
+    }
+    for (const entry of entries) {
+      await sql`
+        INSERT INTO calendar_workouts (utenteid, coach_userid, schedaid, data, tipo, titolo, descrizione, stato)
+        VALUES (${athleteId}, ${user.userId}, ${entry.row.schedaid}, ${entry.data}, 'forza', ${byId.get(entry.row.schedaid).nomescheda}, ${byId.get(entry.row.schedaid).notegenerali || null}, 'pianificato')
+      `;
+      added += 1;
+    }
+  }
+  await syncSourceWorkouts(sql, athleteId, true); // ricopia gli esercizi negli allenamenti aggiornati o aggiunti
+
+  const parts = [`${future.length} allenamenti futuri aggiornati`];
+  if (removed) parts.push(`${removed} tolti dopo la nuova scadenza`);
+  if (added) parts.push(`${added} aggiunti fino alla nuova scadenza`);
+  return c.json({ message: `Scheda salvata: ${parts.join(', ')}.`, aggiornati: future.length, rimossi: removed, aggiunti: added });
+});
+
 app.post('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const { utenteId, nome, dataInizio, datafine, giorni = [], programmazione, giorniSettimana } = await c.req.json();
@@ -323,13 +459,11 @@ app.post('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
       RETURNING *
     `;
     const sheetRow = sheet[0];
+    let position = 0;
     for (const exercise of Array.isArray(day.esercizi) ? day.esercizi : []) {
       if (!exercise?.nome) continue;
-      await sql`
-        INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl)
-        VALUES (${sheetRow.schedaid}, ${exercise.nome}, ${exercise.serie || null}, ${exercise.ripetizioni || null},
-                ${exercise.descrizione || null}, ${exercise.recupero || null}, ${exercise.note || null}, ${exercise.videoUrl || null})
-      `;
+      await insertSheetExercise(sql, sheetRow.schedaid, exercise, position);
+      position += 1;
     }
     created.push(sheetRow);
   }
@@ -338,6 +472,7 @@ app.post('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
   if (auto && created.length) {
     try {
       await sql`UPDATE schedeallenamento SET programmazione = 'auto' WHERE schedaid = ANY(${created.map((row) => row.schedaid)})`;
+      await sql`UPDATE schedeallenamento SET giorni_settimana = ${weekdays.join(',')} WHERE schedaid = ANY(${created.map((row) => row.schedaid)})`;
     } catch (error) {
       console.error('programmazione non salvata (migrazione 20261122?)', error?.message);
     }

@@ -11,6 +11,7 @@ import LoadChart from '../components/LoadChart';
 import { colors, spacing, radius, typography } from '../theme';
 import { toISODate, startOfWeek, addDays } from '../utils/dates';
 import { performanceStatus, formatShortDuration } from '../utils/endurance';
+import { fullName } from '../utils/names';
 
 const ALERT_ICONS = { inattivita: '⏸', aderenza: '📉', carico: '⚠', commenti: '💬' };
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
@@ -234,7 +235,7 @@ export default function CalendarScreen({ navigation }) {
       )}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>{isCoach ? selectedAthlete?.nome : 'Il mio calendario'}</Text>
+          <Text style={styles.headerTitle}>{isCoach ? fullName(selectedAthlete) : 'Il mio calendario'}</Text>
           <Text style={styles.headerSubtitle}>{fmtDay(weekStart)} – {fmtDay(rangeEnd)} {rangeEnd.getFullYear()}</Text>
         </View>
         <View style={styles.headerActions}>

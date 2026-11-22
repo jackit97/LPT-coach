@@ -8,6 +8,7 @@ import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
 import DateField from '../components/DateField';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 export const CHECK_STATUS = {
   richiesto: { label: 'Da inviare', color: '#B45309', bg: '#FEF3C7', icon: 'time-outline' },
@@ -64,7 +65,7 @@ export default function ChecksScreen({ navigation }) {
       setRequestOpen(false);
       setNota('');
       await load();
-      Alert.alert('Check richiesto', `${selectedAthlete?.nome || 'L\'atleta'} riceverà una notifica.`);
+      Alert.alert('Check richiesto', `${fullName(selectedAthlete, 'L\'atleta')} riceverà una notifica.`);
     } catch (e) {
       Alert.alert('Errore', e?.response?.data?.message || 'Impossibile richiedere il check');
     } finally {
@@ -96,7 +97,7 @@ export default function ChecksScreen({ navigation }) {
           )}
 
           <View style={styles.headerRow}>
-            <Text style={typography.h2}>{isCoach ? `Check di ${selectedAthlete?.nome || 'atleta'}` : 'I miei check'}</Text>
+            <Text style={typography.h2}>{isCoach ? `Check di ${fullName(selectedAthlete, 'atleta')}` : 'I miei check'}</Text>
             {isCoach && targetUserId && (
               <Pressable style={styles.primarySmall} onPress={() => setRequestOpen(true)}>
                 <Ionicons name="camera-outline" size={16} color="#fff" />
@@ -139,7 +140,7 @@ export default function ChecksScreen({ navigation }) {
         <View style={styles.overlay}>
           <View style={styles.modalCard}>
             <Text style={typography.h2}>Richiedi check</Text>
-            <Text style={styles.meta}>{selectedAthlete?.nome} riceverà una notifica e potrà caricare le foto fronte, lato e retro.</Text>
+            <Text style={styles.meta}>{fullName(selectedAthlete, 'L\'atleta')} riceverà una notifica e potrà caricare le foto fronte, lato e retro.</Text>
             <Text style={styles.label}>Da inviare entro</Text>
             <DateField value={scadenza} onChange={setScadenza} />
             <Text style={styles.label}>Nota per l'atleta</Text>

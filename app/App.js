@@ -274,7 +274,7 @@ function StrengthStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="StrengthHome" component={StrengthScreen} options={{ title: 'Pesistica' }} />
       <Stack.Screen name="StrengthSheetDetail" component={StrengthSheetDetailScreen} options={{ title: 'Scheda pesistica' }} />
-      <Stack.Screen name="StrengthSheetEditor" component={StrengthSheetEditorScreen} options={{ title: 'Nuova scheda' }} />
+      <Stack.Screen name="StrengthSheetEditor" component={StrengthSheetEditorScreen} options={({ route }) => ({ title: route.params?.editSheet ? 'Modifica scheda' : 'Nuova scheda' })} />
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ title: 'Dettaglio workout' }} />
       <Stack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ title: 'Nuova scheda' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
@@ -361,7 +361,7 @@ function MoreStack() {
 }
 
 function MainTabs() {
-  const { isCoach, enduranceEnabled } = useAuth();
+  const { isCoach, enduranceEnabled, dietEnabled } = useAuth();
   const { width } = useWindowDimensions();
   const compact = width < 700;
   return (
@@ -426,7 +426,7 @@ function MainTabs() {
           <Tab.Screen name="HomeTab" component={AthleteHomeStack} options={tabOptions('Home', 'home')} />
           <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
           <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />
-          <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />
+          {dietEnabled && <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />}
           {enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
           <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
 

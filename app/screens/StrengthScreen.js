@@ -8,6 +8,7 @@ import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
 import LogStrengthDayModal from '../components/LogStrengthDayModal';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 const iso = (value) => (value ? String(value).slice(0, 10) : null);
 const fmt = (value) => (value ? iso(value).split('-').reverse().join('/') : '—');
@@ -115,7 +116,7 @@ export default function StrengthScreen({ navigation }) {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
-          <Text style={styles.heading}>{isCoach ? `Pesistica di ${selectedAthlete?.nome}` : 'La mia pesistica'}</Text>
+          <Text style={styles.heading}>{isCoach ? `Pesistica di ${fullName(selectedAthlete)}` : 'La mia pesistica'}</Text>
           {!!error && (
             <Pressable onPress={load}><Text style={styles.error}>{error}{'\n'}Tocca per riprovare.</Text></Pressable>
           )}

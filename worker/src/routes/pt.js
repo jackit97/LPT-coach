@@ -12,7 +12,7 @@ app.get('/stats', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const activeClients = await sql`
-    SELECT u.utenteid AS id, u.nome, u.email,
+    SELECT u.utenteid AS id, u.nome, u.cognome, u.email,
       (SELECT COUNT(*)::int FROM calendar_workouts w WHERE w.utenteid = u.utenteid AND w.data >= CURRENT_DATE AND w.data < CURRENT_DATE + INTERVAL '7 days') AS workout_settimana,
       (SELECT COUNT(*)::int FROM calendar_workouts w WHERE w.utenteid = u.utenteid AND w.stato = 'completato' AND w.data >= CURRENT_DATE - INTERVAL '7 days') AS completati_settimana,
       (SELECT COUNT(*)::int FROM diete d WHERE d.utenteid = u.utenteid AND d.attiva = 1) AS diete_attive
@@ -22,7 +22,7 @@ app.get('/stats', async (c) => {
     ORDER BY u.nome ASC
   `;
   const expiringWorkouts = await sql`
-    SELECT s.schedaid, s.utenteid, u.nome AS nomeutente, s.nomescheda, s.datafine
+    SELECT s.schedaid, s.utenteid, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS nomeutente, s.nomescheda, s.datafine
     FROM schedeallenamento s JOIN utenti u ON u.utenteid = s.utenteid
     JOIN pt_clienti pc ON pc.cliente_userid = s.utenteid
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1 AND s.attiva = 1
@@ -30,7 +30,7 @@ app.get('/stats', async (c) => {
     ORDER BY s.datafine ASC
   `;
   const expiringDiets = await sql`
-    SELECT d.dietaid, d.utenteid, u.nome AS nomeutente, d.nome, d.datafine
+    SELECT d.dietaid, d.utenteid, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS nomeutente, d.nome, d.datafine
     FROM diete d JOIN utenti u ON u.utenteid = d.utenteid
     JOIN pt_clienti pc ON pc.cliente_userid = d.utenteid
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1 AND d.attiva = 1
@@ -68,7 +68,7 @@ app.get('/alerts', async (c) => {
   const today = todayIso();
   const weekAgo = addDaysIso(today, -6);
   const athletes = await sql`
-    SELECT u.utenteid, u.nome, p.cognome
+    SELECT u.utenteid, u.nome, COALESCE(NULLIF(TRIM(u.cognome), ''), p.cognome) AS cognome
     FROM pt_clienti pc
     JOIN utenti u ON u.utenteid = pc.cliente_userid
     LEFT JOIN profiloutente p ON p.utenteid = u.utenteid

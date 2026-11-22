@@ -11,12 +11,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [enduranceEnabled, setEnduranceEnabled] = useState(true);
+  const [dietEnabled, setDietEnabled] = useState(true);
   const [profileComplete, setProfileComplete] = useState(true);
 
   const refreshAccountStatus = useCallback(async () => {
     try {
       const { data } = await api.get('/users/me');
       setEnduranceEnabled(data?.endurance_visible !== false);
+      setDietEnabled(data?.dieta_visible !== false);
+      // nome e cognome aggiornati (es. dopo la modifica del profilo o la migrazione del cognome)
+      setUser((current) => {
+        if (!current || (current.nome === data?.nome && (current.cognome || null) === (data?.cognome || null))) return current;
+        const next = { ...current, nome: data?.nome ?? current.nome, cognome: data?.cognome || null };
+        AsyncStorage.setItem(USER_KEY, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
       setProfileComplete(data?.ruolo !== 'cliente' || REQUIRED_ATHLETE_FIELDS.every((field) => data?.[field] !== null && data?.[field] !== undefined && String(data[field]).trim() !== ''));
     } catch { /* keep previous value on failure */ }
   }, []);
@@ -39,8 +48,8 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
-  const register = useCallback(async (nome, email, password, ruolo) => {
-    const { data } = await api.post('/auth/register', { nome, email, password, ruolo });
+  const register = useCallback(async (nome, cognome, email, password) => {
+    const { data } = await api.post('/auth/register', { nome, cognome, email, password, ruolo: 'cliente' });
     await AsyncStorage.setItem(TOKEN_KEY, data.token);
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
     setUser(data.user);
@@ -52,13 +61,14 @@ export function AuthProvider({ children }) {
     await AsyncStorage.removeItem(USER_KEY);
     setUser(null);
     setEnduranceEnabled(true);
+    setDietEnabled(true);
     setProfileComplete(true);
   }, []);
 
   const value = useMemo(() => ({
     user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer',
-    enduranceEnabled, setEnduranceEnabled, profileComplete, refreshAccountStatus,
-  }), [user, loading, login, register, logout, enduranceEnabled, profileComplete, refreshAccountStatus]);
+    enduranceEnabled, setEnduranceEnabled, dietEnabled, profileComplete, refreshAccountStatus,
+  }), [user, loading, login, register, logout, enduranceEnabled, dietEnabled, profileComplete, refreshAccountStatus]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

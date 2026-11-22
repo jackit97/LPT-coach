@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 const initials = (name = '') =>
   name
@@ -34,7 +35,7 @@ export default function AthletePicker() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.content}>
         {clients.map((client) => {
           const active = selectedAthlete?.utenteid === client.utenteid;
-          const name = client.nome || 'Atleta';
+          const name = fullName(client);
           return (
             <Pressable
               key={client.utenteid}

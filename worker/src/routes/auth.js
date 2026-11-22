@@ -26,28 +26,33 @@ app.post('/login', async (c) => {
   const token = await signToken({ userId: user.utenteid, ruolo: user.ruolo }, c.env.JWT_SECRET || 'dev-secret');
   return c.json({
     token,
-    user: { id: user.utenteid, nome: user.nome, email: user.email, ruolo: user.ruolo },
+    user: { id: user.utenteid, nome: user.nome, cognome: user.cognome || null, email: user.email, ruolo: user.ruolo },
   });
 });
 
 app.post('/register', async (c) => {
-  const { nome, email, password, ruolo } = await c.req.json();
-  if (!nome || !email || !password || !ruolo) return c.json({ message: 'Missing fields' }, 400);
-  if (!['cliente', 'personal_trainer'].includes(ruolo)) return c.json({ message: 'Invalid ruolo' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const nome = String(body.nome || '').trim();
+  const cognome = String(body.cognome || '').trim();
+  const email = String(body.email || '').trim();
+  const { password } = body;
+  if (!nome || !cognome || !email || !password) return c.json({ message: 'Compila nome, cognome, email e password' }, 400);
+  // Dall'app ci si registra solo come atleta: gli account coach li crea l'amministratore.
+  const ruolo = 'cliente';
 
   const sql = db(c.env);
-  const exists = await sql`SELECT utenteid FROM utenti WHERE email = ${email} LIMIT 1`;
-  if (exists.length) return c.json({ message: 'Email already registered' }, 400);
+  const exists = await sql`SELECT utenteid FROM utenti WHERE LOWER(TRIM(email)) = ${email.toLowerCase()} LIMIT 1`;
+  if (exists.length) return c.json({ message: 'Email già registrata' }, 400);
 
   const hash = bcrypt.hashSync(password, 10);
   const inserted = await sql`
-    INSERT INTO utenti (nome, email, passwordhash, ruolo, dataregistrazione)
-    VALUES (${nome}, ${email}, ${hash}, ${ruolo}, NOW())
+    INSERT INTO utenti (nome, cognome, email, passwordhash, ruolo, dataregistrazione)
+    VALUES (${nome}, ${cognome}, ${email}, ${hash}, ${ruolo}, NOW())
     RETURNING utenteid
   `;
   const userId = inserted[0].utenteid;
   const token = await signToken({ userId, ruolo }, c.env.JWT_SECRET || 'dev-secret');
-  return c.json({ user: { id: userId, nome, email, ruolo }, token });
+  return c.json({ user: { id: userId, nome, cognome, email, ruolo }, token });
 });
 
 app.post('/logout', (c) => c.json({ message: 'Logged out (client should discard token)' }));

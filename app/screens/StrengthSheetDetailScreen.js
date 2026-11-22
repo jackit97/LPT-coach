@@ -58,7 +58,15 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
       <Text style={typography.h1}>{sheet.nome}</Text>
       <Text style={typography.caption}>{sheet.giorni.length} giorni · {sheet.datainizio ? String(sheet.datainizio).slice(0, 10) : 'senza data'}</Text>
       {!isCoach && <Text style={styles.hint}>Tocca un esercizio per vedere indicazioni e video e scrivere le tue note.</Text>}
-      {isCoach && <Pressable style={styles.deleteButton} onPress={deleteSheet}><Text style={styles.deleteText}>Elimina scheda</Text></Pressable>}
+      {isCoach && (
+        <View style={styles.coachActions}>
+          <Pressable style={styles.editButton} onPress={() => navigation.navigate('StrengthSheetEditor', { editSheet: sheet })}>
+            <Ionicons name="create-outline" size={16} color="#fff" />
+            <Text style={styles.editText}>Modifica scheda</Text>
+          </Pressable>
+          <Pressable style={styles.deleteButton} onPress={deleteSheet}><Text style={styles.deleteText}>Elimina scheda</Text></Pressable>
+        </View>
+      )}
       {sheet.giorni.map((day) => (
         <View key={day.schedaid} style={styles.day}>
           <View style={styles.dayHeader}>
@@ -132,6 +140,9 @@ const styles = StyleSheet.create({
   doneText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   libraryButton: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   libraryText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
-  deleteButton: { alignSelf: 'flex-start', marginTop: spacing.md, backgroundColor: '#FEE2E2', borderRadius: radius.md, padding: spacing.sm },
+  coachActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },
+  editButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  editText: { color: '#fff', fontWeight: '800' },
+  deleteButton: { alignSelf: 'flex-start', backgroundColor: '#FEE2E2', borderRadius: radius.md, padding: spacing.sm },
   deleteText: { color: colors.danger, fontWeight: '700' },
 });

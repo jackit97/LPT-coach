@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
 import { colors, spacing, radius, typography } from '../theme';
+import { fullName } from '../utils/names';
 
 const STATO_COLORS = { 'Pagato': colors.success, 'In sospeso': colors.warning, 'Scaduto': colors.danger };
 
@@ -134,7 +135,7 @@ export default function PaymentsScreen({ navigation, route }) {
               <View style={styles.athleteChips}>
                 {clients.map((client) => (
                   <Pressable key={client.utenteid} onPress={() => setPayAthlete(client.utenteid)} style={[styles.filterChip, payAthlete === client.utenteid && styles.filterChipActive]}>
-                    <Text style={[styles.filterText, payAthlete === client.utenteid && styles.filterTextActive]}>{[client.nome, client.cognome].filter(Boolean).join(' ')}</Text>
+                    <Text style={[styles.filterText, payAthlete === client.utenteid && styles.filterTextActive]}>{fullName(client)}</Text>
                   </Pressable>
                 ))}
               </View>

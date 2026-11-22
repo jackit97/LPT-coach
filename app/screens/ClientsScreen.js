@@ -5,6 +5,7 @@ import api from '../api/client';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, spacing, radius, typography } from '../theme';
 import { performanceStatus } from '../utils/endurance';
+import { fullName } from '../utils/names';
 
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
 
@@ -27,6 +28,23 @@ export default function ClientsScreen({ navigation, route }) {
       setSavingEndurance(null);
     }
   };
+  // ...e se mostrargli la sezione dieta (non tutti seguono anche l'alimentazione)
+  const [dietById, setDietById] = useState({});
+  const [savingDiet, setSavingDiet] = useState(null);
+  const toggleAthleteDiet = async (athlete, visible) => {
+    setSavingDiet(athlete.utenteid);
+    setDietById((current) => ({ ...current, [athlete.utenteid]: visible }));
+    try {
+      await api.put(`/users/clients/${athlete.utenteid}/dieta`, { visible });
+      loadClients();
+    } catch (e) {
+      setDietById((current) => ({ ...current, [athlete.utenteid]: !visible }));
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile aggiornare la sezione dieta');
+    } finally {
+      setSavingDiet(null);
+    }
+  };
+  const athleteDiet = (athlete) => (athlete.utenteid in dietById ? dietById[athlete.utenteid] : athlete.dieta_visible !== false);
   const athleteEndurance = (athlete) => (athlete.utenteid in enduranceById ? enduranceById[athlete.utenteid] : athlete.endurance_visible !== false);
   const [email, setEmail] = useState('');
   const [adding, setAdding] = useState(false);
@@ -93,7 +111,7 @@ export default function ClientsScreen({ navigation, route }) {
                 else if (navigation.canGoBack()) navigation.goBack();
               }}
             >
-              <Text style={typography.h3}>{item.nome}</Text>
+              <Text style={typography.h3}>{fullName(item)}</Text>
               {!!statusById[item.utenteid] && (
                 <View style={styles.statusRow}>
                   {athleteEndurance(item) && (
@@ -109,7 +127,6 @@ export default function ClientsScreen({ navigation, route }) {
                   ))}
                 </View>
               )}
-              {!!item.cognome && <Text style={styles.detail}>Cognome: {item.cognome}</Text>}
               <Text style={typography.caption}>{item.email}</Text>
               {!!item.datanascita && <Text style={styles.detail}>Data di nascita: {String(item.datanascita).slice(0, 10)}</Text>}
               {!!item.sesso && <Text style={styles.detail}>Sesso: {item.sesso}</Text>}
@@ -126,6 +143,15 @@ export default function ClientsScreen({ navigation, route }) {
               </View>
               {savingEndurance === item.utenteid ? <ActivityIndicator color={colors.primary} /> : (
                 <Switch value={athleteEndurance(item)} onValueChange={(value) => toggleAthleteEndurance(item, value)} trackColor={{ true: colors.primary }} />
+              )}
+            </View>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Sezione dieta</Text>
+                <Text style={styles.switchHint}>{athleteDiet(item) ? 'Visibile all\'atleta' : 'Nascosta all\'atleta'}</Text>
+              </View>
+              {savingDiet === item.utenteid ? <ActivityIndicator color={colors.primary} /> : (
+                <Switch value={athleteDiet(item)} onValueChange={(value) => toggleAthleteDiet(item, value)} trackColor={{ true: colors.primary }} />
               )}
             </View>
             </View>

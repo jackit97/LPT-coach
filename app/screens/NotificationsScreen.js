@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Refresh
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { colors, spacing, radius, typography } from '../theme';
@@ -44,6 +45,7 @@ function timeAgo(value) {
 export default function NotificationsScreen({ navigation }) {
   const { clients, setSelectedAthlete } = useAthlete();
   const { setUnread } = useNotifications();
+  const { dietEnabled } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,6 +85,7 @@ export default function NotificationsScreen({ navigation }) {
       if (client) setSelectedAthlete(client);
     }
     const tab = TARGET_TABS[link.screen];
+    if (tab === 'DietsTab' && !dietEnabled) return; // sezione dieta nascosta dal coach
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });
   };
 

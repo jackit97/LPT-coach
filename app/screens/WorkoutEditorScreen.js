@@ -5,6 +5,8 @@ import DateField from '../components/DateField';
 import RpeSelector from '../components/RpeSelector';
 import OptionPicker from '../components/OptionPicker';
 import { useAthlete } from '../context/AthleteContext';
+import DraggableList, { moveItem } from '../components/DraggableList';
+import ReorderHandle from '../components/ReorderHandle';
 import { colors, spacing, radius, typography, workoutTypeColors } from '../theme';
 import { trimpFromRpe } from '../utils/endurance';
 
@@ -13,6 +15,9 @@ const TYPES = [
   { key: 'mobilita', label: 'Mobilità' },
   { key: 'funzionale', label: 'Funzionale' },
 ];
+
+let keySeq = 0;
+const withKey = (exercise) => ({ ...exercise, _key: `k${Date.now()}-${keySeq += 1}` });
 
 export default function WorkoutEditorScreen({ route, navigation }) {
   const { targetUserId } = useAthlete();
@@ -45,7 +50,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         const seconds = Number(template.durata_secondi ?? (Number(template.durata_minuti) || 0) * 60);
         setDurataMinuti(seconds ? String(Math.round(seconds / 60)) : '');
         setRpePianificato(template.rpe_pianificato ? String(template.rpe_pianificato) : '');
-        setEsercizi((template.esercizi || []).map((e) => ({
+        setEsercizi((template.esercizi || []).map((e) => withKey({
           nome: e.nomeesercizio, serie: e.serie ?? '', ripetizioni: e.ripetizioni ?? '', carico: e.carico ?? '',
           recupero: e.recupero ?? '', note: e.descrizione ?? '', video_url: e.videourl || '',
         })));
@@ -66,7 +71,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         const seconds = Number(full.durata_secondi ?? (Number(full.durata_minuti) || 0) * 60);
         setDurataMinuti(seconds ? String(Math.round(seconds / 60)) : '');
         setRpePianificato(full.rpe_pianificato ? String(full.rpe_pianificato) : '');
-        setEsercizi((full.esercizi || []).map((e) => ({ ...e })));
+        setEsercizi((full.esercizi || []).map((e) => withKey({ ...e })));
       })
       .catch(() => Alert.alert('Errore', 'Impossibile caricare il workout'))
       .finally(() => setLoadingWorkout(false));
@@ -82,7 +87,8 @@ export default function WorkoutEditorScreen({ route, navigation }) {
     ...videos.map((video) => ({ value: video.videourl, label: video.titolo })),
   ];
 
-  const addExercise = () => setEsercizi((prev) => [...prev, { nome: '', serie: '', ripetizioni: '', carico: '', recupero: '', note: '' }]);
+  const addExercise = () => setEsercizi((prev) => [...prev, withKey({ nome: '', serie: '', ripetizioni: '', carico: '', recupero: '', note: '' })]);
+  const reorderExercise = (from, to) => { setExerciseSearch({ index: null, query: '', results: [] }); setEsercizi((prev) => moveItem(prev, from, to)); };
   const updateExercise = (idx, field, value) => {
     setEsercizi((prev) => prev.map((ex, i) => (i === idx ? { ...ex, [field]: value } : ex)));
   };
@@ -153,7 +159,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         descrizione,
         durataMinuti: durataMinuti ? Number(durataMinuti) : null,
         rpePianificato: rpePianificato ? Number(rpePianificato) : null,
-        esercizi: esercizi.filter((e) => e.nome),
+        esercizi: esercizi.filter((e) => e.nome).map(({ _key, ...e }) => e),
       };
 
       let workoutId = editId;
@@ -220,8 +226,15 @@ export default function WorkoutEditorScreen({ route, navigation }) {
           <Pressable onPress={addExercise}><Text style={styles.addLink}>+ Aggiungi</Text></Pressable>
         </View>
 
-        {esercizi.map((ex, idx) => (
-          <View key={idx} style={styles.exerciseCard}>
+        {esercizi.length > 1 && <Text style={styles.dragHint}>Trascina ≡ (o usa le frecce) per cambiare l'ordine</Text>}
+        <DraggableList
+          data={esercizi}
+          keyExtractor={(ex) => ex._key}
+          onReorder={reorderExercise}
+          renderItem={({ item: ex, index: idx, handleProps, moveUp, moveDown, dragging }) => (
+          <View style={[styles.exerciseCard, styles.exerciseRow, dragging && styles.exerciseDragging]}>
+            <ReorderHandle handleProps={handleProps} moveUp={moveUp} moveDown={moveDown} />
+            <View style={{ flex: 1 }}>
             <View style={styles.exerciseCardHeader}>
               <TextInput
                 value={ex.nome}
@@ -253,8 +266,10 @@ export default function WorkoutEditorScreen({ route, navigation }) {
               textStyle={styles.videoPickerText}
               renderLabel={(option) => `🎬 ${option?.value ? option.label : 'Video: automatico'}`}
             />
+            </View>
           </View>
-        ))}
+          )}
+        />
       </View>
 
       <View style={styles.actions}>
@@ -270,14 +285,17 @@ export default function WorkoutEditorScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  dragHint: { ...typography.caption, marginBottom: spacing.xs },
+  exerciseRow: { flexDirection: 'row', gap: spacing.xs, alignItems: 'flex-start' },
+  exerciseDragging: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   libraryHint: { ...typography.caption, marginTop: spacing.xs, color: colors.primary },
   screen: { flex: 1, backgroundColor: colors.bg },
   fieldLabel: { ...typography.caption, marginTop: spacing.md, marginBottom: spacing.xs },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, marginBottom: spacing.xs },
   textArea: { minHeight: 70, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: spacing.sm },
-  half: { flex: 1 },
-  quarter: { flex: 1 },
+  half: { flex: 1, minWidth: 0 },
+  quarter: { flex: 1, minWidth: 0 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   chipText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },

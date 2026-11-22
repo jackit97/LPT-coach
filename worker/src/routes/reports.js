@@ -272,7 +272,7 @@ app.get('/', async (c) => {
   const athleteFilter = c.req.query('utenteId') ? Number(c.req.query('utenteId')) : null;
   const rows = user.ruolo === 'personal_trainer'
     ? await sql`
-        SELECT r.report_id, r.workout_id, r.athlete_id, u.nome AS atleta, w.titolo, w.data, r.inviato_at, r.letto_at, r.risposta_at,
+        SELECT r.report_id, r.workout_id, r.athlete_id, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS atleta, w.titolo, w.data, r.inviato_at, r.letto_at, r.risposta_at,
                r.contenuto_json
         FROM workout_reports r
         JOIN utenti u ON u.utenteid = r.athlete_id
@@ -307,7 +307,7 @@ app.get('/:id{[0-9]+}', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const report = (await sql`
-    SELECT r.*, u.nome AS atleta, w.titolo, w.data, w.tipo
+    SELECT r.*, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS atleta, w.titolo, w.data, w.tipo
     FROM workout_reports r JOIN utenti u ON u.utenteid = r.athlete_id JOIN calendar_workouts w ON w.workout_id = r.workout_id
     WHERE r.report_id = ${Number(c.req.param('id'))}
   `)[0];

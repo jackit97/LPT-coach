@@ -13,7 +13,7 @@ app.get('/all', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const rows = await sql`
-    SELECT p.*, u.nome AS atleta
+    SELECT p.*, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS atleta
     FROM pagamenti p
     JOIN utenti u ON u.utenteid = p.utenteid
     JOIN pt_clienti pc ON pc.cliente_userid = p.utenteid AND pc.pt_userid = ${user.userId} AND pc.attivo = 1
