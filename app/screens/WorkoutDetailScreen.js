@@ -191,6 +191,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
   };
 
   const [openExercise, setOpenExercise] = useState(null);
+  const [editingTitle, setEditingTitle] = useState(null);
+  const [savingTitle, setSavingTitle] = useState(false);
   const onExerciseNoteSaved = (id, note) => {
     setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, note_atleta: note } : ex)) }));
   };
@@ -241,6 +243,23 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     return <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
   }
 
+  // il coach rinomina qualsiasi allenamento; l'atleta le proprie attivita' importate (nome spesso accorciato dall'orologio)
+  const canRename = isCoach || !!workout.external_provider;
+  const saveTitle = async () => {
+    const titolo = String(editingTitle || '').trim();
+    if (!titolo) return;
+    setSavingTitle(true);
+    try {
+      const { data } = await api.put(`/calendar/${workoutId}/title`, { titolo });
+      setWorkout((current) => ({ ...current, titolo: data.titolo }));
+      setEditingTitle(null);
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile rinominare');
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
   const sport = sportInfo(workout.sport);
   const typeColor = sport?.color || workoutTypeColors[workout.tipo] || colors.primary;
 
@@ -268,7 +287,26 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         <Text style={[styles.typeTagText, { color: typeColor }]}>{sport ? `${sport.icon} ${sport.label.toUpperCase()}` : workout.tipo?.toUpperCase()}</Text>
       </View>
 
-      <Text style={styles.title}>{workout.titolo}</Text>
+      {editingTitle !== null ? (
+        <View style={{ marginTop: spacing.sm }}>
+          <TextInput value={editingTitle} onChangeText={setEditingTitle} style={styles.titleInput} multiline autoFocus placeholder="Titolo" />
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs }}>
+            <Pressable style={styles.titleSave} onPress={saveTitle} disabled={savingTitle}>
+              {savingTitle ? <ActivityIndicator color="#fff" /> : <Text style={styles.titleSaveText}>Salva titolo</Text>}
+            </Pressable>
+            <Pressable style={styles.titleCancel} onPress={() => setEditingTitle(null)}><Text style={styles.titleCancelText}>Annulla</Text></Pressable>
+          </View>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+          <Text style={[styles.title, { flex: 1 }]}>{workout.titolo}</Text>
+          {canRename && (
+            <Pressable onPress={() => setEditingTitle(workout.titolo || '')} hitSlop={8} style={styles.titleEdit} accessibilityLabel="Rinomina">
+              <Ionicons name="create-outline" size={20} color={colors.primary} />
+            </Pressable>
+          )}
+        </View>
+      )}
       <Text style={styles.date}>{String(workout.data).slice(0, 10)} · {calculatedStepSeconds > 0 ? formatDuration({ durata_secondi: calculatedStepSeconds }) : workout.load?.secondi_pianificati ? formatDuration({ durata_secondi: workout.load.secondi_pianificati }) : formatDuration(workout)}</Text>
 
       <View style={[styles.statusPill, { backgroundColor: (statusColors[workout.stato] || colors.textMuted) + '1A' }]}>
@@ -560,6 +598,12 @@ const styles = StyleSheet.create({
   typeTag: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 },
   typeTagText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   title: { ...typography.h1, marginTop: spacing.sm },
+  titleEdit: { marginTop: spacing.sm + 6, padding: 4 },
+  titleInput: { ...typography.h2, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface, color: colors.text },
+  titleSave: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center' },
+  titleSaveText: { color: '#fff', fontWeight: '800' },
+  titleCancel: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  titleCancelText: { color: colors.textMuted, fontWeight: '700' },
   date: { ...typography.caption, marginTop: spacing.xs },
   statusPill: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4, marginTop: spacing.sm },
   chartSection: { marginTop: spacing.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },

@@ -73,6 +73,21 @@ app.post('/import', async (c) => {
     return c.json({ message: 'Questa attività è già stata importata', workout_id: existing[0].workout_id, duplicate: true }, 409);
   }
 
+  // L'orologio salva il nome dell'allenamento accorciato (es. "Ripetute 6x1000 m Z" invece del titolo completo
+  // dato dal coach): se in calendario, a +/- 3 giorni, c'e' un allenamento il cui titolo inizia cosi', si usa quello intero.
+  if (activity.name && activity.title === String(activity.name).slice(0, 255)) {
+    const short = String(activity.name).trim();
+    try {
+      const planned = await sql`
+        SELECT titolo FROM calendar_workouts
+        WHERE utenteid = ${utenteId} AND external_provider IS NULL AND data BETWEEN ${day}::date - 3 AND ${day}::date + 3
+          AND LENGTH(titolo) > ${short.length} AND LOWER(LEFT(titolo, ${short.length})) = ${short.toLowerCase()}
+        ORDER BY ABS(data - ${day}::date) ASC LIMIT 1
+      `;
+      if (planned[0]?.titolo) activity.title = planned[0].titolo;
+    } catch { /* tengo il nome del file */ }
+  }
+
   const coachId = user.ruolo === 'personal_trainer' ? user.userId : await coachOf(sql, utenteId);
   const durationMinutes = Math.round(activity.durationSeconds / 60);
   const description = describe(activity);

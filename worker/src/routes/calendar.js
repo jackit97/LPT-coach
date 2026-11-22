@@ -949,6 +949,25 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
 });
 
 // PUT /calendar/:id - coach edits a workout
+// PUT /calendar/:id/title { titolo } — rinomina: il coach qualsiasi allenamento dei suoi atleti,
+// l'atleta le proprie attivita' importate (file/Strava), il cui nome arriva spesso accorciato dall'orologio
+app.put('/:id{[0-9]+}/title', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const id = Number(c.req.param('id'));
+  const { titolo } = await c.req.json().catch(() => ({}));
+  const clean = String(titolo || '').trim().slice(0, 255);
+  if (!clean) return c.json({ message: 'Il titolo non può essere vuoto' }, 400);
+  const workout = (await sql`SELECT workout_id, utenteid, external_provider FROM calendar_workouts WHERE workout_id = ${id}`)[0];
+  if (!workout) return c.json({ message: 'Allenamento non trovato' }, 404);
+  const allowed = user.ruolo === 'personal_trainer'
+    ? await assertCoachOwnsAthlete(sql, user.userId, workout.utenteid)
+    : workout.utenteid === user.userId && !!workout.external_provider;
+  if (!allowed) return c.json({ message: 'Non puoi rinominare questo allenamento' }, 403);
+  const rows = await sql`UPDATE calendar_workouts SET titolo = ${clean}, updated_at = NOW() WHERE workout_id = ${id} RETURNING workout_id, titolo`;
+  return c.json(rows[0]);
+});
+
 app.put('/:id', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
