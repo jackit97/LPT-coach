@@ -223,7 +223,6 @@ export default function WorkoutEditorScreen({ route, navigation }) {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={typography.h3}>Esercizi</Text>
-          <Pressable onPress={addExercise}><Text style={styles.addLink}>+ Aggiungi</Text></Pressable>
         </View>
 
         {esercizi.length > 1 && <Text style={styles.dragHint}>Trascina ≡ (o usa le frecce) per cambiare l'ordine</Text>}
@@ -270,6 +269,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
           </View>
           )}
         />
+        <Pressable style={styles.addExerciseBtn} onPress={addExercise}><Text style={styles.addExerciseText}>+ Aggiungi esercizio</Text></Pressable>
       </View>
 
       <View style={styles.actions}>
@@ -285,6 +285,8 @@ export default function WorkoutEditorScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  addExerciseBtn: { marginTop: spacing.sm, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: colors.primaryLight },
+  addExerciseText: { color: colors.primary, fontWeight: '800', fontSize: 15 },
   dragHint: { ...typography.caption, marginBottom: spacing.xs },
   exerciseRow: { flexDirection: 'row', gap: spacing.xs, alignItems: 'flex-start' },
   exerciseDragging: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
