@@ -17,7 +17,8 @@ import checksRoutes from './routes/checks.js';
 import activitiesRoutes from './routes/activities.js';
 import reportsRoutes from './routes/reports.js';
 import tipsRoutes from './routes/tips.js';
-import { isDbConfigured, DbNotConfiguredError } from './db.js';
+import devRoutes from './routes/dev.js';
+import { isDbConfigured, DbNotConfiguredError, db } from './db.js';
 
 const app = new Hono();
 
@@ -46,6 +47,7 @@ app.route('/reports', reportsRoutes);
 app.route('/tips', tipsRoutes);
 app.route('/notifications', notificationsRoutes);
 app.route('/checks', checksRoutes);
+app.route('/dev', devRoutes);
 
 app.notFound((c) => c.json({ message: 'Not found' }, 404));
 app.onError((err, c) => {
@@ -53,6 +55,16 @@ app.onError((err, c) => {
     return c.json({ message: err.message }, err.status);
   }
   console.error(err);
+  // salvato per la sezione Errori del profilo developer (senza mai far fallire la risposta)
+  try {
+    const save = db(c.env)`
+      INSERT INTO app_errors (origine, utenteid, metodo, percorso, messaggio, stack, user_agent)
+      VALUES ('server', ${c.get('user')?.userId || null}, ${c.req.method}, ${new URL(c.req.url).pathname.slice(0, 300)},
+              ${String(err?.message || err).slice(0, 2000)}, ${String(err?.stack || '').slice(0, 6000)}, ${(c.req.header('user-agent') || '').slice(0, 300)})
+    `;
+    const pending = Promise.resolve(save).catch(() => {});
+    try { c.executionCtx.waitUntil(pending); } catch { /* fuori da Workers (sviluppo locale) */ }
+  } catch { /* database non raggiungibile */ }
   return c.json({ message: 'Server error', detail: err.message }, 500);
 });
 

@@ -375,6 +375,6 @@ export function parseActivityFile(bytes, filename = '') {
     sport: key,
     tipo: strength ? 'forza' : 'endurance',
     distanceKm: parsed.distanceMeters ? Number((parsed.distanceMeters / 1000).toFixed(2)) : 0,
-    title: parsed.name && !/^\d{4}-\d{2}-\d{2}/.test(parsed.name) ? String(parsed.name).slice(0, 120) : (strength ? `${label} importato` : `${label} importata`),
+    title: parsed.name && !/^\d{4}-\d{2}-\d{2}/.test(parsed.name) ? String(parsed.name).slice(0, 255) : (strength ? `${label} importato` : `${label} importata`),
   };
 }

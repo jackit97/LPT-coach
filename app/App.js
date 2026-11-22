@@ -78,6 +78,13 @@ import CoachTipsScreen from './screens/CoachTipsScreen';
 import ReportDetailScreen from './screens/ReportDetailScreen';
 import CheckDetailScreen from './screens/CheckDetailScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import FeedbackScreen from './screens/FeedbackScreen';
+import PrivacyScreen from './screens/PrivacyScreen';
+import ConsentScreen from './screens/ConsentScreen';
+import DevDashboardScreen from './screens/dev/DevDashboardScreen';
+import DevErrorsScreen from './screens/dev/DevErrorsScreen';
+import DevFeedbackScreen from './screens/dev/DevFeedbackScreen';
+import { installGlobalErrorHandlers, reportError, setCurrentScreen } from './utils/errorReporter';
 import { NotificationsProvider, useNotifications } from './context/NotificationsContext';
 import { useAthlete } from './context/AthleteContext';
 
@@ -184,6 +191,8 @@ function CalendarStack() {
       {isCoach && <Stack.Screen name="WorkoutLibrary" component={WorkoutLibraryScreen} options={{ title: 'Libreria allenamenti' }} />}
       {isCoach && <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />}
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -198,6 +207,8 @@ function LibraryStack() {
       <Stack.Screen name="FunctionalWorkoutEditor" component={FunctionalWorkoutEditorScreen} options={{ title: 'Allenamento funzionale' }} />
       <Stack.Screen name="TemplateDetail" component={TemplateDetailScreen} options={{ title: 'Template endurance' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -208,6 +219,8 @@ function AthleteHomeStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="AthleteHome" component={AthleteHomeScreen} options={{ title: 'Home' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -220,6 +233,8 @@ function CoachHomeStack() {
       <Stack.Screen name="AthleteHub" component={AthleteHubScreen} options={{ title: 'Atleta' }} />
       <Stack.Screen name="CoachTips" component={CoachTipsScreen} options={{ title: 'Consigli' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -232,6 +247,8 @@ function DietsStack() {
       <Stack.Screen name="DietEditor" component={DietEditorScreen} options={{ title: 'Editor dieta' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -242,6 +259,8 @@ function PaymentsStack() {
       <Stack.Screen name="PaymentsHome" component={PaymentsScreen} options={{ title: 'Pagamenti' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -256,6 +275,8 @@ function EnduranceStack() {
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ title: 'Dettaglio workout' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -265,6 +286,8 @@ function VideosStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="VideosHome" component={VideosScreen} options={{ title: 'Video tutorial' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -279,6 +302,8 @@ function StrengthStack() {
       <Stack.Screen name="WorkoutEditor" component={WorkoutEditorScreen} options={{ title: 'Nuova scheda' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -289,6 +314,8 @@ function ZonesStack() {
       <Stack.Screen name="ZonesHome" component={ZonesScreen} options={{ title: 'Zone' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -299,6 +326,8 @@ function TemplatesStack() {
       <Stack.Screen name="TemplatesHome" component={TemplatesScreen} options={{ title: 'Template' }} />
       <Stack.Screen name="TemplateDetail" component={TemplateDetailScreen} options={{ title: 'Dettaglio template' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -308,6 +337,8 @@ function ClientsTabStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="ClientsHome" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -317,6 +348,8 @@ function ExercisesStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="ExercisesHome" component={ExercisesScreen} options={{ title: 'Catalogo esercizi' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -327,6 +360,8 @@ function ReportsStack() {
       <Stack.Screen name="ReportsHome" component={ReportsScreen} options={{ title: 'Report atleti' }} />
       <Stack.Screen name="ReportDetail" component={ReportDetailScreen} options={{ title: 'Report allenamento' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -338,6 +373,8 @@ function ChecksStack() {
       <Stack.Screen name="CheckDetail" component={CheckDetailScreen} options={{ title: 'Check' }} />
       <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -347,6 +384,8 @@ function NotificationsStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="NotificationsHome" component={NotificationsScreen} options={{ title: 'Notifiche' }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
@@ -356,12 +395,31 @@ function MoreStack() {
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="MoreHome" component={MoreScreen} options={{ title: 'Altro', headerLeft: () => null }} />
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
     </Stack.Navigator>
   );
 }
 
+// Profilo developer: utilizzo dell'app, errori e segnalazioni
+function devStack(name, component, title) {
+  return function DevStack() {
+    return (
+      <Stack.Navigator screenOptions={screenOptions}>
+        <Stack.Screen name={name} component={component} options={{ title, headerLeft: () => null }} />
+        <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+        <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+        <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
+      </Stack.Navigator>
+    );
+  };
+}
+const DevHomeStack = devStack('DevHome', DevDashboardScreen, 'Developer');
+const DevErrorsStack = devStack('DevErrors', DevErrorsScreen, 'Errori');
+const DevFeedbackStack = devStack('DevFeedback', DevFeedbackScreen, 'Segnalazioni');
+
 function MainTabs() {
-  const { isCoach, enduranceEnabled, dietEnabled } = useAuth();
+  const { isCoach, isDeveloper, enduranceEnabled, dietEnabled } = useAuth();
   const { width } = useWindowDimensions();
   const compact = width < 700;
   return (
@@ -385,7 +443,15 @@ function MainTabs() {
         },
       }}
     >
-      {isCoach ? (
+      {isDeveloper ? (
+        <>
+          <Tab.Screen name="DevHomeTab" component={DevHomeStack} options={tabOptions('Utilizzo', 'analytics')} />
+          <Tab.Screen name="DevErrorsTab" component={DevErrorsStack} options={tabOptions('Errori', 'bug')} />
+          <Tab.Screen name="DevFeedbackTab" component={DevFeedbackStack} options={tabOptions('Segnalazioni', 'chatbubbles')} />
+          <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
+          <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
+        </>
+      ) : isCoach ? (
         <>
           {/* Coach: Home (Coach Assistant + atleti), Atleti, Libreria, Report, Pagamenti */}
           <Tab.Screen name="HomeTab" component={CoachHomeStack} options={tabOptions('Home', 'home')} />
@@ -442,7 +508,7 @@ function MainTabs() {
 }
 
 function RootNavigator() {
-  const { user, loading } = useAuth();
+  const { user, loading, account } = useAuth();
 
   if (loading) {
     return (
@@ -461,6 +527,9 @@ function RootNavigator() {
     );
   }
 
+  // consensi privacy mancanti (account creati prima dell'aggiornamento): vanno dati prima di usare l'app
+  if (account?.needsConsent) return <ConsentScreen />;
+
   return (
     <AthleteProvider>
       <NotificationsProvider>
@@ -477,6 +546,7 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, errorInfo) {
     console.error('LPT Coach Uncaught Error:', error, errorInfo);
+    reportError(error, { componentStack: errorInfo?.componentStack });
   }
   handleReset = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -556,14 +626,21 @@ function useStravaReturnNotice() {
   }, []);
 }
 
+// nome della schermata attuale (allegato agli errori dell'app)
+const routeName = (state) => {
+  const route = state?.routes?.[state.index ?? 0];
+  return route?.state ? routeName(route.state) : route?.name;
+};
+
 export default function App() {
   useStravaReturnNotice();
+  useEffect(() => { installGlobalErrorHandlers(); }, []);
 
   return (
     <ErrorBoundary>
       <AppUpdater />
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer onStateChange={(state) => setCurrentScreen(routeName(state))}>
           <StatusBar style="light" />
           <RootNavigator />
         </NavigationContainer>

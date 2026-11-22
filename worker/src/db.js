@@ -2,6 +2,9 @@ import { neon } from '@neondatabase/serverless';
 
 const TABLE_NAMES = [
   'activity_streams',
+  'app_activity',
+  'app_errors',
+  'app_feedback',
   'plan_assignments',
   'athlete_test_results',
   'body_check_photo_data',
@@ -155,6 +158,7 @@ export function db(env) {
   if (!connectionString) throw new DbNotConfiguredError();
   const schema = resolveSchema(env);
   const host = new URL(connectionString).hostname;
-  if (host.endsWith('.neon.tech')) return withSchema(neon(connectionString), schema);
-  return pgSql(connectionString, schema);
+  const sql = host.endsWith('.neon.tech') ? withSchema(neon(connectionString), schema) : pgSql(connectionString, schema);
+  sql.env = env; // usato da notify() per inviare anche l'email
+  return sql;
 }

@@ -20,6 +20,7 @@ const TYPE_STYLE = {
   report: { icon: 'document-text', color: '#9333EA' },
   report_risposta: { icon: 'chatbubbles', color: '#9333EA' },
   consiglio: { icon: 'bulb', color: '#F59E0B' },
+  feedback: { icon: 'chatbox-ellipses', color: '#7C3AED' },
 };
 
 // Schermata di destinazione -> tab che la contiene
@@ -31,6 +32,7 @@ const TARGET_TABS = {
   AthleteHome: 'HomeTab',
   StrengthHome: 'StrengthTab',
   PaymentsHome: 'PaymentsTab',
+  DevFeedback: 'DevFeedbackTab',
 };
 
 function timeAgo(value) {
@@ -84,6 +86,8 @@ export default function NotificationsScreen({ navigation }) {
       const client = clients.find((row) => row.utenteid === link.params.athleteId);
       if (client) setSelectedAthlete(client);
     }
+    // risposta a una segnalazione: si apre la pagina Feedback nello stack attuale
+    if (link.screen === 'Feedback') { navigation.navigate('Feedback'); return; }
     const tab = TARGET_TABS[link.screen];
     if (tab === 'DietsTab' && !dietEnabled) return; // sezione dieta nascosta dal coach
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });

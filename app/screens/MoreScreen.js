@@ -22,8 +22,20 @@ export function moreSections({ isCoach, enduranceEnabled }) {
 }
 
 export default function MoreScreen({ navigation }) {
-  const { isCoach, enduranceEnabled, user, logout } = useAuth();
-  const sections = moreSections({ isCoach, enduranceEnabled });
+  const { isCoach, isDeveloper, enduranceEnabled, user, logout } = useAuth();
+  const sections = isDeveloper
+    ? [{ tab: 'NotificationsTab', screen: 'NotificationsHome', icon: 'notifications', color: '#2563EB', title: 'Notifiche', desc: 'Nuove segnalazioni degli utenti' }]
+    : moreSections({ isCoach, enduranceEnabled });
+  const RowLink = ({ icon, color, bg, title, desc, onPress }) => (
+    <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]} onPress={onPress}>
+      <View style={[styles.iconWrap, { backgroundColor: bg }]}><Ionicons name={icon} size={24} color={color} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.desc}>{desc}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
+  );
   const open = (item) => navigation.navigate(item.tab, { screen: item.screen, params: { fromMore: true } });
 
   return (
@@ -55,6 +67,10 @@ export default function MoreScreen({ navigation }) {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
+        {!isDeveloper && (
+          <RowLink icon="chatbox-ellipses" color="#7C3AED" bg="#EDE9FE" title="Feedback / errori app" desc="Segnala un problema o suggerisci un miglioramento" onPress={() => navigation.navigate('Feedback')} />
+        )}
+        <RowLink icon="shield-checkmark" color="#0D9488" bg="#CCFBF1" title="Privacy" desc="Informativa privacy e termini d'uso" onPress={() => navigation.navigate('Privacy')} />
         <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]} onPress={logout}>
           <View style={[styles.iconWrap, { backgroundColor: '#FEE2E2' }]}>
             <Ionicons name="log-out-outline" size={24} color={colors.danger} />

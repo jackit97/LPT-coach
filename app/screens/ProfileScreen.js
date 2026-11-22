@@ -7,8 +7,27 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
 import { fullName, initials } from '../utils/names';
 
-export default function ProfileScreen() {
-  const { user, logout, isCoach, enduranceEnabled, profileComplete, refreshAccountStatus } = useAuth();
+export default function ProfileScreen({ navigation }) {
+  const { user, logout, isCoach: coachRole, isDeveloper, enduranceEnabled, profileComplete, refreshAccountStatus, account, setAccount } = useAuth();
+  // il developer non ha profilo atleta (statistiche, Strava, dati fisici): si comporta come il coach
+  const isCoach = coachRole || isDeveloper;
+  const [sendingVerify, setSendingVerify] = useState(false);
+  const resendVerification = async () => {
+    setSendingVerify(true);
+    try {
+      const { data } = await api.post('/users/me/verify-email');
+      Alert.alert('Verifica email', data?.message || 'Email inviata');
+      if (data?.verificata) refreshAccountStatus();
+    } catch (e) {
+      Alert.alert('Verifica email', e?.response?.data?.message || 'Invio non riuscito');
+    } finally {
+      setSendingVerify(false);
+    }
+  };
+  const toggleEmailNotifications = async (enabled) => {
+    setAccount((current) => ({ ...(current || {}), emailNotifications: enabled }));
+    try { await api.put('/users/me/email-notifications', { enabled }); } catch { setAccount((current) => ({ ...(current || {}), emailNotifications: !enabled })); }
+  };
   const isAthlete = user?.ruolo === 'cliente';
   const [profile, setProfile] = useState(user || {});
   const [saving, setSaving] = useState(false);
@@ -136,7 +155,34 @@ export default function ProfileScreen() {
       <View style={styles.avatar}><Text style={styles.avatarText}>{initials(fullName(user, ''))}</Text></View>
       <Text style={typography.h2}>{fullName(user, '')}</Text>
       <Text style={typography.caption}>{user?.email}</Text>
-      <Text style={styles.role}>{user?.ruolo === 'personal_trainer' ? 'Coach' : 'Atleta'}</Text>
+      <Text style={styles.role}>{user?.ruolo === 'personal_trainer' ? 'Coach' : isDeveloper ? 'Developer' : 'Atleta'}</Text>
+
+      {/* email: verifica e notifiche */}
+      <View style={styles.emailCard}>
+        <View style={styles.emailRow}>
+          <Text style={styles.emailTitle}>Email</Text>
+          <Text style={[styles.emailBadge, account?.emailVerified === false ? styles.badgeWarn : styles.badgeOk]}>
+            {account?.emailVerified === false ? 'Da verificare' : '✓ Verificata'}
+          </Text>
+        </View>
+        {account?.emailVerified === false ? (
+          <>
+            <Text style={styles.emailText}>Conferma {user?.email} con il link che ti abbiamo inviato per ricevere le notifiche anche via email.</Text>
+            <Pressable style={styles.emailBtn} onPress={resendVerification} disabled={sendingVerify}>
+              {sendingVerify ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.emailBtnText}>Invia di nuovo il link</Text>}
+            </Pressable>
+          </>
+        ) : (
+          <View style={styles.emailRow}>
+            <Text style={[styles.emailText, { flex: 1 }]}>Ricevi le notifiche anche via email{account?.emailEnabled === false ? ' (invio email non ancora attivo)' : ''}</Text>
+            <Switch value={account?.emailNotifications !== false} onValueChange={toggleEmailNotifications} trackColor={{ true: colors.primary }} />
+          </View>
+        )}
+      </View>
+      <View style={styles.linksRow}>
+        {!isDeveloper && <Pressable onPress={() => navigation?.navigate('Feedback')}><Text style={styles.linkText}>Feedback / errori app</Text></Pressable>}
+        <Pressable onPress={() => navigation?.navigate('Privacy')}><Text style={styles.linkText}>Privacy</Text></Pressable>
+      </View>
 
       {!isCoach && (
         <View style={styles.statsPanel}>
@@ -316,6 +362,17 @@ const styles = StyleSheet.create({
   stravaWarning: { fontSize: 11, color: colors.danger, marginTop: spacing.xs, fontWeight: '700' },
   warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
   warningText: { color: '#92400E', fontWeight: '600' },
+  emailCard: { alignSelf: 'stretch', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
+  emailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  emailTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  emailBadge: { fontSize: 11, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, overflow: 'hidden' },
+  badgeOk: { backgroundColor: '#DCFCE7', color: '#166534' },
+  badgeWarn: { backgroundColor: '#FEF3C7', color: '#92400E' },
+  emailText: { fontSize: 13, color: colors.textMuted, marginTop: 6, lineHeight: 18 },
+  emailBtn: { alignSelf: 'flex-start', marginTop: spacing.sm, borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 8 },
+  emailBtnText: { color: colors.primary, fontWeight: '800' },
+  linksRow: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.md },
+  linkText: { color: colors.accent, fontWeight: '700' },
   logoutBtn: { marginTop: spacing.xxl, backgroundColor: '#FEE2E2', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xxl },
   logoutText: { color: colors.danger, fontWeight: '700' },
   form: { width: '100%', maxWidth: 620, marginTop: spacing.xl }, sectionTitle: { ...typography.h3, marginBottom: spacing.sm }, label: { ...typography.caption, marginTop: spacing.sm, marginBottom: spacing.xs }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface, marginBottom: spacing.xs }, area: { minHeight: 60, textAlignVertical: 'top' }, row: { flexDirection: 'row', gap: spacing.sm }, half: { flex: 1 }, sexRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm }, sexChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }, sexChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, sexText: { color: colors.textMuted, fontSize: 14 }, sexTextActive: { color: colors.primary, fontWeight: '700' }, days: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, day: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface }, dayActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, dayText: { color: colors.textMuted }, dayTextActive: { color: colors.primary, fontWeight: '700' }, saveButton: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.lg }, saveText: { color: '#fff', fontWeight: '700' },

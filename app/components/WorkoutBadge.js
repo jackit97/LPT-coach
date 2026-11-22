@@ -64,7 +64,7 @@ export default function WorkoutBadge({ workout, onPress, compact }) {
     >
       <View style={styles.titleRow}>
         <Text style={styles.icon}>{isStrava ? '⚡' : (sport?.icon || TYPE_ICONS[workout.tipo] || '•')}</Text>
-        <Text numberOfLines={1} style={[styles.label, { color }]}>
+        <Text numberOfLines={compact ? 2 : 3} style={[styles.label, { color }]}>
           {workout.titolo || TYPE_LABELS[workout.tipo] || 'Workout'}
         </Text>
         {isDone && <Text style={styles.check}>✓</Text>}

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import ConsentChecks from '../components/ConsentChecks';
 import { colors, spacing, radius, typography } from '../theme';
 
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
   const [nome, setNome] = useState('');
   const [cognome, setCognome] = useState('');
+  const [consents, setConsents] = useState({ privacy: false, datiSalute: false });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,9 +18,11 @@ export default function RegisterScreen({ navigation }) {
   const onSubmit = async () => {
     setError('');
     if (!nome.trim() || !cognome.trim() || !email.trim() || !password) return setError('Compila tutti i campi');
+    if (password.length < 8) return setError('La password deve avere almeno 8 caratteri');
+    if (!consents.privacy || !consents.datiSalute) return setError('Per registrarti devi accettare l\'informativa privacy e il trattamento dei dati sulla salute');
     setLoading(true);
     try {
-      await register(nome.trim(), cognome.trim(), email.trim(), password);
+      await register(nome.trim(), cognome.trim(), email.trim(), password, consents);
     } catch (e) {
       setError(e?.response?.data?.message || 'Registrazione fallita');
     } finally {
@@ -42,7 +46,7 @@ export default function RegisterScreen({ navigation }) {
 
       <Text style={styles.fieldLabel}>Password</Text>
       <View style={styles.passwordRow}>
-        <TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={[styles.input, styles.passwordInput]} placeholder="Password" placeholderTextColor={colors.textMuted} />
+        <TextInput value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={[styles.input, styles.passwordInput]} placeholder="Almeno 8 caratteri" placeholderTextColor={colors.textMuted} />
         <Pressable style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}>
           <Text style={styles.passwordToggleText}>{showPassword ? 'Nascondi' : 'Mostra'}</Text>
         </Pressable>
@@ -58,6 +62,9 @@ export default function RegisterScreen({ navigation }) {
         </View>
       </View>
       <Text style={styles.roleHint}>Gli account coach vengono creati dall'amministratore.</Text>
+
+      <ConsentChecks value={consents} onChange={setConsents} />
+      <Text style={styles.roleHint}>Dopo la registrazione ti invieremo un'email per confermare l'indirizzo: servirà per ricevere le notifiche anche via email.</Text>
 
       {!!error && <Text style={styles.error}>{error}</Text>}
 

@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
+import { sendVerificationEmail, PRIVACY_VERSION } from './auth.js';
+import { emailConfigured } from '../lib/mailer.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -19,11 +21,54 @@ app.get('/me', async (c) => {
   `;
   if (!rows[0]) return c.json({ message: 'Not found' }, 404);
   const row = rows[0];
+  // consensi privacy e stato dell'email (colonne della migrazione 20261126: se mancano l'app funziona come prima)
+  let account = { email_verificata: true, notifiche_email: true, privacy_accettata_at: 'n/d', consenso_salute_at: 'n/d', privacy_versione: PRIVACY_VERSION };
+  try {
+    account = (await sql`
+      SELECT email_verificata, notifiche_email, privacy_accettata_at, consenso_salute_at, privacy_versione FROM utenti WHERE utenteid = ${user.userId}
+    `)[0] || account;
+  } catch { /* migrazione non ancora applicata */ }
+  Object.assign(row, account, { privacy_versione_attuale: PRIVACY_VERSION, email_attiva: emailConfigured(c.env) });
   // Il coach vede sempre le sezioni endurance; per l'atleta decide il coach (sezione Atleti).
   let enduranceVisible = true;
   if (row.ruolo === 'cliente') enduranceVisible = await athleteEnduranceVisible(sql, row);
   const { endurance_visibile: _ignored, dieta_visibile: dietVisible, ...rest } = row;
   return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false });
+});
+
+// POST /users/me/consent { privacy: true, datiSalute: true } — consensi per chi si era registrato prima
+app.post('/me/consent', async (c) => {
+  const user = c.get('user');
+  const { privacy, datiSalute } = await c.req.json().catch(() => ({}));
+  if (privacy !== true || datiSalute !== true) return c.json({ message: 'Per usare l\'app servono entrambi i consensi' }, 400);
+  const sql = db(c.env);
+  await sql`
+    UPDATE utenti SET privacy_accettata_at = NOW(), privacy_versione = ${PRIVACY_VERSION}, consenso_salute_at = COALESCE(consenso_salute_at, NOW())
+    WHERE utenteid = ${user.userId}
+  `;
+  return c.json({ ok: true, privacy_versione: PRIVACY_VERSION });
+});
+
+// POST /users/me/verify-email — invia di nuovo il link di verifica
+app.post('/me/verify-email', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const rows = await sql`SELECT utenteid, nome, email, email_verificata FROM utenti WHERE utenteid = ${user.userId}`;
+  if (!rows[0]) return c.json({ message: 'Utente non trovato' }, 404);
+  if (rows[0].email_verificata) return c.json({ message: 'La tua email è già verificata', verificata: true });
+  if (!emailConfigured(c.env)) return c.json({ message: 'L\'invio delle email non è ancora configurato' }, 503);
+  const sent = await sendVerificationEmail(c, sql, rows[0]);
+  if (!sent) return c.json({ message: 'Invio non riuscito, riprova più tardi' }, 502);
+  return c.json({ message: `Ti abbiamo inviato un link di conferma a ${rows[0].email}` });
+});
+
+// PUT /users/me/email-notifications { enabled }
+app.put('/me/email-notifications', async (c) => {
+  const user = c.get('user');
+  const { enabled } = await c.req.json().catch(() => ({}));
+  const sql = db(c.env);
+  await sql`UPDATE utenti SET notifiche_email = ${!!enabled} WHERE utenteid = ${user.userId}`;
+  return c.json({ notifiche_email: !!enabled });
 });
 
 // Visibilita' endurance di un atleta: scelta esplicita del coach, altrimenti la vecchia
