@@ -288,8 +288,13 @@ app.get('/templates/mine', roleCheck('personal_trainer'), async (c) => {
   const templates = await sql`
     SELECT * FROM endurance_plan_templates WHERE pt_user_id = ${user.userId} ORDER BY created_at DESC
   `;
-  const full = await Promise.all(templates.map((template) => getEnduranceTemplate(sql, template.template_id, user.userId)));
-  return c.json(full.filter(Boolean));
+  if (!templates.length) return c.json([]);
+  // sessioni di tutti i template in una query (Cloudflare limita le query per richiesta)
+  const sessions = await sql`
+    SELECT * FROM endurance_plan_template_sessions WHERE template_id = ANY(${templates.map((t) => t.template_id)})
+    ORDER BY order_index ASC, template_session_id ASC
+  `;
+  return c.json(templates.map((template) => ({ ...template, sessions: sessions.filter((row) => row.template_id === template.template_id) })));
 });
 
 app.post('/templates', roleCheck('personal_trainer'), async (c) => {

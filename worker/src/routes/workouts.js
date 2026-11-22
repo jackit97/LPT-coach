@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
 import { notifyNewWorkout, notify } from '../lib/notify.js';
+import { insertWorkoutsBulk } from '../lib/bulkWorkouts.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -162,8 +163,12 @@ app.get('/templates/mine', async (c) => {
   const templates = await sql`
     SELECT * FROM workouttemplates WHERE ptuserid = ${user.userId} ORDER BY createdat DESC
   `;
-  const fullTemplates = await Promise.all(templates.map((template) => getTemplate(sql, template.templateid, user.userId)));
-  return c.json(fullTemplates.filter(Boolean));
+  if (!templates.length) return c.json([]);
+  const exercises = await sql`
+    SELECT * FROM workouttemplateexercises WHERE templateid = ANY(${templates.map((t) => t.templateid)})
+    ORDER BY orderindex ASC, templateexerciseid ASC
+  `;
+  return c.json(templates.map((template) => ({ ...template, esercizi: exercises.filter((e) => e.templateid === template.templateid) })));
 });
 
 // Campi di un allenamento della libreria (forza, funzionale o endurance), creato direttamente dalla libreria
@@ -190,21 +195,25 @@ function templateFields(body) {
 
 async function saveTemplateExercises(sql, templateId, esercizi = []) {
   await sql`DELETE FROM workouttemplateexercises WHERE templateid = ${templateId}`;
-  let index = 0;
+  const text = (value, max) => (value === null || value === undefined || String(value).trim() === '' ? null : String(value).trim().slice(0, max));
+  const rows = [];
   for (const exercise of esercizi) {
     const nome = String(exercise?.nome || exercise?.nomeesercizio || '').trim().slice(0, 100);
     if (!nome) continue;
-    const text = (value, max) => (value === null || value === undefined || String(value).trim() === '' ? null : String(value).trim().slice(0, max));
     const serie = Math.round(Number(String(exercise.serie ?? '').replace(',', '.')));
-    await sql`
-      INSERT INTO workouttemplateexercises
-        (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
-      VALUES (${templateId}, ${nome}, ${Number.isFinite(serie) && serie > 0 ? Math.min(serie, 100) : null}, ${text(exercise.ripetizioni, 50)},
-        ${exercise.descrizione ?? exercise.note ?? null}, ${text(exercise.videoUrl || exercise.video_url, 255)},
-        ${text(exercise.recupero, 50)}, ${text(exercise.carico, 50)}, ${index})
-    `;
-    index += 1;
+    rows.push({
+      nome, serie: Number.isFinite(serie) && serie > 0 ? Math.min(serie, 100) : null, ripetizioni: text(exercise.ripetizioni, 50),
+      descrizione: exercise.descrizione ?? exercise.note ?? null, video: text(exercise.videoUrl || exercise.video_url, 255),
+      recupero: text(exercise.recupero, 50), carico: text(exercise.carico, 50), pos: rows.length,
+    });
   }
+  if (!rows.length) return;
+  // tutti gli esercizi in una query
+  await sql`
+    INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
+    SELECT ${templateId}::int, nome, serie, ripetizioni, descrizione, video, recupero, carico, pos
+    FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(nome text, serie int, ripetizioni text, descrizione text, video text, recupero text, carico text, pos int)
+  `;
 }
 
 // GET /workouts/templates/:id
@@ -310,6 +319,33 @@ function templateSnapshot(template, titolo) {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Piu' allenamenti della libreria in 2 query (Cloudflare limita le query per richiesta)
+async function getTemplates(sql, ids, coachId) {
+  const unique = [...new Set(ids.map(Number).filter(Boolean))];
+  if (!unique.length) return new Map();
+  const templates = await sql`SELECT * FROM workouttemplates WHERE templateid = ANY(${unique}) AND ptuserid = ${coachId}`;
+  const exercises = templates.length ? await sql`
+    SELECT * FROM workouttemplateexercises WHERE templateid = ANY(${templates.map((t) => t.templateid)})
+    ORDER BY orderindex ASC, templateexerciseid ASC
+  ` : [];
+  return new Map(templates.map((t) => [t.templateid, { ...t, esercizi: exercises.filter((e) => e.templateid === t.templateid) }]));
+}
+
+// tutti gli atleti sono del coach? (una query sola)
+async function coachOwnsAll(sql, coachId, athleteIds) {
+  const rows = await sql`
+    SELECT DISTINCT cliente_userid FROM pt_clienti WHERE pt_userid = ${coachId} AND attivo = 1 AND cliente_userid = ANY(${athleteIds})
+  `;
+  return rows.length === new Set(athleteIds).size;
+}
+
+// snapshot (come templateSnapshot) -> elemento per insertWorkoutsBulk
+const bulkItem = (coachId, athleteId, data, snap) => ({
+  utenteId: athleteId, coachId, data, tipo: snap.tipo, titolo: snap.titolo, descrizione: snap.descrizione,
+  durataMinuti: snap.durataMinuti, durataSecondi: snap.durataSecondi, rpe: snap.rpe, colore: snap.colore, sport: snap.sport,
+  esercizi: snap.esercizi, endurance: snap.endurance,
+});
 const MAX_BULK = 200;
 
 // Notifica unica per atleta quando riceve piu' allenamenti insieme
@@ -337,17 +373,14 @@ app.post('/templates/:id{[0-9]+}/assign-bulk', async (c) => {
   if (!athletes.length || !days.length) return c.json({ message: 'Scegli almeno un atleta e una data' }, 400);
   if (athletes.length * days.length > MAX_BULK) return c.json({ message: `Troppi allenamenti in un colpo (massimo ${MAX_BULK})` }, 400);
   const sql = db(c.env);
-  for (const athleteId of athletes) {
-    if (!await assertCoachOwnsAthlete(sql, user.userId, athleteId)) return c.json({ message: 'Uno degli atleti non è tra i tuoi' }, 403);
-  }
+  if (!await coachOwnsAll(sql, user.userId, athletes)) return c.json({ message: 'Uno degli atleti non è tra i tuoi' }, 403);
   const template = await getTemplate(sql, id, user.userId);
   if (!template) return c.json({ message: 'Allenamento non trovato' }, 404);
-  let created = 0;
+  const snap = templateSnapshot(template, titolo);
+  const inserted = await insertWorkoutsBulk(sql, athletes.flatMap((athleteId) => days.map((day) => bulkItem(user.userId, athleteId, day, snap))));
+  const created = inserted.length;
   for (const athleteId of athletes) {
-    const workouts = [];
-    for (const day of days) workouts.push(await insertWorkoutFromSnapshot(sql, user.userId, athleteId, day, templateSnapshot(template, titolo)));
-    created += workouts.length;
-    await notifyBulk(sql, user.userId, athleteId, workouts, template.nometemplate);
+    await notifyBulk(sql, user.userId, athleteId, inserted.filter((w) => Number(w.utenteid) === athleteId), template.nometemplate);
   }
   return c.json({ created, message: `${created} allenament${created === 1 ? 'o assegnato' : 'i assegnati'}` }, 201);
 });
@@ -398,11 +431,14 @@ function cleanItems(items, weeks) {
 
 async function savePlanItems(sql, planId, coachId, items) {
   await sql`DELETE FROM library_plan_items WHERE plan_id = ${planId}`;
-  for (const item of items) {
-    const owned = await sql`SELECT 1 FROM workouttemplates WHERE templateid = ${item.templateid} AND ptuserid = ${coachId}`;
-    if (!owned.length) continue;
-    await sql`INSERT INTO library_plan_items (plan_id, templateid, settimana, giorno) VALUES (${planId}, ${item.templateid}, ${item.settimana}, ${item.giorno})`;
-  }
+  if (!items.length) return;
+  // una query sola: inserisce solo gli allenamenti che sono davvero del coach
+  await sql`
+    INSERT INTO library_plan_items (plan_id, templateid, settimana, giorno)
+    SELECT ${planId}::int, x.templateid, x.settimana, x.giorno
+    FROM jsonb_to_recordset(${JSON.stringify(items)}::jsonb) AS x(templateid int, settimana int, giorno int)
+    JOIN workouttemplates t ON t.templateid = x.templateid AND t.ptuserid = ${coachId}::int
+  `;
 }
 
 app.get('/plans/mine', async (c) => {
@@ -415,7 +451,18 @@ app.get('/plans/mine', async (c) => {
     if (/library_plans/.test(String(error?.message))) return c.json([]); // migrazione non ancora applicata
     throw error;
   }
-  return c.json(await Promise.all(plans.map((plan) => getPlan(sql, plan.plan_id, user.userId))));
+  if (!plans.length) return c.json([]);
+  // tutti i piani con i loro elementi in 2 query (non una per piano: Cloudflare limita le query per richiesta)
+  const full = await sql`SELECT * FROM library_plans WHERE plan_id = ANY(${plans.map((plan) => plan.plan_id)})`;
+  const items = await sql`
+    SELECT i.plan_id, i.item_id, i.templateid, i.settimana, i.giorno, t.nometemplate, t.tipo, t.durata_minuti, t.durata_secondi,
+           (t.endurance_json::jsonb ->> 'sport') AS sport
+    FROM library_plan_items i JOIN workouttemplates t ON t.templateid = i.templateid
+    WHERE i.plan_id = ANY(${plans.map((plan) => plan.plan_id)})
+    ORDER BY i.settimana ASC, i.giorno ASC, i.item_id ASC
+  `;
+  const byId = new Map(full.map((plan) => [plan.plan_id, plan]));
+  return c.json(plans.map((plan) => ({ ...byId.get(plan.plan_id), items: items.filter((item) => item.plan_id === plan.plan_id) })));
 });
 
 app.get('/plans/:id{[0-9]+}', async (c) => {
@@ -474,9 +521,7 @@ app.post('/plans/:id{[0-9]+}/assign', async (c) => {
   const athletes = [...new Set(utenteIds.map(Number).filter(Boolean))];
   if (!athletes.length || !ISO_DAY.test(String(startDate || ''))) return c.json({ message: 'Scegli almeno un atleta e la data di inizio' }, 400);
   if (athletes.length * plan.items.length > MAX_BULK) return c.json({ message: `Troppi allenamenti in un colpo (massimo ${MAX_BULK})` }, 400);
-  for (const athleteId of athletes) {
-    if (!await assertCoachOwnsAthlete(sql, user.userId, athleteId)) return c.json({ message: 'Uno degli atleti non è tra i tuoi' }, 403);
-  }
+  if (!await coachOwnsAll(sql, user.userId, athletes)) return c.json({ message: 'Uno degli atleti non è tra i tuoi' }, 403);
   const start = new Date(`${startDate}T12:00:00Z`);
   start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7)); // lunedi' della settimana
   const dayOf = (item) => {
@@ -484,33 +529,42 @@ app.post('/plans/:id{[0-9]+}/assign', async (c) => {
     date.setUTCDate(start.getUTCDate() + (item.settimana - 1) * 7 + (item.giorno - 1));
     return date.toISOString().slice(0, 10);
   };
-  const templates = new Map();
-  for (const item of plan.items) if (!templates.has(item.templateid)) templates.set(item.templateid, await getTemplate(sql, item.templateid, user.userId));
-  let created = 0;
+  const templates = await getTemplates(sql, plan.items.map((item) => item.templateid), user.userId);
   const lastDay = new Date(start);
   lastDay.setUTCDate(start.getUTCDate() + plan.settimane * 7 - 1);
+  // tutti gli allenamenti di tutti gli atleti in poche query
+  const items = [];
   for (const athleteId of athletes) {
-    const workouts = [];
     for (const item of plan.items) {
       const template = templates.get(item.templateid);
-      if (!template) continue;
-      workouts.push(await insertWorkoutFromSnapshot(sql, user.userId, athleteId, dayOf(item), templateSnapshot(template)));
+      if (template) items.push(bulkItem(user.userId, athleteId, dayOf(item), templateSnapshot(template)));
     }
-    created += workouts.length;
-    // il piano resta visibile all'atleta (Pesistica / Endurance) come programma, non solo come allenamenti sparsi
-    try {
-      const assignment = await sql`
-        INSERT INTO plan_assignments (plan_id, coach_id, utenteid, nome, descrizione, settimane, data_inizio, data_fine)
-        VALUES (${plan.plan_id}, ${user.userId}, ${athleteId}, ${plan.nome}, ${plan.descrizione || null}, ${plan.settimane},
-                ${start.toISOString().slice(0, 10)}, ${lastDay.toISOString().slice(0, 10)})
-        RETURNING assignment_id
+  }
+  const inserted = await insertWorkoutsBulk(sql, items);
+  const created = inserted.length;
+  // il piano resta visibile all'atleta (Pesistica / Endurance) come programma, non solo come allenamenti sparsi
+  try {
+    const assignments = await sql`
+      INSERT INTO plan_assignments (plan_id, coach_id, utenteid, nome, descrizione, settimane, data_inizio, data_fine)
+      SELECT ${plan.plan_id}::int, ${user.userId}::int, athlete, ${plan.nome}::text, ${plan.descrizione || null}::text, ${plan.settimane}::int,
+             ${start.toISOString().slice(0, 10)}::date, ${lastDay.toISOString().slice(0, 10)}::date
+      FROM unnest(${athletes}::int[]) AS athlete
+      RETURNING assignment_id, utenteid
+    `;
+    const assignmentOf = new Map(assignments.map((row) => [Number(row.utenteid), row.assignment_id]));
+    const links = inserted.map((w) => ({ wid: w.workout_id, aid: assignmentOf.get(Number(w.utenteid)) })).filter((link) => link.aid);
+    if (links.length) {
+      await sql`
+        UPDATE calendar_workouts SET plan_assignment_id = m.aid
+        FROM jsonb_to_recordset(${JSON.stringify(links)}::jsonb) AS m(wid int, aid int)
+        WHERE calendar_workouts.workout_id = m.wid
       `;
-      const ids = workouts.map((workout) => workout.workout_id);
-      if (ids.length) await sql`UPDATE calendar_workouts SET plan_assignment_id = ${assignment[0].assignment_id} WHERE workout_id = ANY(${ids})`;
-    } catch (error) {
-      if (!/plan_assignment/.test(String(error?.message))) throw error; // migrazione 20261125 non ancora applicata
     }
-    await notifyBulk(sql, user.userId, athleteId, workouts, plan.nome);
+  } catch (error) {
+    if (!/plan_assignment/.test(String(error?.message))) throw error; // migrazione 20261125 non ancora applicata
+  }
+  for (const athleteId of athletes) {
+    await notifyBulk(sql, user.userId, athleteId, inserted.filter((w) => Number(w.utenteid) === athleteId), plan.nome);
   }
   return c.json({ created, startMonday: start.toISOString().slice(0, 10), message: `Piano assegnato: ${created} allenamenti` }, 201);
 });

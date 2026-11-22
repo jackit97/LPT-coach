@@ -62,13 +62,20 @@ function qualifySqlText(text, schema) {
 }
 
 function withSchema(sql, schema) {
-  return (strings, ...values) => {
+  const tagged = (strings, ...values) => {
     const qualifiedStrings = Array.from(strings, (part) => qualifySqlText(part, schema));
     Object.defineProperty(qualifiedStrings, 'raw', {
       value: Array.from(strings.raw, (part) => qualifySqlText(part, schema)),
     });
     return sql(qualifiedStrings, ...values);
   };
+  tagged.table = (name) => qualifiedTable(name, schema);
+  return tagged;
+}
+
+// nome completo di una tabella (es. per pg_get_serial_sequence, dove il nome e' una stringa)
+function qualifiedTable(name, schema) {
+  return schema === 'public' ? name : `${schema}.${name}`;
 }
 
 let pgPoolPromise;
@@ -87,7 +94,7 @@ async function getPgPool(connectionString) {
 }
 
 function pgSql(connectionString, schema) {
-  return async (strings, ...values) => {
+  const tagged = async (strings, ...values) => {
     const qualifiedStrings = Array.from(strings, (part) => qualifySqlText(part, schema));
     const text = qualifiedStrings.reduce((query, part, index) => {
       return `${query}${part}${index < values.length ? `$${index + 1}` : ''}`;
@@ -97,6 +104,8 @@ function pgSql(connectionString, schema) {
     const result = await pool.query(text, values);
     return result.rows;
   };
+  tagged.table = (name) => qualifiedTable(name, schema);
+  return tagged;
 }
 
 // Thrown when no DB connection info is available. Callers (index.js onError)
