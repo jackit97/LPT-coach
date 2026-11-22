@@ -11,7 +11,28 @@ import { colors, radius, spacing } from '../theme';
 // video tutorial e note personali dell'atleta.
 // source: 'scheda' (esercizischeda.esercizioid) | 'workout' (calendar_workout_exercises.exercise_id)
 // allowExecution: allenamento di forza del calendario -> video di esecuzione e dubbi per il coach.
-export default function ExerciseSheet({ visible, exercise, source, isCoach, onClose, onSaved, allowExecution = false, onExecutionChange }) {
+// valori del programma -> numeri per precompilare le serie ("8-10" -> 9, "60 kg" -> 60)
+const plannedReps = (value) => {
+  const text = String(value ?? '').toLowerCase();
+  if (/\d\s*(s|sec|min)\b|["']|amrap|max/.test(text)) return '';
+  const range = text.match(/(\d+)\s*[-–/]\s*(\d+)/);
+  if (range) return String(Math.round((Number(range[1]) + Number(range[2])) / 2));
+  return (text.match(/\d+/) || [''])[0];
+};
+const plannedKg = (value) => {
+  const text = String(value ?? '').toLowerCase().replace(',', '.');
+  if (/%|rpe|rir|corpo libero/.test(text)) return '';
+  return (text.match(/\d+(?:\.\d+)?/) || [''])[0];
+};
+const readSets = (json) => { try { const list = JSON.parse(json || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } };
+function initialSets(exercise) {
+  const saved = readSets(exercise?.serie_eseguite_json);
+  if (saved.length) return saved.map((set) => ({ reps: set.reps === null || set.reps === undefined ? '' : String(set.reps), kg: set.kg === null || set.kg === undefined ? '' : String(set.kg) }));
+  const count = Math.min(12, Math.max(1, Number(exercise?.serie) || 3));
+  return Array.from({ length: count }, () => ({ reps: plannedReps(exercise?.ripetizioni), kg: plannedKg(exercise?.carico) }));
+}
+
+export default function ExerciseSheet({ visible, exercise, source, isCoach, onClose, onSaved, allowExecution = false, onExecutionChange, onSetsSaved }) {
   const { width, height } = useWindowDimensions();
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -25,6 +46,11 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
   const [execPlaying, setExecPlaying] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [execError, setExecError] = useState(null);
+  // serie eseguite (carico e ripetizioni reali) -> analisi dell'allenamento
+  const [sets, setSets] = useState([]);
+  const [setsSaved, setSetsSaved] = useState(false);
+  const [savingSets, setSavingSets] = useState(false);
+  const [setsError, setSetsError] = useState(null);
 
   useEffect(() => {
     if (!visible || !exercise) return;
@@ -37,6 +63,9 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
     setExecPlaying(false);
     setUploadProgress(null);
     setExecError(null);
+    setSets(initialSets(exercise));
+    setSetsSaved(!!readSets(exercise.serie_eseguite_json).length);
+    setSetsError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, exercise?.esercizioid, exercise?.exercise_id]);
 
@@ -67,6 +96,25 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
   };
 
   const execUrl = exercise.esecuzione_video_url || null;
+  const trackSets = source === 'workout' && allowExecution;
+  const hasSavedSets = readSets(exercise.serie_eseguite_json).length > 0;
+  const updateSet = (index, key, value) => { setSets((current) => current.map((set, i) => (i === index ? { ...set, [key]: value.replace(/[^0-9.,]/g, '') } : set))); setSetsSaved(false); };
+  const addSet = () => { setSets((current) => [...current, { ...(current[current.length - 1] || { reps: '', kg: '' }) }]); setSetsSaved(false); };
+  const removeSet = (index) => { setSets((current) => current.filter((_, i) => i !== index)); setSetsSaved(false); };
+  const saveSets = async () => {
+    setSavingSets(true);
+    setSetsError(null);
+    try {
+      const { data } = await api.put(`/calendar/exercises/${id}/sets`, { serie: sets.map((set) => ({ reps: set.reps, kg: set.kg })) });
+      setSetsSaved(true);
+      onSetsSaved?.(id, data.serie_eseguite_json);
+    } catch (e) {
+      setSetsError(e?.response?.data?.message || 'Salvataggio non riuscito');
+    } finally {
+      setSavingSets(false);
+    }
+  };
+  const volume = sets.reduce((sum, set) => sum + (Number(String(set.reps).replace(',', '.')) || 0) * (Number(String(set.kg).replace(',', '.')) || 0), 0);
 
   const saveDoubts = async () => {
     setSavingDoubts(true);
@@ -149,6 +197,43 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
                   </View>
                 ))}
               </View>
+            )}
+
+            {trackSets && (
+              <>
+                <Text style={styles.section}>{isCoach ? 'Serie eseguite dall\'atleta' : 'Serie eseguite'}</Text>
+                {isCoach && !hasSavedSets && <Text style={styles.muted}>L'atleta non ha ancora registrato le serie: puoi inserirle tu (es. seduta seguita di persona).</Text>}
+                {!isCoach && !hasSavedSets && <Text style={styles.muted}>Precompilate dal programma: correggi carichi e ripetizioni che hai fatto davvero e salva.</Text>}
+                <View style={styles.setHeader}>
+                  <Text style={[styles.setHeadText, { width: 46 }]}>Serie</Text>
+                  <Text style={[styles.setHeadText, { flex: 1 }]}>Ripetizioni</Text>
+                  <Text style={[styles.setHeadText, { flex: 1 }]}>Kg</Text>
+                  <View style={{ width: 30 }} />
+                </View>
+                {sets.map((set, index) => (
+                  <View key={index} style={styles.setRow}>
+                    <Text style={styles.setIndex}>{index + 1}</Text>
+                    <TextInput value={set.reps} onChangeText={(value) => updateSet(index, 'reps', value)} keyboardType="numeric" style={styles.setInput} placeholder="Rip" placeholderTextColor={colors.textMuted} accessibilityLabel={`Ripetizioni serie ${index + 1}`} />
+                    <TextInput value={set.kg} onChangeText={(value) => updateSet(index, 'kg', value)} keyboardType="decimal-pad" style={styles.setInput} placeholder="Kg" placeholderTextColor={colors.textMuted} accessibilityLabel={`Kg serie ${index + 1}`} />
+                    <Pressable onPress={() => removeSet(index)} hitSlop={8} style={styles.setRemove} accessibilityLabel={`Togli serie ${index + 1}`}>
+                      <Ionicons name="close" size={18} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+                <View style={styles.setFooter}>
+                  <Pressable onPress={addSet} style={styles.addSet}><Ionicons name="add" size={16} color={colors.primary} /><Text style={styles.addSetText}>Aggiungi serie</Text></Pressable>
+                  {volume > 0 && <Text style={styles.volumeText}>Volume {Math.round(volume).toLocaleString('it-IT')} kg</Text>}
+                </View>
+                <Pressable style={[styles.saveBtn, (savingSets || setsSaved) && { opacity: 0.7 }]} onPress={saveSets} disabled={savingSets}>
+                  {savingSets ? <ActivityIndicator color="#fff" /> : (
+                    <>
+                      <Ionicons name={setsSaved ? 'checkmark' : 'save-outline'} size={18} color="#fff" />
+                      <Text style={styles.saveText}>{setsSaved ? 'Serie salvate' : 'Salva serie'}</Text>
+                    </>
+                  )}
+                </Pressable>
+                {!!setsError && <Text style={styles.error}>{setsError}</Text>}
+              </>
             )}
 
             <Text style={styles.section}>Indicazioni del coach</Text>
@@ -288,6 +373,16 @@ const styles = StyleSheet.create({
   progressText: { fontWeight: '800', color: colors.primary },
   progressTrack: { alignSelf: 'stretch', height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
   progressFill: { height: 6, backgroundColor: colors.primary },
+  setHeader: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, marginBottom: 4 },
+  setHeadText: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
+  setIndex: { width: 46, fontSize: 15, fontWeight: '800', color: colors.primary, textAlign: 'center' },
+  setInput: { flex: 1, minWidth: 0, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 8, backgroundColor: colors.surfaceAlt, fontSize: 16, fontWeight: '700', textAlign: 'center', color: colors.text },
+  setRemove: { width: 30, alignItems: 'center' },
+  setFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  addSet: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },
+  addSetText: { color: colors.primary, fontWeight: '800' },
+  volumeText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   doubtBox: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: '#FEF3C7' },
   doubtLabel: { fontSize: 11, fontWeight: '800', color: '#92400E', textTransform: 'uppercase', marginBottom: 2 },
 });

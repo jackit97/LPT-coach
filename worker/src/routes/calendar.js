@@ -6,6 +6,7 @@ import { loadWorkoutsWithLoad, loadMergedZones } from '../lib/athleteData.js';
 import { notify, coachOf, userName, notifyNewWorkout } from '../lib/notify.js';
 import { isoDay, zoneSecondsFromSamples, todayIso, addDaysIso } from '../lib/trainingLoad.js';
 import { executionsFor, reportFor } from './reports.js';
+import { buildStrengthAnalysis, nameKey } from '../lib/strengthAnalysis.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -655,6 +656,71 @@ async function loadStreams(sql, workout) {
   };
 }
 
+// Storico degli stessi esercizi (per nome) nelle sedute precedenti dell'atleta -> analisi forza
+async function strengthAnalysisFor(sql, workout, exercises, fileSets) {
+  const names = [...new Set(exercises.map((ex) => nameKey(ex.nome)).filter(Boolean))];
+  let history = [];
+  if (names.length) {
+    try {
+      history = await sql`
+        SELECT x.nome, x.serie, x.ripetizioni, x.carico, x.serie_eseguite_json, w.workout_id, w.data
+        FROM calendar_workout_exercises x
+        JOIN calendar_workouts w ON w.workout_id = x.workout_id
+        WHERE w.utenteid = ${workout.utenteid} AND w.workout_id <> ${workout.workout_id}
+          AND w.data < ${isoDay(workout.data)} AND w.data >= ${addDaysIso(isoDay(workout.data), -365)}
+          AND (w.stato = 'completato' OR x.serie_eseguite_json IS NOT NULL)
+          AND LOWER(REGEXP_REPLACE(TRIM(x.nome), '\\s+', ' ', 'g')) = ANY(${names})
+        ORDER BY w.data DESC
+        LIMIT 400
+      `;
+    } catch (error) {
+      if (!/serie_eseguite_json/.test(String(error?.message))) throw error;
+      // migrazione 20261124 non ancora applicata: storico sul solo pianificato
+      history = await sql`
+        SELECT x.nome, x.serie, x.ripetizioni, x.carico, w.workout_id, w.data
+        FROM calendar_workout_exercises x JOIN calendar_workouts w ON w.workout_id = x.workout_id
+        WHERE w.utenteid = ${workout.utenteid} AND w.workout_id <> ${workout.workout_id}
+          AND w.data < ${isoDay(workout.data)} AND w.stato = 'completato'
+          AND LOWER(REGEXP_REPLACE(TRIM(x.nome), '\\s+', ' ', 'g')) = ANY(${names})
+        ORDER BY w.data DESC LIMIT 400
+      `;
+    }
+  }
+  return buildStrengthAnalysis({ workout, exercises, history, fileSets });
+}
+
+// PUT /calendar/exercises/:id/sets { serie: [{ reps, kg, fatta }] } — serie eseguite dall'atleta
+app.put('/exercises/:id{[0-9]+}/sets', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const id = Number(c.req.param('id'));
+  const { serie } = await c.req.json().catch(() => ({}));
+  if (!Array.isArray(serie)) return c.json({ message: 'serie deve essere un elenco' }, 400);
+  const num = (value, max) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const n = Number(String(value).replace(',', '.'));
+    return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n * 100) / 100 : null;
+  };
+  const clean = serie.slice(0, 30).map((set) => ({ reps: num(set?.reps, 500), kg: num(set?.kg, 1000), fatta: set?.fatta !== false }))
+    .filter((set) => set.reps !== null || set.kg !== null);
+  const rows = await sql`
+    SELECT x.exercise_id, w.utenteid FROM calendar_workout_exercises x JOIN calendar_workouts w ON w.workout_id = x.workout_id
+    WHERE x.exercise_id = ${id}
+  `;
+  const row = rows[0];
+  if (!row) return c.json({ message: 'Esercizio non trovato' }, 404);
+  if (user.ruolo === 'cliente' ? row.utenteid !== user.userId : !await assertCoachOwnsAthlete(sql, user.userId, row.utenteid)) {
+    return c.json({ message: 'Accesso negato' }, 403);
+  }
+  try {
+    await sql`UPDATE calendar_workout_exercises SET serie_eseguite_json = ${clean.length ? JSON.stringify(clean) : null} WHERE exercise_id = ${id}`;
+  } catch (error) {
+    if (/serie_eseguite_json/.test(String(error?.message))) return c.json({ message: 'Serie eseguite non ancora attive: va applicata la migrazione 20261124_serie_eseguite.sql' }, 503);
+    throw error;
+  }
+  return c.json({ exercise_id: id, serie_eseguite_json: clean.length ? JSON.stringify(clean) : null });
+});
+
 // GET /calendar/:id - full detail (exercises + feedback)
 app.get('/:id', async (c) => {
   const user = c.get('user');
@@ -696,7 +762,9 @@ app.get('/:id', async (c) => {
   const day = isoDay(workout.data);
   const withLoad = (await loadWorkoutsWithLoad(sql, workout.utenteid, day, day)).find((row) => row.workout_id === id);
 
-  const streams = workout.tipo === 'endurance' ? await loadStreams(sql, workout) : null;
+  // campioni FC/GPS anche per la forza importata dall'orologio (+ serie registrate dal Garmin)
+  const streams = await loadStreams(sql, workout);
+  const analisiForza = workout.tipo !== 'endurance' ? await strengthAnalysisFor(sql, workout, exercises, streams?.sets || []) : null;
 
   // Forza: video di esecuzione e dubbi dell'atleta + stato del report inviato al coach
   const isStrength = workout.tipo !== 'endurance' && exercises.length > 0;
@@ -706,8 +774,8 @@ app.get('/:id', async (c) => {
   return c.json({
     ...workout,
     sport: withLoad?.sport || workout.sport || endurance?.sport || null,
-    // il dettaglio carico serve solo per l'endurance
-    load: workout.tipo === 'endurance' ? (withLoad?.load || null) : null,
+    load: withLoad?.load || null,
+    analisi_forza: analisiForza,
     esercizi: exercises.map((exercise) => ({
       ...exercise,
       esecuzione_dubbi: executions[exercise.exercise_id]?.dubbi || null,
@@ -829,17 +897,28 @@ app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
   const { esercizi } = await c.req.json();
   if (!Array.isArray(esercizi)) return c.json({ message: 'esercizi deve essere un array' }, 400);
 
+  // note e serie gia' registrate dall'atleta restano sugli esercizi con lo stesso nome
+  const previous = await sql`SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id}`;
+  const keep = new Map(previous.map((row) => [nameKey(row.nome), row]));
   await sql`DELETE FROM calendar_workout_exercises WHERE workout_id = ${id}`;
   for (let i = 0; i < esercizi.length; i += 1) {
     const ex = esercizi[i] || {};
     if (!ex.nome) continue;
-    await sql`
+    const inserted = await sql`
       INSERT INTO calendar_workout_exercises
         (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
       VALUES
         (${id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
          ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i})
+      RETURNING exercise_id
     `;
+    const old = keep.get(nameKey(ex.nome));
+    if (old && (old.note_atleta || old.serie_eseguite_json)) {
+      try {
+        await sql`UPDATE calendar_workout_exercises SET note_atleta = ${old.note_atleta || null}, note_atleta_at = ${old.note_atleta_at || null},
+          serie_eseguite_json = ${old.serie_eseguite_json || null} WHERE exercise_id = ${inserted[0].exercise_id}`;
+      } catch { /* colonne non ancora migrate */ }
+    }
   }
   const rows = await sql`SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id} ORDER BY order_index ASC`;
   return c.json(rows);

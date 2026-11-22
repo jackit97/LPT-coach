@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ZONE_COLORS, sportInfo, formatHMS, formatKm, performanceStatus } from '../utils/endurance';
 import LoadChart from '../components/LoadChart';
 import ActivityCharts, { ZoneBars, LapsTable, fmtClock } from '../components/ActivityCharts';
+import StrengthAnalysis from '../components/StrengthAnalysis';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
 const TRIMP_METHODS = { fc: 'dalla frequenza cardiaca media', fc_campioni: 'dal tempo reale in ogni zona FC', rpe: 'da RPE percepito', pianificato: 'dal pianificato sulla durata reale', stima: 'stimato' };
@@ -193,6 +194,15 @@ export default function WorkoutDetailScreen({ route, navigation }) {
   const onExerciseNoteSaved = (id, note) => {
     setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, note_atleta: note } : ex)) }));
   };
+  // serie salvate: aggiorna l'esercizio e ricarica l'analisi
+  const onSetsSaved = async (id, json) => {
+    setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, serie_eseguite_json: json } : ex)) }));
+    try {
+      const { data } = await api.get(`/calendar/${workoutId}`);
+      setWorkout((current) => ({ ...current, analisi_forza: data.analisi_forza, load: data.load }));
+    } catch { /* l'analisi si aggiorna alla prossima apertura */ }
+  };
+  const openExerciseById = (id) => { const ex = workout?.esercizi?.find((row) => row.exercise_id === id); if (ex) setOpenExercise(ex); };
   const onExecutionChange = (id, changes) => {
     setWorkout((current) => ({ ...current, esercizi: current.esercizi.map((ex) => (ex.exercise_id === id ? { ...ex, ...changes } : ex)) }));
     setOpenExercise((current) => (current && current.exercise_id === id ? { ...current, ...changes } : current));
@@ -333,11 +343,15 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 
       {workout.tipo === 'endurance' && <LoadDetail load={workout.load} />}
 
-      {workout.tipo === 'endurance' && <LoadImpact workout={workout} />}
+      {workout.tipo !== 'endurance' && workout.stato === 'completato' && (
+        <StrengthAnalysis analysis={workout.analisi_forza} onOpenExercise={openExerciseById} />
+      )}
 
-      {workout.tipo === 'endurance' && workout.streams && (
+      {!!workout.load && <LoadImpact workout={workout} />}
+
+      {Array.isArray(workout.streams?.t) && (
         <View style={styles.chartSection}>
-          <Text style={typography.h3}>Analisi attività</Text>
+          <Text style={typography.h3}>{workout.tipo === 'endurance' ? 'Analisi attività' : 'Frequenza cardiaca'}</Text>
           <View style={{ marginTop: spacing.sm }}>
             <ActivityCharts streams={workout.streams} sport={workout.sport} />
           </View>
@@ -414,6 +428,9 @@ export default function WorkoutDetailScreen({ route, navigation }) {
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
+              {!!ex.serie_eseguite_json && (() => { let list = []; try { list = JSON.parse(ex.serie_eseguite_json) || []; } catch { list = []; } return list.length ? (
+                <Text style={styles.setsDone} numberOfLines={1}>✓ Fatte: {list.map((set) => `${set.reps ?? '—'}×${set.kg ?? '—'}kg`).join(' · ')}</Text>
+              ) : null; })()}
               {!!ex.note && <Text style={styles.exerciseNote} numberOfLines={2}>{ex.note}</Text>}
               {!!ex.note_atleta && <Text style={styles.athleteNote} numberOfLines={1}>📝 {isCoach ? 'Nota atleta' : 'La mia nota'}: {ex.note_atleta}</Text>}
               {(!!ex.esecuzione_video_url || !!ex.esecuzione_dubbi) && (
@@ -427,6 +444,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </View>
       )}
 
+      {workout.tipo !== 'endurance' && workout.stato !== 'completato' && (
+        <StrengthAnalysis analysis={workout.analisi_forza} onOpenExercise={openExerciseById} />
+      )}
+
       <ExerciseSheet
         visible={!!openExercise}
         exercise={openExercise ? { ...openExercise, video_url: workout.tipo !== 'endurance' ? openExercise.video_url : null } : null}
@@ -436,6 +457,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         onSaved={onExerciseNoteSaved}
         allowExecution={workout.tipo !== 'endurance'}
         onExecutionChange={onExecutionChange}
+        onSetsSaved={onSetsSaved}
       />
 
       {workout.tipo !== 'endurance' && workout.esercizi?.length > 0 && (workout.report || (!isCoach && workout.stato === 'completato')) && (
@@ -532,6 +554,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  setsDone: { fontSize: 12, fontWeight: '700', color: colors.success, marginTop: 4 },
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   typeTag: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 },

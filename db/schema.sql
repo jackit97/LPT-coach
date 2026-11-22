@@ -635,3 +635,8 @@ WHERE cognome IS NULL AND TRIM(nome) ~ '^\S+\s+\S+$';
 
 -- Sezione dieta visibile o no per singolo atleta (NULL = visibile)
 ALTER TABLE lptapp.utenti ADD COLUMN IF NOT EXISTS dieta_visibile BOOLEAN;
+
+-- 20261124_serie_eseguite.sql
+-- Serie eseguite dall'atleta per ogni esercizio degli allenamenti di forza: [{"reps":8,"kg":60,"fatta":true}, ...]
+-- Servono per l'analisi (volume, carico massimo, 1RM stimato, progressi rispetto alle volte precedenti).
+ALTER TABLE lptapp.calendar_workout_exercises ADD COLUMN IF NOT EXISTS serie_eseguite_json TEXT;

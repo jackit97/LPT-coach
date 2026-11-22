@@ -1,4 +1,5 @@
 import { Decoder, Stream } from '@garmin/fitsdk';
+import { categoryLabel } from './strengthAnalysis.js';
 
 // Import di attivita' da file esportati da Garmin Connect, Apple Health (app di export), Coros, Suunto, ecc.
 // Formati: .fit (binario Garmin), .tcx e .gpx (XML). Restituisce un riepilogo uniforme.
@@ -134,9 +135,18 @@ function parseFit(bytes) {
     dislivello: Number.isFinite(Number(lap.totalAscent)) ? Math.round(Number(lap.totalAscent)) : null,
     potenza: Number(lap.avgPower) || null,
   })).filter((lap) => lap.secondi > 0);
+  // allenamento di forza registrato dall'orologio: serie attive con esercizio, ripetizioni e peso
+  const sets = (messages.setMesgs || [])
+    .filter((set) => set.setType === 'active' || set.setType === 1)
+    .map((set) => ({
+      esercizio: categoryLabel(set.category),
+      reps: Number.isFinite(Number(set.repetitions)) && Number(set.repetitions) > 0 ? Number(set.repetitions) : null,
+      kg: Number.isFinite(Number(set.weight)) && Number(set.weight) > 0 ? Math.round(Number(set.weight) * 10) / 10 : null,
+      secondi: Number.isFinite(Number(set.duration)) ? Math.round(Number(set.duration)) : null,
+    }));
   return {
     format: 'fit',
-    streams,
+    streams: sets.length ? { ...(streams || {}), sets } : streams,
     laps,
     localOffsetSeconds: Number.isFinite(localOffsetSeconds) && Math.abs(localOffsetSeconds) <= 14 * 3600 ? localOffsetSeconds : null,
     rawSport,
@@ -365,6 +375,6 @@ export function parseActivityFile(bytes, filename = '') {
     sport: key,
     tipo: strength ? 'forza' : 'endurance',
     distanceKm: parsed.distanceMeters ? Number((parsed.distanceMeters / 1000).toFixed(2)) : 0,
-    title: parsed.name && !/^\d{4}-\d{2}-\d{2}/.test(parsed.name) ? String(parsed.name).slice(0, 120) : `${label} importata`,
+    title: parsed.name && !/^\d{4}-\d{2}-\d{2}/.test(parsed.name) ? String(parsed.name).slice(0, 120) : (strength ? `${label} importato` : `${label} importata`),
   };
 }
