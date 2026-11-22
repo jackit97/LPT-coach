@@ -23,9 +23,9 @@ DB_SCHEMA = "lptapp"
 APP_URL = "https://lpt-coach.pages.dev"
 # Email (verifica indirizzo + notifiche). Provider: "brevo" (consigliato, basta verificare l'indirizzo mittente)
 # oppure "resend" (serve un dominio). La chiave va come secret: npx wrangler secret put EMAIL_API_KEY
-# EMAIL_PROVIDER = "brevo"
-# EMAIL_FROM = "tuo-indirizzo-mittente@gmail.com"
-# EMAIL_FROM_NAME = "LPT Coach"
+EMAIL_PROVIDER = "brevo"
+EMAIL_FROM = "filippocavallini.coach@gmail.com"
+EMAIL_FROM_NAME = "LPT Coach"
 
 [observability]
 enabled = true
