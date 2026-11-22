@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless';
 
 const TABLE_NAMES = [
   'activity_streams',
+  'plan_assignments',
   'athlete_test_results',
   'body_check_photo_data',
   'body_check_photos',

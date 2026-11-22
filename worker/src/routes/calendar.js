@@ -175,6 +175,57 @@ app.get('/', async (c) => {
   return c.json([...workouts, ...events].sort((left, right) => String(left.data).localeCompare(String(right.data))));
 });
 
+// GET /calendar/assigned-plans?utenteId= — piani della libreria assegnati (attivi, futuri e conclusi) con i loro allenamenti
+app.get('/assigned-plans', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const utenteId = user.ruolo === 'cliente' ? user.userId : Number(c.req.query('utenteId'));
+  if (!utenteId) return c.json({ message: 'utenteId richiesto' }, 400);
+  if (user.ruolo === 'personal_trainer' && !await assertCoachOwnsAthlete(sql, user.userId, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
+  let plans;
+  let workouts;
+  try {
+    plans = await sql`SELECT * FROM plan_assignments WHERE utenteid = ${utenteId} ORDER BY data_inizio DESC, assignment_id DESC`;
+    workouts = plans.length ? await sql`
+      SELECT workout_id, plan_assignment_id, data, titolo, tipo, stato, sport, durata_minuti, durata_secondi
+      FROM calendar_workouts WHERE plan_assignment_id = ANY(${plans.map((plan) => plan.assignment_id)})
+      ORDER BY data ASC, workout_id ASC
+    ` : [];
+  } catch (error) {
+    if (/plan_assignment/.test(String(error?.message))) return c.json([]); // migrazione 20261125 non ancora applicata
+    throw error;
+  }
+  const today = todayIso();
+  return c.json(plans.map((plan) => {
+    const allenamenti = workouts.filter((w) => w.plan_assignment_id === plan.assignment_id).map((w) => ({ ...w, data: isoDay(w.data) }));
+    const inizio = isoDay(plan.data_inizio);
+    const fine = isoDay(plan.data_fine);
+    return {
+      ...plan,
+      data_inizio: inizio,
+      data_fine: fine,
+      stato: today < inizio ? 'futuro' : today > fine ? 'concluso' : 'attivo',
+      allenamenti,
+      totale: allenamenti.length,
+      completati: allenamenti.filter((w) => w.stato === 'completato').length,
+    };
+  }));
+});
+
+// DELETE /calendar/assigned-plans/:id — il coach toglie il piano: elimina gli allenamenti non ancora svolti, quelli fatti restano
+app.delete('/assigned-plans/:id{[0-9]+}', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const id = Number(c.req.param('id'));
+  const rows = await sql`SELECT * FROM plan_assignments WHERE assignment_id = ${id}`;
+  if (!rows[0] || !await assertCoachOwnsAthlete(sql, user.userId, rows[0].utenteid)) return c.json({ message: 'Piano non trovato' }, 404);
+  const removed = await sql`
+    DELETE FROM calendar_workouts WHERE plan_assignment_id = ${id} AND stato <> 'completato' RETURNING workout_id
+  `;
+  await sql`DELETE FROM plan_assignments WHERE assignment_id = ${id}`;
+  return c.json({ message: `Piano tolto: ${removed.length} allenamenti non svolti eliminati`, eliminati: removed.length });
+});
+
 app.get('/strength-sheets', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);

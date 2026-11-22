@@ -9,6 +9,7 @@ import AthletePicker from '../components/AthletePicker';
 import LogStrengthDayModal from '../components/LogStrengthDayModal';
 import { colors, spacing, radius, typography } from '../theme';
 import { fullName } from '../utils/names';
+import AssignedPlans from '../components/AssignedPlans';
 
 const iso = (value) => (value ? String(value).slice(0, 10) : null);
 const fmt = (value) => (value ? iso(value).split('-').reverse().join('/') : '—');
@@ -145,6 +146,8 @@ export default function StrengthScreen({ navigation }) {
               {showPast && groups.past.map((sheet) => <SheetCard key={sheet.nome} sheet={sheet} />)}
             </>
           )}
+
+          <AssignedPlans utenteId={targetUserId} kind="forza" isCoach={isCoach} onOpenWorkout={openWorkout} />
         </ScrollView>
       )}
       {isCoach && targetUserId && (

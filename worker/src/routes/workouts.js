@@ -170,13 +170,16 @@ app.get('/templates/mine', async (c) => {
 function templateFields(body) {
   const tipo = ['forza', 'funzionale', 'endurance', 'mobilita', 'test'].includes(body.tipo) ? body.tipo : 'forza';
   const endurance = body.endurance && typeof body.endurance === 'object' ? body.endurance : null;
+  // le colonne sono INT/SMALLINT: valori decimali o testo farebbero fallire l'INSERT
+  const int = (value, max) => { const n = Math.round(Number(String(value ?? '').replace(',', '.'))); return Number.isFinite(n) && n > 0 ? Math.min(n, max) : null; };
+  const minutes = int(body.durataMinuti, 100000);
   return {
-    nome: String(body.nomeTemplate || '').trim(),
+    nome: String(body.nomeTemplate || '').trim().slice(0, 150),
     note: body.noteGenerali ?? null,
     tipo,
-    durataMinuti: Number(body.durataMinuti) || null,
-    durataSecondi: Number(body.durataSecondi) || (Number(body.durataMinuti) ? Number(body.durataMinuti) * 60 : null),
-    rpe: Number(body.rpePianificato) || null,
+    durataMinuti: minutes,
+    durataSecondi: int(body.durataSecondi, 10000000) || (minutes ? minutes * 60 : null),
+    rpe: int(body.rpePianificato, 10),
     enduranceJson: tipo === 'endurance' && endurance ? JSON.stringify({
       ...endurance,
       steps_json: endurance.steps_json && typeof endurance.steps_json !== 'string' ? JSON.stringify(endurance.steps_json) : endurance.steps_json || null,
@@ -189,14 +192,16 @@ async function saveTemplateExercises(sql, templateId, esercizi = []) {
   await sql`DELETE FROM workouttemplateexercises WHERE templateid = ${templateId}`;
   let index = 0;
   for (const exercise of esercizi) {
-    const nome = String(exercise?.nome || exercise?.nomeesercizio || '').trim();
+    const nome = String(exercise?.nome || exercise?.nomeesercizio || '').trim().slice(0, 100);
     if (!nome) continue;
+    const text = (value, max) => (value === null || value === undefined || String(value).trim() === '' ? null : String(value).trim().slice(0, max));
+    const serie = Math.round(Number(String(exercise.serie ?? '').replace(',', '.')));
     await sql`
       INSERT INTO workouttemplateexercises
         (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
-      VALUES (${templateId}, ${nome}, ${Number(exercise.serie) || null}, ${exercise.ripetizioni || null},
-        ${exercise.descrizione ?? exercise.note ?? null}, ${exercise.videoUrl || exercise.video_url || null},
-        ${exercise.recupero || null}, ${exercise.carico || null}, ${index})
+      VALUES (${templateId}, ${nome}, ${Number.isFinite(serie) && serie > 0 ? Math.min(serie, 100) : null}, ${text(exercise.ripetizioni, 50)},
+        ${exercise.descrizione ?? exercise.note ?? null}, ${text(exercise.videoUrl || exercise.video_url, 255)},
+        ${text(exercise.recupero, 50)}, ${text(exercise.carico, 50)}, ${index})
     `;
     index += 1;
   }
@@ -226,6 +231,21 @@ app.post('/templates/:id{[0-9]+}/duplicate', async (c) => {
     nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero, descrizione: e.descrizione, videoUrl: e.videourl,
   })));
   return c.json(await getTemplate(sql, rows[0].templateid, user.userId), 201);
+});
+
+// POST /workouts/plans/:id/duplicate — copia di un piano della libreria (stessi allenamenti negli stessi giorni)
+app.post('/plans/:id{[0-9]+}/duplicate', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const plan = await getPlan(sql, Number(c.req.param('id')), user.userId);
+  if (!plan) return c.json({ message: 'Piano non trovato' }, 404);
+  const rows = await sql`
+    INSERT INTO library_plans (ptuserid, nome, descrizione, settimane)
+    VALUES (${user.userId}, ${`${plan.nome} (copia)`.slice(0, 150)}, ${plan.descrizione || null}, ${plan.settimane})
+    RETURNING plan_id
+  `;
+  await savePlanItems(sql, rows[0].plan_id, user.userId, plan.items.map((item) => ({ templateid: item.templateid, settimana: item.settimana, giorno: item.giorno })));
+  return c.json(await getPlan(sql, rows[0].plan_id, user.userId), 201);
 });
 
 // POST /workouts/templates — nuovo allenamento standard creato dalla libreria
@@ -467,6 +487,8 @@ app.post('/plans/:id{[0-9]+}/assign', async (c) => {
   const templates = new Map();
   for (const item of plan.items) if (!templates.has(item.templateid)) templates.set(item.templateid, await getTemplate(sql, item.templateid, user.userId));
   let created = 0;
+  const lastDay = new Date(start);
+  lastDay.setUTCDate(start.getUTCDate() + plan.settimane * 7 - 1);
   for (const athleteId of athletes) {
     const workouts = [];
     for (const item of plan.items) {
@@ -475,6 +497,19 @@ app.post('/plans/:id{[0-9]+}/assign', async (c) => {
       workouts.push(await insertWorkoutFromSnapshot(sql, user.userId, athleteId, dayOf(item), templateSnapshot(template)));
     }
     created += workouts.length;
+    // il piano resta visibile all'atleta (Pesistica / Endurance) come programma, non solo come allenamenti sparsi
+    try {
+      const assignment = await sql`
+        INSERT INTO plan_assignments (plan_id, coach_id, utenteid, nome, descrizione, settimane, data_inizio, data_fine)
+        VALUES (${plan.plan_id}, ${user.userId}, ${athleteId}, ${plan.nome}, ${plan.descrizione || null}, ${plan.settimane},
+                ${start.toISOString().slice(0, 10)}, ${lastDay.toISOString().slice(0, 10)})
+        RETURNING assignment_id
+      `;
+      const ids = workouts.map((workout) => workout.workout_id);
+      if (ids.length) await sql`UPDATE calendar_workouts SET plan_assignment_id = ${assignment[0].assignment_id} WHERE workout_id = ANY(${ids})`;
+    } catch (error) {
+      if (!/plan_assignment/.test(String(error?.message))) throw error; // migrazione 20261125 non ancora applicata
+    }
     await notifyBulk(sql, user.userId, athleteId, workouts, plan.nome);
   }
   return c.json({ created, startMonday: start.toISOString().slice(0, 10), message: `Piano assegnato: ${created} allenamenti` }, 201);

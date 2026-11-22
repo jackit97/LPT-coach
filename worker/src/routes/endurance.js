@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { resolveTargetUserId, assertAccessToAthlete, assertCoachOwnsAthlete } from '../utils.js';
 import { loadMergedZones, loadAthleteLoad } from '../lib/athleteData.js';
-import { todayIso, addDaysIso } from '../lib/trainingLoad.js';
+import { todayIso, addDaysIso, isoDay } from '../lib/trainingLoad.js';
 import { notifyNewWorkout } from '../lib/notify.js';
 
 const { FitWriter } = FitWriterPkg;
@@ -233,6 +233,24 @@ app.put('/workouts/:id', roleCheck('personal_trainer'), async (c) => {
   if (!await assertCoachOwnsAthlete(sql, user.userId, workout.utenteid)) return c.json({ message: 'Accesso negato' }, 403);
   const sportKey = sport ? normalizeSport(sport) : null;
   const videosJson = Array.isArray(videoUrls) ? JSON.stringify(videoUrls.slice(0, 10)) : null;
+  // allenamento senza sessione (es. duplicato da un'attivita' importata): la crea, cosi' fasi e zone si salvano
+  if (!workout.endurance_session_id) {
+    let plans = await sql`SELECT plan_id FROM endurance_plans WHERE user_id = ${workout.utenteid} AND is_active = 1 ORDER BY plan_id DESC LIMIT 1`;
+    const day = date || isoDay(workout.data);
+    if (!plans[0]) {
+      plans = await sql`
+        INSERT INTO endurance_plans (user_id, title, block, start_date, end_date, weeks, is_active)
+        VALUES (${workout.utenteid}, 'Allenamenti endurance', 'workout', ${day}, ${day}, 1, 1) RETURNING plan_id
+      `;
+    }
+    const created = await sql`
+      INSERT INTO endurance_sessions (plan_id, "date", title, duration_minutes, sport)
+      VALUES (${plans[0].plan_id}, ${day}, ${title || workout.titolo}, ${durationMinutes || workout.durata_minuti || 0}, ${sportKey || workout.sport || null})
+      RETURNING session_id
+    `;
+    workout.endurance_session_id = created[0].session_id;
+    await sql`UPDATE calendar_workouts SET endurance_session_id = ${workout.endurance_session_id} WHERE workout_id = ${workoutId}`;
+  }
   const sessionRows = await sql`
     UPDATE endurance_sessions SET "date" = COALESCE(${date || null}, "date"), title = COALESCE(${title || null}, title),
       zone = COALESCE(${zone || null}, zone), duration_minutes = COALESCE(${durationMinutes || null}, duration_minutes), duration_seconds = COALESCE(${durationSeconds || null}, duration_seconds),

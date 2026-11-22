@@ -12,4 +12,13 @@ api.interceptors.request.use(async (cfg) => {
   return cfg;
 });
 
+// "Server error" da solo non dice niente: mostra anche il motivo restituito dal worker (es. colonna mancante)
+api.interceptors.response.use((response) => response, (error) => {
+  const data = error?.response?.data;
+  if (data && typeof data === 'object' && data.message === 'Server error' && data.detail) {
+    data.message = `Errore del server: ${data.detail}`;
+  }
+  return Promise.reject(error);
+});
+
 export default api;

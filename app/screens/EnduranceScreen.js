@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import AthletePicker from '../components/AthletePicker';
 import { colors, spacing, radius, typography } from '../theme';
+import AssignedPlans from '../components/AssignedPlans';
 
 function formatDuration(workout) {
   const seconds = Number(workout.durata_secondi ?? (Number(workout.durata_minuti) || 0) * 60);
@@ -54,7 +55,12 @@ export default function EnduranceScreen({ navigation }) {
           data={workouts}
           keyExtractor={(item) => String(item.workout_id)}
           contentContainerStyle={{ padding: spacing.lg }}
-          ListHeaderComponent={<Text style={styles.heading}>Allenamenti endurance</Text>}
+          ListHeaderComponent={(
+            <>
+              <AssignedPlans utenteId={targetUserId} kind="endurance" isCoach={isCoach} onOpenWorkout={(workoutId) => navigation.navigate('WorkoutDetail', { workoutId })} />
+              <Text style={[styles.heading, { marginTop: spacing.lg }]}>Tutti gli allenamenti endurance</Text>
+            </>
+          )}
           ListEmptyComponent={<Text style={styles.empty}>Nessun allenamento endurance ancora.</Text>}
           renderItem={({ item }) => (
             <Pressable style={styles.card} onPress={() => navigation.navigate('WorkoutDetail', { workoutId: item.workout_id })}>

@@ -86,6 +86,25 @@ export default function LibraryScreen({ navigation, route }) {
     { text: 'Annulla', style: 'cancel' },
     { text: 'Elimina', style: 'destructive', onPress: async () => { try { await api.delete(`/workouts/templates/${template.templateid}`); load(); } catch (e) { Alert.alert('Errore', e?.response?.data?.message || 'Impossibile eliminare'); } } },
   ]);
+  // copia in libreria e apre subito l'editor sulla copia (variante di un allenamento/piano gia' pronto)
+  const duplicateTemplate = async (template) => {
+    try {
+      const { data } = await api.post(`/workouts/templates/${template.templateid}/duplicate`, {});
+      await load();
+      openEditor(data);
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile duplicare');
+    }
+  };
+  const duplicatePlan = async (plan) => {
+    try {
+      const { data } = await api.post(`/workouts/plans/${plan.plan_id}/duplicate`, {});
+      await load();
+      navigation.navigate('PlanEditor', { planId: data.plan_id });
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile duplicare il piano');
+    }
+  };
   const removePlan = (plan) => Alert.alert('Elimina piano', `Eliminare il piano "${plan.nome}"? Gli allenamenti restano in libreria.`, [
     { text: 'Annulla', style: 'cancel' },
     { text: 'Elimina', style: 'destructive', onPress: async () => { try { await api.delete(`/workouts/plans/${plan.plan_id}`); load(); } catch (e) { Alert.alert('Errore', e?.response?.data?.message || 'Impossibile eliminare'); } } },
@@ -119,6 +138,9 @@ export default function LibraryScreen({ navigation, route }) {
           </Pressable>
           <Pressable style={styles.iconBtn} onPress={() => openEditor(item)} accessibilityLabel="Modifica">
             <Ionicons name="create-outline" size={18} color={colors.primary} />
+          </Pressable>
+          <Pressable style={styles.iconBtn} onPress={() => duplicateTemplate(item)} accessibilityLabel="Duplica">
+            <Ionicons name="copy-outline" size={18} color={colors.primary} />
           </Pressable>
           <Pressable style={[styles.iconBtn, { borderColor: '#FECACA' }]} onPress={() => removeTemplate(item)} accessibilityLabel="Elimina">
             <Ionicons name="trash-outline" size={18} color={colors.danger} />
@@ -155,6 +177,9 @@ export default function LibraryScreen({ navigation, route }) {
           </Pressable>
           <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('PlanEditor', { planId: item.plan_id })} accessibilityLabel="Modifica">
             <Ionicons name="create-outline" size={18} color={colors.primary} />
+          </Pressable>
+          <Pressable style={styles.iconBtn} onPress={() => duplicatePlan(item)} accessibilityLabel="Duplica">
+            <Ionicons name="copy-outline" size={18} color={colors.primary} />
           </Pressable>
           <Pressable style={[styles.iconBtn, { borderColor: '#FECACA' }]} onPress={() => removePlan(item)} accessibilityLabel="Elimina">
             <Ionicons name="trash-outline" size={18} color={colors.danger} />
