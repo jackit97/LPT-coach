@@ -26,6 +26,14 @@ APP_URL = "https://lpt-coach.pages.dev"
 EMAIL_PROVIDER = "brevo"
 EMAIL_FROM = "filippocavallini.coach@gmail.com"
 EMAIL_FROM_NAME = "LPT Coach"
+# Garmin Connect Developer Program: le chiavi vanno come secret
+#   npx wrangler secret put GARMIN_CLIENT_ID
+#   npx wrangler secret put GARMIN_CLIENT_SECRET
+# Redirect URL registrato nel portale Garmin: https://lpt-worker.gc-jack1997.workers.dev/garmin/callback
+
+# Ogni 15 minuti: attivita' Garmin arrivate e invio della settimana di allenamenti al calendario Garmin
+[triggers]
+crons = ["*/15 * * * *"]
 
 [observability]
 enabled = true

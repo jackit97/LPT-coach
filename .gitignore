@@ -7,3 +7,7 @@ out/
 worker/.dev.vars
 worker/.neon-connection
 *.log
+
+# Documentazione Garmin Developer Program (riservata, non pubblicare)
+docs/garmin/*
+!docs/garmin/INTEGRAZIONE.md

@@ -18,6 +18,8 @@ import activitiesRoutes from './routes/activities.js';
 import reportsRoutes from './routes/reports.js';
 import tipsRoutes from './routes/tips.js';
 import devRoutes from './routes/dev.js';
+import garminRoutes from './routes/garmin.js';
+import { runGarminCron } from './lib/garminSync.js';
 import { isDbConfigured, DbNotConfiguredError, db } from './db.js';
 
 const app = new Hono();
@@ -48,6 +50,7 @@ app.route('/tips', tipsRoutes);
 app.route('/notifications', notificationsRoutes);
 app.route('/checks', checksRoutes);
 app.route('/dev', devRoutes);
+app.route('/garmin', garminRoutes);
 
 app.notFound((c) => c.json({ message: 'Not found' }, 404));
 app.onError((err, c) => {
@@ -68,4 +71,10 @@ app.onError((err, c) => {
   return c.json({ message: 'Server error', detail: err.message }, 500);
 });
 
-export default app;
+// Cron (wrangler.toml [triggers]): attivita' Garmin in coda e settimana di allenamenti sul calendario Garmin
+async function scheduled(_event, env, ctx) {
+  if (!isDbConfigured(env)) return;
+  ctx.waitUntil(runGarminCron(db(env), env).catch((error) => console.error('cron garmin', error?.message)));
+}
+
+export default { fetch: app.fetch, scheduled };

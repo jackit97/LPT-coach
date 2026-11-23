@@ -58,6 +58,8 @@ export default function ProfileScreen({ navigation }) {
 
   useEffect(() => { api.get('/users/me').then(({ data }) => setProfile(data)).catch(() => {}); }, []);
 
+  const [garminStatus, setGarminStatus] = useState(null);
+  const [garminBusy, setGarminBusy] = useState(null); // 'connect' | 'sync' | null
   const loadStravaStatus = useCallback(async () => {
     if (isCoach) return;
     try {
@@ -65,6 +67,12 @@ export default function ProfileScreen({ navigation }) {
       setStravaStatus(data);
     } catch (e) {
       // non collegato o offline
+    }
+    try {
+      const { data } = await api.get('/garmin/status');
+      setGarminStatus(data);
+    } catch (e) {
+      // non disponibile
     }
   }, [isCoach]);
 
@@ -129,6 +137,61 @@ export default function ProfileScreen({ navigation }) {
     } finally {
       setSyncingStrava(false);
     }
+  };
+
+  // Garmin Connect: si apre la pagina di Garmin, l'atleta accede e autorizza LPT Coach, poi torna nell'app.
+  const connectGarmin = async () => {
+    setGarminBusy('connect');
+    try {
+      const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+      const { data } = await api.post('/garmin/connect', { origin: isWeb ? window.location.origin : undefined });
+      if (isWeb) {
+        window.location.href = data.url;
+        return;
+      }
+      await Linking.openURL(data.url);
+    } catch (err) {
+      Alert.alert('Garmin', err?.response?.data?.message || 'Non è stato possibile avviare il collegamento con Garmin.');
+    } finally {
+      setGarminBusy(null);
+    }
+  };
+
+  const syncGarminNow = async () => {
+    setGarminBusy('sync');
+    try {
+      const { data } = await api.post('/garmin/sync', {});
+      Alert.alert('Garmin', data.message || 'Settimana inviata a Garmin');
+    } catch (err) {
+      Alert.alert('Garmin', err?.response?.data?.message || 'Invio a Garmin non riuscito');
+    } finally {
+      setGarminBusy(null);
+      loadStravaStatus();
+    }
+  };
+
+  const toggleGarminAuto = async (enabled) => {
+    setGarminStatus((current) => ({ ...(current || {}), auto_sync: enabled }));
+    try { await api.put('/garmin/settings', { auto_sync: enabled }); } catch { setGarminStatus((current) => ({ ...(current || {}), auto_sync: !enabled })); }
+  };
+
+  const disconnectGarmin = () => {
+    Alert.alert('Scollega Garmin', 'Vuoi scollegare il tuo account Garmin? Gli allenamenti futuri inviati verranno tolti dal calendario Garmin.', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Scollega',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.post('/garmin/disconnect');
+            setGarminStatus((current) => ({ configured: current?.configured, connected: false }));
+            Alert.alert('Garmin', 'Account Garmin scollegato');
+          } catch (err) {
+            Alert.alert('Errore', err?.response?.data?.message || 'Impossibile scollegare Garmin');
+          }
+        },
+      },
+    ]);
   };
 
   const disconnectStrava = async () => {
@@ -275,23 +338,66 @@ export default function ProfileScreen({ navigation }) {
 
           </View>
 
-          {/* Placeholder for Garmin connection as on CoachPeaking */}
-          <View style={[styles.connectionItem, { opacity: 0.85 }]}>
+          <View style={styles.connectionItem}>
             <View style={styles.connectionRow}>
-              <View style={styles.connectionBrand}>
+              <View style={[styles.connectionBrand, { flex: 1, minWidth: 0 }]}>
                 <View style={[styles.brandIcon, { backgroundColor: '#007cc3' }]}>
                   <Text style={{ color: '#fff', fontWeight: '900', fontSize: 12 }}>G</Text>
                 </View>
-                <View>
-                  <Text style={styles.brandTitle}>Garmin</Text>
-                  <Text style={styles.brandDesc}>Sincronizzazione orologi e ciclocomputer</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.brandTitle}>Garmin Connect</Text>
+                  <Text style={styles.brandDesc}>
+                    {garminStatus?.connected ? 'Connesso: attività e calendario sincronizzati' : 'Attività svolte in automatico e allenamenti sull\'orologio'}
+                  </Text>
                 </View>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Switch value={false} disabled trackColor={{ false: colors.border }} />
-                <Text style={styles.switchStatusText}>Disponibile via .FIT</Text>
+                <Switch
+                  value={Boolean(garminStatus?.connected)}
+                  onValueChange={(val) => { if (val) connectGarmin(); else disconnectGarmin(); }}
+                  disabled={garminStatus?.configured === false && !garminStatus?.connected}
+                  trackColor={{ true: '#10b981', false: colors.border }}
+                />
+                <Text style={[styles.switchStatusText, garminStatus?.connected && { color: '#10b981' }]}>
+                  {garminStatus?.connected ? 'Connesso' : 'Disconnesso'}
+                </Text>
               </View>
             </View>
+
+            {garminStatus?.connected ? (
+              <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+                <Text style={styles.stravaSyncInfo}>
+                  Ultimo invio allenamenti: {garminStatus.last_push_at ? new Date(garminStatus.last_push_at).toLocaleString('it-IT') : 'in corso…'}
+                  {garminStatus.last_activity_at ? ` · Ultima attività ricevuta: ${new Date(garminStatus.last_activity_at).toLocaleString('it-IT')}` : ''}
+                </Text>
+                <Text style={styles.stravaHint}>
+                  Le attività che registri con l'orologio arrivano da sole nel calendario. {garminStatus.synced?.length ? `${garminStatus.synced.length} allenamenti dei prossimi ${garminStatus.giorni || 7} giorni sono già sul calendario Garmin.` : ''}
+                </Text>
+                {garminStatus.valid === false || garminStatus.last_error ? (
+                  <Text style={styles.stravaWarning}>{garminStatus.valid === false ? 'Collegamento scaduto: scollega e ricollega Garmin.' : garminStatus.last_error}</Text>
+                ) : null}
+                <View style={styles.garminRow}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.garminLabel}>Invia la settimana in automatico</Text>
+                    <Text style={styles.stravaHint}>Gli allenamenti da oggi ai prossimi 7 giorni restano allineati con il calendario Garmin (anche quando il coach li modifica).</Text>
+                  </View>
+                  <Switch value={garminStatus.auto_sync !== false} onValueChange={toggleGarminAuto} trackColor={{ true: '#10b981', false: colors.border }} />
+                </View>
+                <Pressable style={[styles.garminBtn, garminBusy === 'sync' && { opacity: 0.6 }]} onPress={syncGarminNow} disabled={garminBusy === 'sync'}>
+                  {garminBusy === 'sync' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>⌚ Invia ora i prossimi 7 giorni a Garmin</Text>}
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ marginTop: spacing.sm }}>
+                <Pressable style={[styles.garminBtn, garminBusy === 'connect' && { opacity: 0.6 }, garminStatus?.configured === false && { opacity: 0.5 }]} onPress={connectGarmin} disabled={garminBusy === 'connect' || garminStatus?.configured === false}>
+                  {garminBusy === 'connect' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaQuickConnectText}>Connetti con Garmin</Text>}
+                </Pressable>
+                <Text style={styles.stravaHint}>Si apre Garmin Connect: accedi, consenti a LPT Coach di condividere le attività e di inviare gli allenamenti, poi verrai riportato qui. Puoi sempre importare un file .FIT a mano dal calendario.</Text>
+                {garminStatus?.configured === false && (
+                  <Text style={styles.stravaWarning}>Il collegamento Garmin non è ancora attivo sul server.</Text>
+                )}
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -359,6 +465,9 @@ const styles = StyleSheet.create({
   stravaQuickConnectBtn: { backgroundColor: '#FC4C02', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignSelf: 'flex-start' },
   stravaQuickConnectText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
   stravaHint: { fontSize: 11, color: colors.textMuted, marginTop: spacing.xs, lineHeight: 15 },
+  garminBtn: { backgroundColor: '#007cc3', borderRadius: radius.md, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, alignSelf: 'flex-start' },
+  garminRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  garminLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
   stravaWarning: { fontSize: 11, color: colors.danger, marginTop: spacing.xs, fontWeight: '700' },
   warningBox: { width: '100%', maxWidth: 620, marginTop: spacing.xl, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: radius.md, padding: spacing.md },
   warningText: { color: '#92400E', fontWeight: '600' },

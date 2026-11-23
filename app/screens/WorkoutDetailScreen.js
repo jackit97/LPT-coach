@@ -141,6 +141,32 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Garmin Connect: invio dell'allenamento al calendario Garmin (da oggi a 7 giorni)
+  const [garmin, setGarmin] = useState(null);
+  const [sendingGarmin, setSendingGarmin] = useState(false);
+  const athleteOfWorkout = workout?.utenteid;
+  React.useEffect(() => {
+    if (!athleteOfWorkout || workout?.external_provider) return;
+    let active = true;
+    api.get('/garmin/status', isCoach ? { params: { utenteId: athleteOfWorkout } } : undefined)
+      .then(({ data }) => { if (active) setGarmin(data); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [athleteOfWorkout, isCoach, workout?.external_provider]);
+  const sendToGarmin = async () => {
+    setSendingGarmin(true);
+    try {
+      const { data } = await api.post('/garmin/sync', { workoutId }, isCoach ? { params: { utenteId: athleteOfWorkout } } : undefined);
+      Alert.alert('Garmin', data.message || 'Allenamento inviato a Garmin');
+      const { data: status } = await api.get('/garmin/status', isCoach ? { params: { utenteId: athleteOfWorkout } } : undefined);
+      setGarmin(status);
+    } catch (e) {
+      Alert.alert('Garmin', e?.response?.data?.message || 'Invio a Garmin non riuscito');
+    } finally {
+      setSendingGarmin(false);
+    }
+  };
+
   const submitFeedback = async (completato) => {
     setSaving(true);
     try {
@@ -281,6 +307,12 @@ export default function WorkoutDetailScreen({ route, navigation }) {
     } catch (error) { Alert.alert('Errore', error?.response?.data?.message || 'Impossibile esportare il workout FIT'); }
   };
 
+  const isoLocal = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const workoutDay = String(workout.data || '').slice(0, 10);
+  const onGarmin = (garmin?.synced || []).some((row) => row.workout_id === workout.workout_id && !row.error);
+  const garminWindow = onGarmin || (workoutDay >= isoLocal(new Date()) && workoutDay <= isoLocal(new Date(Date.now() + (garmin?.giorni || 7) * 86400000)));
+  const canSendGarmin = Boolean(garmin?.connected) && !workout.external_provider && workout.stato !== 'completato' && workout.tipo !== 'riposo';
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: spacing.lg }}>
       <View style={[styles.typeTag, { backgroundColor: typeColor + '1A', borderColor: typeColor }]}>
@@ -415,6 +447,24 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         <View style={styles.section}>
           <Text style={typography.h3}>Descrizione</Text>
           <Text style={styles.paragraph}>{workout.descrizione}</Text>
+        </View>
+      )}
+
+      {canSendGarmin && (
+        <View style={styles.garminBox}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.garminTitle}>{onGarmin ? '✓ Sul calendario Garmin' : 'Garmin Connect'}</Text>
+            <Text style={styles.garminText}>
+              {garminWindow
+                ? (onGarmin ? 'Lo trovi sull\'orologio dopo la sincronizzazione con l\'app Garmin Connect. Le modifiche vengono riportate in automatico.' : 'Invialo al calendario Garmin per seguirlo dall\'orologio.')
+                : `Si può inviare a Garmin da ${garmin?.giorni || 7} giorni prima: verrà inviato in automatico quando entra nella settimana.`}
+            </Text>
+          </View>
+          {garminWindow && (
+            <Pressable style={[styles.garminSend, sendingGarmin && { opacity: 0.6 }]} onPress={sendToGarmin} disabled={sendingGarmin}>
+              {sendingGarmin ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.garminSendText}>{onGarmin ? 'Aggiorna' : '⌚ Invia a Garmin'}</Text>}
+            </Pressable>
+          )}
         </View>
       )}
 
@@ -636,6 +686,11 @@ const styles = StyleSheet.create({
   loadHead: { fontSize: 10, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' },
   loadNote: { fontSize: 11, color: colors.textMuted, marginTop: spacing.xs },
   section: { marginTop: spacing.xl },
+  garminBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: '#e8f4fb', borderWidth: 1, borderColor: '#b6dcf0' },
+  garminTitle: { fontSize: 14, fontWeight: '800', color: '#00578a' },
+  garminText: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
+  garminSend: { backgroundColor: '#007cc3', borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
+  garminSendText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   fitButton: { alignSelf: 'flex-start', marginTop: spacing.sm, backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
   fitButtonText: { color: colors.textInverse, fontWeight: '700', fontSize: 12 },
   paragraph: { ...typography.body, marginTop: spacing.sm, lineHeight: 20 },

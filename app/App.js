@@ -606,18 +606,28 @@ class ErrorBoundary extends React.Component {
 function useStravaReturnNotice() {
   useEffect(() => {
     const notify = (url) => {
-      if (!url || !/strava=(connected|error)/.test(url)) return;
-      const ok = /strava=connected/.test(url);
-      const imported = (url.match(/[?&]n=(\d+)/) || [])[1];
-      const title = ok ? 'Strava collegato' : 'Strava';
-      const text = ok ? `Account collegato${imported ? `: importate ${imported} attività nel calendario` : ''}.` : 'Collegamento non riuscito, riprova dal Profilo.';
+      if (!url) return;
+      let title;
+      let text;
+      if (/garmin=(connected|error|denied)/.test(url)) {
+        const ok = /garmin=connected/.test(url);
+        title = ok ? 'Garmin collegato' : 'Garmin';
+        text = ok
+          ? 'Account collegato: le attività che registri arriveranno da sole e gli allenamenti dei prossimi 7 giorni vengono inviati al calendario Garmin (sincronizza l\'orologio con l\'app Garmin Connect).'
+          : /denied/.test(url) ? 'Autorizzazione annullata su Garmin.' : 'Collegamento non riuscito, riprova dal Profilo.';
+      } else if (/strava=(connected|error)/.test(url)) {
+        const ok = /strava=connected/.test(url);
+        const imported = (url.match(/[?&]n=(\d+)/) || [])[1];
+        title = ok ? 'Strava collegato' : 'Strava';
+        text = ok ? `Account collegato${imported ? `: importate ${imported} attività nel calendario` : ''}.` : 'Collegamento non riuscito, riprova dal Profilo.';
+      } else return;
       // Alert di react-native-web non mostra nulla: sul web si usa l'alert del browser
       if (Platform.OS === 'web' && typeof window !== 'undefined') setTimeout(() => window.alert(`${title}\n${text}`), 600);
       else Alert.alert(title, text);
     };
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       notify(window.location.search);
-      if (/strava=/.test(window.location.search) && window.history?.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+      if (/(strava|garmin)=/.test(window.location.search) && window.history?.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
       return undefined;
     }
     Linking.getInitialURL().then(notify).catch(() => {});

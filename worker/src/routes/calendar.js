@@ -1006,7 +1006,7 @@ app.delete('/:id', async (c) => {
   const user = c.get('user');
   // L'atleta puo' eliminare solo le proprie attivita' importate da file (per poterle ricaricare)
   if (user.ruolo === 'cliente') {
-    const rows = await sql`SELECT workout_id FROM calendar_workouts WHERE workout_id = ${id} AND utenteid = ${user.userId} AND external_provider = 'file'`;
+    const rows = await sql`SELECT workout_id FROM calendar_workouts WHERE workout_id = ${id} AND utenteid = ${user.userId} AND external_provider IN ('file', 'garmin')`;
     if (!rows.length) return c.json({ message: 'Puoi eliminare solo le attività che hai importato da file' }, 403);
     await sql`DELETE FROM calendar_workouts WHERE workout_id = ${id}`;
     return c.json({ message: 'Eliminato' });
