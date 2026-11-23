@@ -63,8 +63,6 @@ app.get('/callback', async (c) => {
         refresh_token = EXCLUDED.refresh_token, access_expires_at = EXCLUDED.access_expires_at, refresh_expires_at = EXCLUDED.refresh_expires_at,
         permissions = EXCLUDED.permissions, updated_at = NOW(), last_error = NULL
     `;
-    // prima settimana subito sul calendario Garmin
-    background(c, syncUserWorkouts(sql, c.env, stateRow.utenteid, { budget: 24 }));
     return back('connected');
   } catch (err) {
     console.error('garmin callback', err?.message, err?.body);

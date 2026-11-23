@@ -456,8 +456,8 @@ export default function WorkoutDetailScreen({ route, navigation }) {
             <Text style={styles.garminTitle}>{onGarmin ? '✓ Sul calendario Garmin' : 'Garmin Connect'}</Text>
             <Text style={styles.garminText}>
               {garminWindow
-                ? (onGarmin ? 'Lo trovi sull\'orologio dopo la sincronizzazione con l\'app Garmin Connect. Le modifiche vengono riportate in automatico.' : 'Invialo al calendario Garmin per seguirlo dall\'orologio.')
-                : `Si può inviare a Garmin da ${garmin?.giorni || 7} giorni prima: verrà inviato in automatico quando entra nella settimana.`}
+                ? (onGarmin ? 'Lo trovi sull\'orologio dopo la sincronizzazione con l\'app Garmin Connect. Se cambia, premi Aggiorna.' : 'Invialo al calendario Garmin per seguirlo dall\'orologio.')
+                : `Si può inviare a Garmin a partire da ${garmin?.giorni || 7} giorni prima.`}
             </Text>
           </View>
           {garminWindow && (

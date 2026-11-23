@@ -6,8 +6,8 @@
   Doppioni con import da file/Strava vengono riconosciuti.
 - **Allenamenti LPT → Garmin** (Training API V2): gli allenamenti pianificati da oggi a +7 giorni (endurance: corsa, bici,
   nuoto con step, ripetute e zone; forza/funzionale: esercizi con serie, ripetizioni, carico e recupero) vengono creati e
-  pianificati nel calendario Garmin. Un cron ogni 15 minuti li tiene allineati (modifiche del coach, eliminazioni, spostamenti).
-  L'atleta può anche inviare subito dalla scheda Profilo o dal dettaglio del workout.
+  pianificati nel calendario Garmin quando l'atleta (o il coach) preme il pulsante nel Profilo o nel dettaglio del workout.
+  Ogni nuovo invio aggiorna anche i modificati e toglie quelli eliminati o spostati. Nessun cron (per non risvegliare Neon).
 - Restano import manuale (.fit/.tcx/.gpx) ed export .FIT.
 
 ## Configurazione

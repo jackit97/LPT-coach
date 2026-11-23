@@ -71,7 +71,7 @@ app.onError((err, c) => {
   return c.json({ message: 'Server error', detail: err.message }, 500);
 });
 
-// Cron (wrangler.toml [triggers]): attivita' Garmin in coda e settimana di allenamenti sul calendario Garmin
+// Cron facoltativo (oggi non attivo in wrangler.toml): attivita' Garmin in coda e settimana sul calendario Garmin
 async function scheduled(_event, env, ctx) {
   if (!isDbConfigured(env)) return;
   ctx.waitUntil(runGarminCron(db(env), env).catch((error) => console.error('cron garmin', error?.message)));

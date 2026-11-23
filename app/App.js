@@ -613,7 +613,7 @@ function useStravaReturnNotice() {
         const ok = /garmin=connected/.test(url);
         title = ok ? 'Garmin collegato' : 'Garmin';
         text = ok
-          ? 'Account collegato: le attività che registri arriveranno da sole e gli allenamenti dei prossimi 7 giorni vengono inviati al calendario Garmin (sincronizza l\'orologio con l\'app Garmin Connect).'
+          ? 'Account collegato: le attività che registri arriveranno da sole. Dal Profilo (o dal dettaglio di un allenamento) invia a Garmin gli allenamenti dei prossimi 7 giorni.'
           : /denied/.test(url) ? 'Autorizzazione annullata su Garmin.' : 'Collegamento non riuscito, riprova dal Profilo.';
       } else if (/strava=(connected|error)/.test(url)) {
         const ok = /strava=connected/.test(url);

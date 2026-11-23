@@ -30,10 +30,8 @@ EMAIL_FROM_NAME = "LPT Coach"
 #   npx wrangler secret put GARMIN_CLIENT_ID
 #   npx wrangler secret put GARMIN_CLIENT_SECRET
 # Redirect URL registrato nel portale Garmin: https://lpt-worker.gc-jack1997.workers.dev/garmin/callback
-
-# Ogni 15 minuti: attivita' Garmin arrivate e invio della settimana di allenamenti al calendario Garmin
-[triggers]
-crons = ["*/15 * * * *"]
+# Invio degli allenamenti a Garmin solo manuale (pulsanti nell'app): nessun cron, cosi' il database Neon
+# non viene risvegliato di continuo. Le attivita' svolte arrivano comunque subito via push.
 
 [observability]
 enabled = true

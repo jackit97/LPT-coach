@@ -170,11 +170,6 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const toggleGarminAuto = async (enabled) => {
-    setGarminStatus((current) => ({ ...(current || {}), auto_sync: enabled }));
-    try { await api.put('/garmin/settings', { auto_sync: enabled }); } catch { setGarminStatus((current) => ({ ...(current || {}), auto_sync: !enabled })); }
-  };
-
   const disconnectGarmin = () => {
     Alert.alert('Scollega Garmin', 'Vuoi scollegare il tuo account Garmin? Gli allenamenti futuri inviati verranno tolti dal calendario Garmin.', [
       { text: 'Annulla', style: 'cancel' },
@@ -367,7 +362,7 @@ export default function ProfileScreen({ navigation }) {
             {garminStatus?.connected ? (
               <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
                 <Text style={styles.stravaSyncInfo}>
-                  Ultimo invio allenamenti: {garminStatus.last_push_at ? new Date(garminStatus.last_push_at).toLocaleString('it-IT') : 'in corso…'}
+                  Ultimo invio allenamenti: {garminStatus.last_push_at ? new Date(garminStatus.last_push_at).toLocaleString('it-IT') : 'mai'}
                   {garminStatus.last_activity_at ? ` · Ultima attività ricevuta: ${new Date(garminStatus.last_activity_at).toLocaleString('it-IT')}` : ''}
                 </Text>
                 <Text style={styles.stravaHint}>
@@ -376,13 +371,7 @@ export default function ProfileScreen({ navigation }) {
                 {garminStatus.valid === false || garminStatus.last_error ? (
                   <Text style={styles.stravaWarning}>{garminStatus.valid === false ? 'Collegamento scaduto: scollega e ricollega Garmin.' : garminStatus.last_error}</Text>
                 ) : null}
-                <View style={styles.garminRow}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.garminLabel}>Invia la settimana in automatico</Text>
-                    <Text style={styles.stravaHint}>Gli allenamenti da oggi ai prossimi 7 giorni restano allineati con il calendario Garmin (anche quando il coach li modifica).</Text>
-                  </View>
-                  <Switch value={garminStatus.auto_sync !== false} onValueChange={toggleGarminAuto} trackColor={{ true: '#10b981', false: colors.border }} />
-                </View>
+                <Text style={styles.stravaHint}>Con il pulsante qui sotto gli allenamenti da oggi ai prossimi 7 giorni vengono inviati al calendario Garmin; se il coach li modifica o li elimina, premilo di nuovo per aggiornarli.</Text>
                 <Pressable style={[styles.garminBtn, garminBusy === 'sync' && { opacity: 0.6 }]} onPress={syncGarminNow} disabled={garminBusy === 'sync'}>
                   {garminBusy === 'sync' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>⌚ Invia ora i prossimi 7 giorni a Garmin</Text>}
                 </Pressable>
