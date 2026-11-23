@@ -1,0 +1,67 @@
+{
+ "versione": "2026-11",
+ "it": [
+  [
+   "Titolare del trattamento",
+   "Filippo Cavallini, via Trebbo 11, Argenta (FE), Italia, email filippocavallini.coach@gmail.com."
+  ],
+  [
+   "Quali dati trattiamo",
+   "Dati di registrazione (nome, cognome, email, password cifrata); dati del profilo (data di nascita, sesso, peso, altezza, obiettivi, giorni di allenamento); dati sugli allenamenti (programmi, feedback, RPE, carichi, serie, note); dati da dispositivi e app collegate (frequenza cardiaca, percorsi GPS, passo, potenza, attività importate da file, da Strava o da Garmin Connect); piani alimentari; foto dei check e video di esecuzione; pagamenti registrati dal coach; dati tecnici di utilizzo (accessi, minuti di utilizzo, errori dell'app)."
+  ],
+  [
+   "Dati sulla salute",
+   "Peso, frequenza cardiaca, alimentazione, foto dei progressi e altre informazioni fisiche sono \"categorie particolari di dati\" (art. 9 GDPR). Li trattiamo solo con il tuo consenso esplicito, per permettere al coach di programmare e seguire il tuo allenamento. Puoi revocare il consenso in qualsiasi momento scrivendo al titolare: in quel caso non sarà più possibile usare l'app."
+  ],
+  [
+   "Garmin Connect",
+   "Il collegamento con Garmin Connect è facoltativo e lo attivi tu dal tuo Profilo. Se lo colleghi: (1) riceviamo da Garmin le attività che registri con il tuo dispositivo (tipo di sport, data e ora, durata, distanza, frequenza cardiaca, passo/velocità, potenza, cadenza, quota, percorso GPS, giri e il relativo file FIT); le usiamo solo per mostrarle a te e al tuo coach nel calendario, per i grafici, l'analisi del carico di allenamento e per abbinarle all'allenamento programmato; (2) inviamo al tuo calendario Garmin Connect gli allenamenti che il tuo coach ti assegna, così puoi eseguirli sul dispositivo. I dati Garmin non vengono venduti, non vengono condivisi con terzi diversi dai fornitori tecnici elencati sotto e non vengono usati per pubblicità. Puoi scollegare Garmin in qualsiasi momento dal Profilo di LPT Coach o dalle impostazioni di Garmin Connect: da quel momento non riceviamo più dati. Le attività già importate restano nel tuo storico di allenamento; puoi eliminarle singolarmente dall'app o chiederne la cancellazione completa al titolare."
+  ],
+  [
+   "Intelligenza artificiale",
+   "Nessun sistema di intelligenza artificiale elabora i tuoi dati di allenamento o i dati ricevuti da Garmin: analisi e avvisi dell'app sono calcolati con regole fisse. I dati Garmin e quelli derivati non vengono mai usati per addestrare, valutare o migliorare modelli di intelligenza artificiale."
+  ],
+  [
+   "Perché li trattiamo",
+   "Fornire il servizio di coaching (programmazione, monitoraggio, comunicazioni tra coach e atleta) sulla base del contratto; inviare notifiche in app e via email; garantire sicurezza e corretto funzionamento dell'app (registro degli errori e degli accessi) sulla base del legittimo interesse; adempiere a obblighi di legge (es. fiscali per i pagamenti)."
+  ],
+  [
+   "Chi può vedere i dati",
+   "Il tuo coach; lo sviluppatore che gestisce l'app per conto del titolare, solo per assistenza e manutenzione; i fornitori che ospitano il servizio come responsabili del trattamento: Cloudflare, Inc. (hosting dell'app e del server, archiviazione di file, foto e video), Neon (database PostgreSQL), Brevo (invio delle email di verifica e notifica: riceve solo nome, email e testo della notifica) e, solo se li colleghi tu, Strava e Garmin. Alcuni fornitori possono trattare dati fuori dall'Unione Europea con le garanzie previste dal GDPR (clausole contrattuali standard / EU-US Data Privacy Framework). I dati non vengono venduti né usati per pubblicità."
+  ],
+  [
+   "Per quanto tempo",
+   "Per tutta la durata del rapporto con il coach e fino alla cancellazione dell'account; i dati di pagamento per il tempo richiesto dalla legge; i registri tecnici (errori e accessi) per al massimo 12 mesi."
+  ],
+  [
+   "I tuoi diritti",
+   "Puoi accedere ai tuoi dati e correggerli dall'app (Profilo, calendario, attività); puoi chiedere copia (portabilità), cancellazione, limitazione, opporti al trattamento e revocare i consensi scrivendo a filippocavallini.coach@gmail.com o dalla sezione \"Feedback / errori app\". Rispondiamo entro 30 giorni. Hai diritto di proporre reclamo al Garante per la protezione dei dati personali (www.garanteprivacy.it)."
+  ],
+  [
+   "Termini d'uso",
+   "L'app è uno strumento di supporto al rapporto tra coach e atleta e non sostituisce il parere medico. Prima di iniziare un programma di allenamento o alimentare consulta il tuo medico. Sei responsabile della correttezza dei dati che inserisci e della riservatezza delle tue credenziali. Non caricare contenuti di terzi senza il loro consenso."
+  ]
+ ],
+ "en": [
+  [
+   "Data controller",
+   "Filippo Cavallini, via Trebbo 11, Argenta (FE), Italy, email filippocavallini.coach@gmail.com."
+  ],
+  [
+   "Garmin Connect data",
+   "Connecting a Garmin Connect account is optional and initiated by the user from their profile. When connected, LPT Coach (1) receives the user's activities recorded on Garmin devices (sport, date/time, duration, distance, heart rate, pace/speed, power, cadence, elevation, GPS track, laps and the FIT file) and uses them only to show them to the user and to their own coach, to draw charts, compute training load and match them with the planned workout; (2) publishes the workouts assigned by the coach to the user's Garmin Connect calendar. Garmin data is never sold, never used for advertising and is not shared with third parties other than the service providers listed below."
+  ],
+  [
+   "Third parties processing Garmin data",
+   "Cloudflare, Inc. (hosting of the web app and backend API, file storage) and Neon (managed PostgreSQL database), acting as data processors. Brevo receives only name, email and notification text for transactional emails, not Garmin device data. No analytics, advertising or AI providers receive Garmin data."
+  ],
+  [
+   "AI transparency",
+   "No AI system processes Garmin data or training data in LPT Coach; analyses are rule-based. Garmin data and anything derived from it is never used to train, evaluate or improve AI models."
+  ],
+  [
+   "User rights",
+   "Users can view and correct their data in the app, delete imported activities, disconnect Garmin at any time from their LPT Coach profile or from Garmin Connect (data sharing stops immediately), and request access, export, deletion of their data or withdraw consent by writing to filippocavallini.coach@gmail.com. Requests are answered within 30 days."
+  ]
+ ]
+}

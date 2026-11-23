@@ -71,3 +71,23 @@ if (fs.existsSync(fromAssets)) {
   }
   console.log(`Asset spostati in assets/vendor (${rewritten} file aggiornati)`);
 }
+
+// Informativa privacy pubblica (/privacy.html): stesso testo della schermata Privacy dell'app (privacy.json),
+// richiesta anche da Garmin per l'integrazione con Garmin Connect.
+const privacy = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'privacy.json'), 'utf8'));
+const esc = (text) => String(text).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const sectionsHtml = (list) => list.map(([heading, text]) => `<h2>${esc(heading)}</h2>\n<p>${esc(text)}</p>`).join('\n');
+fs.writeFileSync(path.join(distDir, 'privacy.html'), `<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy - LPT Coach</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;max-width:760px;margin:0 auto;padding:24px 18px 48px;color:#101828;line-height:1.55}
+h1{font-size:26px;margin-bottom:4px}h2{font-size:17px;margin-top:26px}p{margin:6px 0}.meta{color:#667085;font-size:13px}hr{margin:36px 0;border:0;border-top:1px solid #EAECF0}</style>
+</head><body>
+<h1>Informativa privacy e termini d'uso – LPT Coach</h1>
+<p class="meta">Versione ${esc(privacy.versione)} · ai sensi del Regolamento (UE) 2016/679 (GDPR)</p>
+${sectionsHtml(privacy.it)}
+<hr>
+<h1 lang="en">Privacy summary (English)</h1>
+${sectionsHtml(privacy.en)}
+</body></html>`);
+console.log('privacy.html generata');
