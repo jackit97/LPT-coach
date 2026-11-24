@@ -5,6 +5,7 @@ const TABLE_NAMES = [
   'app_activity',
   'app_errors',
   'app_feedback',
+  'app_feedback_messages',
   'garmin_activity_queue',
   'garmin_connections',
   'garmin_oauth_states',

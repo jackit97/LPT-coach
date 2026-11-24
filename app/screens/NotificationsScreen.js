@@ -87,7 +87,7 @@ export default function NotificationsScreen({ navigation }) {
       if (client) setSelectedAthlete(client);
     }
     // risposta a una segnalazione: si apre la pagina Feedback nello stack attuale
-    if (link.screen === 'Feedback') { navigation.navigate('Feedback'); return; }
+    if (link.screen === 'Feedback') { navigation.navigate('Feedback', link.params || {}); return; }
     const tab = TARGET_TABS[link.screen];
     if (tab === 'DietsTab' && !dietEnabled) return; // sezione dieta nascosta dal coach
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });

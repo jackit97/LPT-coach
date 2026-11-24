@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { appVersion } from '../utils/errorReporter';
 import { colors, spacing, radius } from '../theme';
+import FeedbackThread from '../components/FeedbackThread';
 
 // Feedback / errori app: coach e atleti segnalano cosa non va o cosa migliorare; arriva al profilo developer.
 const TYPES = [
@@ -19,7 +20,10 @@ export const FEEDBACK_STATUS = {
   chiuso: { label: 'Chiusa', color: colors.textMuted },
 };
 
-export default function FeedbackScreen() {
+export default function FeedbackScreen({ route }) {
+  const focusId = Number(route?.params?.feedbackId) || null;
+  const [openId, setOpenId] = useState(focusId);
+  React.useEffect(() => { if (focusId) setOpenId(focusId); }, [focusId]);
   const [tipo, setTipo] = useState('bug');
   const [schermata, setSchermata] = useState('');
   const [messaggio, setMessaggio] = useState('');
@@ -51,7 +55,7 @@ export default function FeedbackScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Feedback / errori app</Text>
-      <Text style={styles.intro}>Hai trovato un errore o hai un'idea per migliorare LPT Coach? Scrivilo qui: arriva direttamente a chi sviluppa l'app e riceverai una notifica quando viene preso in carico.</Text>
+      <Text style={styles.intro}>Hai trovato un errore o hai un'idea per migliorare LPT Coach? Scrivilo qui: arriva direttamente a chi sviluppa l'app e riceverai una notifica (ed email) a ogni risposta e potrai rispondere qui sotto, come in una chat.</Text>
 
       <Text style={styles.label}>Di cosa si tratta?</Text>
       <View style={styles.types}>
@@ -75,16 +79,22 @@ export default function FeedbackScreen() {
         <Text style={styles.empty}>Nessuna segnalazione inviata.</Text>
       ) : mine.map((item) => {
         const status = FEEDBACK_STATUS[item.stato] || FEEDBACK_STATUS.nuovo;
+        const open = openId === item.feedback_id;
+        const replies = Number(item.n_messaggi) || (item.risposta ? 1 : 0);
         return (
-          <View key={item.feedback_id} style={styles.card}>
-            <View style={styles.cardHead}>
-              <Text style={styles.cardDate}>{new Date(item.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
-              <Text style={[styles.badge, { color: status.color, borderColor: status.color }]}>{status.label}</Text>
-            </View>
-            <Text style={styles.cardText}>{item.messaggio}</Text>
-            {!!item.risposta && (
-              <View style={styles.reply}><Text style={styles.replyLabel}>Risposta</Text><Text style={styles.cardText}>{item.risposta}</Text></View>
-            )}
+          <View key={item.feedback_id} style={[styles.card, item.da_leggere && styles.cardUnread]}>
+            <Pressable onPress={() => { setOpenId(open ? null : item.feedback_id); if (!open && item.da_leggere) setTimeout(load, 800); }}>
+              <View style={styles.cardHead}>
+                <Text style={styles.cardDate}>{new Date(item.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                  {item.da_leggere && <Text style={styles.unread}>Nuova risposta</Text>}
+                  <Text style={[styles.badge, { color: status.color, borderColor: status.color }]}>{status.label}</Text>
+                </View>
+              </View>
+              {!open && <Text style={styles.cardText} numberOfLines={2}>{item.messaggio}</Text>}
+              <Text style={styles.toggle}>{open ? '▲ Chiudi' : replies ? `▼ Apri conversazione (${replies} ${replies === 1 ? 'messaggio' : 'messaggi'})` : '▼ Apri conversazione'}</Text>
+            </Pressable>
+            {open && <FeedbackThread feedbackId={item.feedback_id} onChanged={load} />}
           </View>
         );
       })}
@@ -113,6 +123,9 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 12, color: colors.textMuted },
   badge: { fontSize: 11, fontWeight: '800', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   cardText: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  cardUnread: { borderColor: colors.primary, borderWidth: 1.5 },
+  unread: { fontSize: 11, fontWeight: '800', color: '#fff', backgroundColor: colors.danger, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden' },
+  toggle: { fontSize: 12, fontWeight: '800', color: colors.primary, marginTop: spacing.sm },
   reply: { marginTop: spacing.sm, backgroundColor: colors.primaryLight, borderRadius: radius.md, padding: spacing.sm },
   replyLabel: { fontSize: 11, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', marginBottom: 2 },
 });
