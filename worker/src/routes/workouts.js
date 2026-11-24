@@ -4,6 +4,9 @@ import { authenticate, roleCheck } from '../auth.js';
 import { assertCoachOwnsAthlete } from '../utils.js';
 import { notifyNewWorkout, notify } from '../lib/notify.js';
 import { insertWorkoutsBulk } from '../lib/bulkWorkouts.js';
+import { loadMergedZones } from '../lib/athleteData.js';
+import { hrToZone } from '../lib/trainingLoad.js';
+import { exercisesFromFileSets } from '../lib/strengthAnalysis.js';
 
 const app = new Hono();
 app.use('*', authenticate());
@@ -31,6 +34,62 @@ async function loadWorkoutSnapshot(sql, workoutId, coachId) {
     ? (await sql`SELECT * FROM endurance_sessions WHERE session_id = ${workout.endurance_session_id}`)[0] || null
     : null;
   return { workout, esercizi, endurance };
+}
+
+const clock = (seconds) => {
+  const total = Math.max(0, Math.round(seconds));
+  return `${Math.floor(total / 3600)}:${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+
+async function structureFromActivity(sql, workout) {
+  let row;
+  try { row = (await sql`SELECT samples_json, laps_json FROM activity_streams WHERE workout_id = ${workout.workout_id}`)[0]; } catch { row = null; }
+  if (!row) return {};
+  let laps = [];
+  let samples = {};
+  try { laps = JSON.parse(row.laps_json || '[]') || []; } catch { laps = []; }
+  try { samples = JSON.parse(row.samples_json || '{}') || {}; } catch { samples = {}; }
+
+  if (workout.tipo !== 'endurance') {
+    const groups = exercisesFromFileSets(samples.sets || []);
+    return {
+      esercizi: groups.map((group) => {
+        const reps = group.sets.map((set) => set.reps).filter(Boolean);
+        const kgs = group.sets.map((set) => set.kg).filter(Boolean);
+        const secs = group.sets.map((set) => set.secondi).filter(Boolean);
+        const common = reps.length ? reps.sort((a, b) => reps.filter((v) => v === b).length - reps.filter((v) => v === a).length)[0] : null;
+        return {
+          nome: group.nome, serie: group.sets.length,
+          ripetizioni: common ? String(common) : secs.length && !reps.length ? `${Math.round(Math.max(...secs))}s` : null,
+          carico: kgs.length ? `${Math.max(...kgs)} kg` : null, note: null, video_url: null, recupero: null,
+        };
+      }),
+    };
+  }
+
+  const valid = laps.filter((lap) => Number(lap.secondi) > 0);
+  if (!valid.length) return {};
+  let hrZones = [];
+  try { hrZones = (await loadMergedZones(sql, workout.utenteid)).heartRate || []; } catch { hrZones = []; }
+  const steps = valid.slice(0, 60).map((lap, index) => {
+    const meters = Math.round(Number(lap.metri) || 0);
+    const type = valid.length > 2 && index === 0 ? 'Riscaldamento' : valid.length > 2 && index === valid.length - 1 ? 'Defaticamento' : 'Lavoro';
+    return {
+      type,
+      ...(meters >= 50 ? { unit: 'mt', value: String(meters) } : { unit: 'mm:ss', value: clock(lap.secondi).replace(/^0:/, '') }),
+      duration: clock(lap.secondi),
+      zone: hrToZone(lap.fc_media, hrZones) || 'Z2',
+      notes: lap.fc_media ? `FC media ${Math.round(lap.fc_media)} bpm` : '',
+    };
+  });
+  const seconds = valid.reduce((sum, lap) => sum + Number(lap.secondi), 0);
+  return {
+    endurance: {
+      zone: null, target: null, description: null, rpe_target: null, steps_text: null, steps_json: JSON.stringify(steps),
+      duration_minutes: Math.round(seconds / 60), duration_seconds: Math.round(seconds), sport: workout.sport,
+      elevation_m: workout.elev_gain_m || null, video_urls_json: null,
+    },
+  };
 }
 
 // Creates a calendar workout (plus exercises / endurance session) from a normalized snapshot.
@@ -106,6 +165,13 @@ app.post('/templates/from-workout/:id', async (c) => {
   if (!snap) return c.json({ message: 'Workout non trovato' }, 404);
 
   const w = snap.workout;
+  // attivita' svolta senza struttura del coach (Garmin/file/Strava): le fasi vengono ricostruite dai giri
+  // (endurance) o dalle serie registrate dall'orologio (forza), cosi' in libreria non resta solo il titolo
+  if (!snap.endurance && !snap.esercizi.length) {
+    const rebuilt = await structureFromActivity(sql, w);
+    if (rebuilt.endurance) snap.endurance = rebuilt.endurance;
+    if (rebuilt.esercizi?.length) snap.esercizi = rebuilt.esercizi;
+  }
   const enduranceJson = snap.endurance ? JSON.stringify({
     zone: snap.endurance.zone, target: snap.endurance.target, description: snap.endurance.description,
     rpe_target: snap.endurance.rpe_target, steps_text: snap.endurance.steps_text, steps_json: snap.endurance.steps_json,

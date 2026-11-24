@@ -252,7 +252,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 
   const deleteWorkout = () => {
     const imported = workout?.external_provider === 'file';
-    Alert.alert(imported ? 'Elimina attività' : 'Elimina workout', imported ? 'Eliminare questa attività importata? Potrai ricaricare il file con ⤓ Importa.' : 'Sei sicuro?', [
+    const done = workout?.stato === 'completato';
+    const message = imported ? 'Eliminare questa attività importata? Potrai ricaricare il file con ⤓ Importa.'
+      : done ? `Eliminare "${workout?.titolo}" e i dati registrati (feedback, serie, grafici)? L'operazione non si può annullare.` : 'Sei sicuro?';
+    Alert.alert(done ? 'Elimina allenamento svolto' : imported ? 'Elimina attività' : 'Elimina workout', message, [
       { text: 'Annulla', style: 'cancel' },
       {
         text: 'Elimina',
@@ -347,13 +350,13 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </Text>
       </View>
 
-      {(workout.external_provider === 'strava' || workout.external_provider === 'file') && (
-        <View style={[styles.stravaBanner, workout.external_provider === 'file' && styles.fileBanner]}>
+      {['strava', 'file', 'garmin'].includes(workout.external_provider) && (
+        <View style={[styles.stravaBanner, workout.external_provider !== 'strava' && styles.fileBanner]}>
           <View style={styles.stravaBannerHeader}>
             <Text style={{ fontSize: 18 }}>{workout.external_provider === 'strava' ? '⚡' : '⌚'}</Text>
             <View>
-              <Text style={[styles.stravaBannerTitle, workout.external_provider === 'file' && { color: colors.primary }]}>
-                {workout.external_provider === 'strava' ? 'Attività Strava sincronizzata' : 'Attività importata da file'}
+              <Text style={[styles.stravaBannerTitle, workout.external_provider !== 'strava' && { color: colors.primary }]}>
+                {workout.external_provider === 'strava' ? 'Attività Strava sincronizzata' : workout.external_provider === 'garmin' ? 'Attività sincronizzata da Garmin Connect' : 'Attività importata da file'}
               </Text>
               {workout.external_provider === 'strava' && <Text style={styles.stravaBannerSubtitle}>ID attività: {workout.external_id}</Text>}
             </View>
@@ -599,10 +602,10 @@ export default function WorkoutDetailScreen({ route, navigation }) {
         </View>
       ) : (
         <>
-        {workout.external_provider === 'file' && (
+        {(workout.external_provider || workout.stato === 'completato') && (
           <Pressable style={[styles.dangerButton, styles.deleteImported]} onPress={deleteWorkout}>
             <Ionicons name="trash-outline" size={16} color={colors.danger} />
-            <Text style={styles.dangerButtonText}>Elimina attività importata</Text>
+            <Text style={styles.dangerButtonText}>{workout.external_provider && workout.stato !== 'completato' ? 'Elimina attività importata' : 'Elimina allenamento svolto'}</Text>
           </Pressable>
         )}
         <View style={styles.section}>

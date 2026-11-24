@@ -1004,11 +1004,15 @@ app.delete('/:id', async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));
   const user = c.get('user');
-  // L'atleta puo' eliminare solo le proprie attivita' importate da file (per poterle ricaricare)
+  // L'atleta puo' eliminare i propri allenamenti gia' svolti e le attivita' importate (file, Garmin, Strava)
   if (user.ruolo === 'cliente') {
-    const rows = await sql`SELECT workout_id FROM calendar_workouts WHERE workout_id = ${id} AND utenteid = ${user.userId} AND external_provider IN ('file', 'garmin')`;
-    if (!rows.length) return c.json({ message: 'Puoi eliminare solo le attività che hai importato da file' }, 403);
+    const rows = await sql`
+      SELECT workout_id, endurance_session_id, external_provider FROM calendar_workouts
+      WHERE workout_id = ${id} AND utenteid = ${user.userId} AND (external_provider IS NOT NULL OR stato = 'completato')
+    `;
+    if (!rows.length) return c.json({ message: 'Puoi eliminare solo gli allenamenti già svolti o le attività importate' }, 403);
     await sql`DELETE FROM calendar_workouts WHERE workout_id = ${id}`;
+    if (rows[0].endurance_session_id) await sql`DELETE FROM endurance_sessions WHERE session_id = ${rows[0].endurance_session_id}`;
     return c.json({ message: 'Eliminato' });
   }
   if (user.ruolo !== 'personal_trainer') return c.json({ message: 'Accesso negato' }, 403);

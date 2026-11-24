@@ -218,6 +218,16 @@ async function syncStravaActivities(sql, userId, accessToken, coachId, integrati
         WHERE workout_id = ${workoutId}
       `;
     } else {
+      // gia' arrivata da Garmin o da file (anche unita a un allenamento del coach): stesso giorno, sport e durata simile
+      const already = await sql`
+        SELECT w.workout_id FROM calendar_workouts w
+        LEFT JOIN workout_feedback f ON f.workout_id = w.workout_id AND f.utenteid = w.utenteid
+        WHERE w.utenteid = ${userId} AND w.data = ${date} AND w.external_provider IN ('garmin', 'file')
+          AND (w.sport = ${sportKey} OR w.sport IS NULL OR ${sportKey}::text IS NULL)
+          AND ABS(COALESCE(f.durata_effettiva_minuti * 60, w.durata_secondi, 0) - ${durationSeconds}) <= 120
+        LIMIT 1
+      `;
+      if (already.length) continue;
       const inserted = await sql`
         INSERT INTO calendar_workouts
           (utenteid, coach_userid, data, tipo, titolo, descrizione, durata_minuti, durata_secondi, distance_km, avg_hr, elev_gain_m, sport, colore, stato, external_id, external_provider)
@@ -439,7 +449,7 @@ app.post('/sync', async (c) => {
   `;
 
   if (!rows.length || !rows[0].connected) {
-    return c.json({ message: 'Account Strava non collegato' }, 400);
+    return c.json({ message: 'Account Strava non collegato', code: 'STRAVA_NOT_CONNECTED' }, 400);
   }
 
   let integrationData = {};
@@ -450,7 +460,7 @@ app.post('/sync', async (c) => {
   if (!accessToken) {
     return c.json({ message: expired
       ? 'Il collegamento con Strava è scaduto: vai nel Profilo, scollega e ricollega Strava.'
-      : 'Token Strava non disponibile o non valido: ricollega Strava dal Profilo.' }, 400);
+      : 'Token Strava non disponibile o non valido: ricollega Strava dal Profilo.', code: 'STRAVA_RECONNECT' }, 400);
   }
 
   const coachRows = await sql`

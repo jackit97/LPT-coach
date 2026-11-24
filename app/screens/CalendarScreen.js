@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert, Platform, Linking } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import { pickFile, userTimeZone } from '../utils/files';
@@ -147,6 +147,18 @@ export default function CalendarScreen({ navigation }) {
 
   const shiftWeeks = (n) => setWeekStart((current) => addDays(current, n * 7));
 
+  // stesso collegamento del Profilo: app Strava (se installata) o pagina di accesso, poi ritorno in LPT Coach
+  const connectStrava = async () => {
+    try {
+      const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+      const { data } = await api.post('/strava/authorize', { platform: isWeb ? 'web' : 'native', origin: isWeb ? window.location.origin : undefined });
+      if (isWeb) { window.location.href = data.url; return; }
+      try { await Linking.openURL(data.appUrl); } catch { await Linking.openURL(data.url); }
+    } catch (err) {
+      Alert.alert('Strava', err?.response?.data?.message || 'Non è stato possibile avviare il collegamento: riprova dal Profilo.');
+    }
+  };
+
   const syncStrava = async () => {
     setSyncingStrava(true);
     try {
@@ -156,6 +168,21 @@ export default function CalendarScreen({ navigation }) {
       Alert.alert('Strava', data.message || 'Attività Strava sincronizzate');
       await load();
     } catch (e) {
+      const code = e?.response?.data?.code;
+      if (!isCoach && (code === 'STRAVA_NOT_CONNECTED' || code === 'STRAVA_RECONNECT' || /non collegato/i.test(e?.response?.data?.message || ''))) {
+        // non collegato (o collegamento scaduto): si collega direttamente da qui
+        Alert.alert(
+          code === 'STRAVA_RECONNECT' ? 'Ricollega Strava' : 'Strava non collegato',
+          code === 'STRAVA_RECONNECT'
+            ? 'Il collegamento con Strava è scaduto. Vuoi ricollegarlo adesso? Si apre Strava: accedi, autorizza LPT Coach e verrai riportato qui.'
+            : 'Il tuo account Strava non è ancora collegato a LPT Coach. Vuoi collegarlo adesso? Si apre Strava: accedi, autorizza LPT Coach e verrai riportato qui.',
+          [
+            { text: 'Annulla', style: 'cancel' },
+            { text: 'Collega Strava', onPress: connectStrava },
+          ],
+        );
+        return;
+      }
       Alert.alert(
         'Strava',
         (e?.response?.data?.message === 'Server error' ? `Errore del server: ${e?.response?.data?.detail || 'sconosciuto'}` : e?.response?.data?.message)

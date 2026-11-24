@@ -241,11 +241,28 @@ async function processQueueItem(sql, env, item, connection) {
 
 /** Elabora fino a "limit" attivita' in coda (ogni file costa ~10 subrequest). */
 export async function drainActivityQueue(sql, env, { limit = 3 } = {}) {
-  const items = await sql`
-    SELECT q.*, c.utenteid AS c_utenteid FROM garmin_activity_queue q
-    LEFT JOIN garmin_connections c ON c.garmin_user_id = q.garmin_user_id
-    WHERE q.attempts < 5 ORDER BY q.queue_id LIMIT ${limit}
-  `;
+  // Le notifiche di Garmin arrivano quasi insieme (riepilogo + file): ogni elemento viene "prenotato" in modo atomico
+  // cosi' due elaborazioni in parallelo non importano la stessa attivita' due volte.
+  let items;
+  try {
+    items = await sql`
+      WITH picked AS (
+        SELECT queue_id FROM garmin_activity_queue
+        WHERE attempts < 5 AND (claimed_at IS NULL OR claimed_at < NOW() - INTERVAL '5 minutes')
+        ORDER BY queue_id LIMIT ${limit} FOR UPDATE SKIP LOCKED
+      )
+      UPDATE garmin_activity_queue q SET claimed_at = NOW() FROM picked WHERE q.queue_id = picked.queue_id
+      RETURNING q.*, (SELECT c.utenteid FROM garmin_connections c WHERE c.garmin_user_id = q.garmin_user_id) AS c_utenteid
+    `;
+  } catch (error) {
+    if (!/claimed_at/.test(String(error?.message))) throw error; // migrazione 20261128 non ancora applicata
+    items = await sql`
+      SELECT q.*, c.utenteid AS c_utenteid FROM garmin_activity_queue q
+      LEFT JOIN garmin_connections c ON c.garmin_user_id = q.garmin_user_id
+      WHERE q.attempts < 5 ORDER BY q.queue_id LIMIT ${limit}
+    `;
+  }
+  items.sort((a, b) => a.queue_id - b.queue_id);
   const done = [];
   const failed = [];
   const connections = new Map();
@@ -268,10 +285,18 @@ export async function drainActivityQueue(sql, env, { limit = 3 } = {}) {
   }
   if (done.length) await sql`DELETE FROM garmin_activity_queue WHERE queue_id = ANY(${done})`;
   if (failed.length) {
-    await sql`
-      UPDATE garmin_activity_queue q SET attempts = q.attempts + 1, last_error = x.error
-      FROM jsonb_to_recordset(${JSON.stringify(failed)}::jsonb) AS x(id int, error text) WHERE q.queue_id = x.id
-    `;
+    const json = JSON.stringify(failed);
+    try {
+      await sql`
+        UPDATE garmin_activity_queue q SET attempts = q.attempts + 1, last_error = x.error, claimed_at = NULL
+        FROM jsonb_to_recordset(${json}::jsonb) AS x(id int, error text) WHERE q.queue_id = x.id
+      `;
+    } catch {
+      await sql`
+        UPDATE garmin_activity_queue q SET attempts = q.attempts + 1, last_error = x.error
+        FROM jsonb_to_recordset(${json}::jsonb) AS x(id int, error text) WHERE q.queue_id = x.id
+      `;
+    }
   }
   // pulizia: elementi falliti troppe volte o piu' vecchi di 2 giorni (i link dei file valgono 24 h)
   await sql`DELETE FROM garmin_activity_queue WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '2 days'`;
