@@ -11,6 +11,7 @@ import { ZONE_COLORS, sportInfo, formatHMS, formatKm, performanceStatus } from '
 import LoadChart from '../components/LoadChart';
 import ActivityCharts, { ZoneBars, LapsTable, fmtClock } from '../components/ActivityCharts';
 import StrengthAnalysis from '../components/StrengthAnalysis';
+import ChatThread from '../components/ChatThread';
 
 const SENSAZIONI = ['ottimo', 'buono', 'normale', 'difficile', 'pessimo'];
 const TRIMP_METHODS = { fc: 'dalla frequenza cardiaca media', fc_campioni: 'dal tempo reale in ogni zona FC', rpe: 'da RPE percepito', pianificato: 'dal pianificato sulla durata reale', stima: 'stimato' };
@@ -565,10 +566,25 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           ) : (
             <Text style={styles.reportMeta}>Non ancora inviato. Allega video di esecuzione e dubbi dai singoli esercizi.</Text>
           )}
-          {!!workout.report?.risposta && (
-            <View style={styles.reportReply}>
-              <Text style={styles.reportReplyLabel}>Risposta del coach</Text>
-              <Text style={styles.paragraph}>{workout.report.risposta}</Text>
+          {!!workout.report && !isCoach && (
+            <View style={{ marginTop: spacing.sm }}>
+              <Text style={styles.reportReplyLabel}>{workout.report.da_leggere ? 'Nuovo messaggio dal coach' : 'Conversazione con il coach'}</Text>
+              <ChatThread
+                reloadKey={`report-${workout.report.report_id}`}
+                load={async () => {
+                  const { data } = await api.get(`/reports/${workout.report.report_id}/messages`);
+                  return {
+                    messages: (data.messages || []).map((message) => ({
+                      key: message.message_id, mine: !message.da_coach, author: message.da_coach ? 'Coach' : 'Tu',
+                      testo: message.testo, created_at: message.created_at,
+                    })),
+                    otherReadAt: data.letto_coach_at,
+                  };
+                }}
+                send={(testo) => api.post(`/reports/${workout.report.report_id}/messages`, { testo })}
+                placeholder="Scrivi al coach"
+                emptyText="Il coach non ha ancora commentato: puoi scrivergli qui."
+              />
             </View>
           )}
           {isCoach && workout.report && (

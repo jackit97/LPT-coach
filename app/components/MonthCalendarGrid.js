@@ -10,7 +10,7 @@ const MAX_BADGES_PER_DAY = 3;
 const NON_TRAINING = ['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pagamento', 'riposo'];
 
 // Riepilogo settimanale CoachPeaking: carico proposto vs effettuato (tempo, km, TRIMP).
-function weekSummary(days, workoutsByDate) {
+export function weekSummary(days, workoutsByDate) {
   const sum = { plannedSec: 0, doneSec: 0, plannedM: 0, doneM: 0, plannedTrimp: 0, doneTrimp: 0 };
   days.forEach((day) => {
     (workoutsByDate[toISODate(day)] || []).forEach((w) => {

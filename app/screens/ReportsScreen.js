@@ -84,6 +84,7 @@ export default function ReportsScreen({ navigation, route }) {
               {item.n_video > 0 && <Text style={styles.chip}>🎥 {item.n_video} video</Text>}
               {item.n_dubbi > 0 && <Text style={[styles.chip, styles.chipDoubt]}>❓ {item.n_dubbi} {item.n_dubbi === 1 ? 'dubbio' : 'dubbi'}</Text>}
               {!!item.rpe && <Text style={styles.chip}>RPE {item.rpe}</Text>}
+              {!!item.nuovi_messaggi && <Text style={[styles.chip, styles.chipNew]}>💬 Nuovo messaggio</Text>}
               {!!item.risposta_at && <Text style={[styles.chip, styles.chipDone]}>✓ Risposto</Text>}
             </View>
           </Pressable>
@@ -94,6 +95,7 @@ export default function ReportsScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  chipNew: { color: '#fff', backgroundColor: colors.danger, borderColor: colors.danger, overflow: 'hidden' },
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   athleteBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: colors.primaryLight, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },

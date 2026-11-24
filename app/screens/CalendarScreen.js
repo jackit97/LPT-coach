@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert, Platform, Linking } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, ScrollView, Alert, Platform, Linking, useWindowDimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
+import { Ionicons } from '@expo/vector-icons';
 import { pickFile, userTimeZone } from '../utils/files';
 import { useAuth } from '../context/AuthContext';
 import { useAthlete } from '../context/AthleteContext';
 import MonthCalendarGrid from '../components/MonthCalendarGrid';
+import CalendarAgenda from '../components/CalendarAgenda';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AthletePicker from '../components/AthletePicker';
 import LoadChart from '../components/LoadChart';
 import { colors, spacing, radius, typography } from '../theme';
@@ -17,6 +20,7 @@ const ALERT_ICONS = { inattivita: '⏸', aderenza: '📉', carico: '⚠', commen
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
 
 const WEEKS_SHOWN = 5;
+const VIEW_KEY = 'lptcoach_calendar_view'; // 'griglia' | 'elenco' (scelta salvata sul dispositivo)
 const EVENT_TYPES = ['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pagamento'];
 
 const fmtDay = (d) => d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
@@ -37,6 +41,34 @@ export default function CalendarScreen({ navigation }) {
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [statsOpen, setStatsOpen] = useState(true);
   const [loadError, setLoadError] = useState(null);
+
+  // Vista del calendario: griglia (mese) o elenco (giorni in verticale). Senza scelta salvata:
+  // elenco sugli schermi stretti (telefono), griglia sugli schermi larghi.
+  const { width } = useWindowDimensions();
+  const [view, setView] = useState(null);
+  useEffect(() => {
+    AsyncStorage.getItem(VIEW_KEY).then((saved) => setView(saved === 'griglia' || saved === 'elenco' ? saved : null)).catch(() => {});
+  }, []);
+  const calendarView = view || (width < 700 ? 'elenco' : 'griglia');
+  const chooseView = (next) => {
+    setView(next);
+    AsyncStorage.setItem(VIEW_KEY, next).catch(() => {});
+    scrolledFor.current = null; // in elenco si torna su oggi
+    if (next === 'griglia') setTimeout(() => scrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+  };
+
+  // in elenco si apre gia' posizionato su oggi
+  const scrollRef = useRef(null);
+  const [agendaY, setAgendaY] = useState(null);
+  const [todayY, setTodayY] = useState(null);
+  const scrolledFor = useRef(null);
+  useEffect(() => {
+    if (calendarView !== 'elenco' || agendaY === null || todayY === null) return;
+    const key = `${toISODate(weekStart)}-${calendarView}`;
+    if (scrolledFor.current === key) return;
+    scrolledFor.current = key;
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, agendaY + todayY - 60), animated: false }), 50);
+  }, [calendarView, agendaY, todayY, weekStart]);
 
   const rangeEnd = addDays(weekStart, WEEKS_SHOWN * 7 - 1);
   const fromISO = toISODate(weekStart);
@@ -291,9 +323,17 @@ export default function CalendarScreen({ navigation }) {
             )}
           </Pressable>
           )}
+          <View style={styles.viewToggle} accessibilityRole="radiogroup" accessibilityLabel="Visualizzazione calendario">
+            {[['griglia', 'grid-outline', 'Griglia'], ['elenco', 'list-outline', 'Elenco']].map(([key, icon, label]) => (
+              <Pressable key={key} onPress={() => chooseView(key)} style={[styles.viewBtn, calendarView === key && styles.viewBtnOn]} accessibilityLabel={`Vista ${label}`}>
+                <Ionicons name={icon} size={14} color={calendarView === key ? colors.textInverse : colors.primary} />
+                <Text style={[styles.viewBtnText, calendarView === key && { color: colors.textInverse }]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
           <Pressable onPress={() => shiftWeeks(-WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>«</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>‹</Text></Pressable>
-          <Pressable onPress={() => setWeekStart(addDays(startOfWeek(new Date()), -7))} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>
+          <Pressable onPress={() => { setWeekStart(addDays(startOfWeek(new Date()), -7)); scrolledFor.current = null; if (calendarView === 'elenco' && agendaY !== null && todayY !== null) scrollRef.current?.scrollTo({ y: Math.max(0, agendaY + todayY - 60), animated: true }); }} style={styles.navBtnToday}><Text style={styles.navBtnTodayText}>Oggi</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(1)} style={styles.navBtn}><Text style={styles.navBtnText}>›</Text></Pressable>
           <Pressable onPress={() => shiftWeeks(WEEKS_SHOWN)} style={styles.navBtn}><Text style={styles.navBtnText}>»</Text></Pressable>
         </View>
@@ -318,6 +358,7 @@ export default function CalendarScreen({ navigation }) {
         <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View>
       ) : (
         <ScrollView
+          ref={scrollRef}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); loadTrainingLoad(); loadAssistant(); }} />}
           contentContainerStyle={styles.calendarWrap}
         >
@@ -392,14 +433,32 @@ export default function CalendarScreen({ navigation }) {
             </View>
           )}
 
-          <MonthCalendarGrid
-            startDate={weekStart}
-            weeks={WEEKS_SHOWN}
-            workoutsByDate={workoutsByDate}
-            onDayPress={onDayPress}
-            onWorkoutPress={onWorkoutPress}
-            selectedWorkoutId={selected?.workout_id}
-          />
+          {calendarView === 'elenco' ? (
+            <View onLayout={(event) => setAgendaY(event.nativeEvent.layout.y)}>
+              <CalendarAgenda
+                startDate={weekStart}
+                weeks={WEEKS_SHOWN}
+                workoutsByDate={workoutsByDate}
+                onDayPress={onDayPress}
+                onWorkoutPress={onWorkoutPress}
+                selectedWorkoutId={selected?.workout_id}
+                onTodayLayout={setTodayY}
+                emptyLabel={isCoach ? (mode !== 'normal' && selected ? 'Tocca per spostare qui' : 'Riposo · tocca per aggiungere') : 'Riposo'}
+              />
+              <Pressable style={styles.moreWeeks} onPress={() => shiftWeeks(WEEKS_SHOWN)}>
+                <Text style={styles.moreWeeksText}>Settimane successive ›</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <MonthCalendarGrid
+              startDate={weekStart}
+              weeks={WEEKS_SHOWN}
+              workoutsByDate={workoutsByDate}
+              onDayPress={onDayPress}
+              onWorkoutPress={onWorkoutPress}
+              selectedWorkoutId={selected?.workout_id}
+            />
+          )}
         </ScrollView>
       )}
 
@@ -434,7 +493,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...typography.h2 },
   headerSubtitle: { ...typography.caption, marginTop: 2 },
-  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, flexShrink: 1, maxWidth: '100%' },
   stravaSyncHeaderBtn: { backgroundColor: '#FC4C02', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   stravaSyncHeaderText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
   importHeaderBtn: { borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.surface, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
@@ -443,7 +502,13 @@ const styles = StyleSheet.create({
   navBtnText: { fontSize: 18, fontWeight: '700', color: colors.primary },
   navBtnToday: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryLight },
   navBtnTodayText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
-  calendarWrap: { padding: spacing.md },
+  calendarWrap: { padding: spacing.md, paddingBottom: 96 },
+  viewToggle: { flexDirection: 'row', borderWidth: 1, borderColor: colors.primary, borderRadius: radius.pill, overflow: 'hidden' },
+  viewBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 5 },
+  viewBtnOn: { backgroundColor: colors.primary },
+  viewBtnText: { fontSize: 11, fontWeight: '800', color: colors.primary },
+  moreWeeks: { alignSelf: 'center', marginTop: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.primaryLight },
+  moreWeeksText: { color: colors.primary, fontWeight: '800', fontSize: 13 },
   modeBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   modeBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceAlt },
   modeBtnActive: { backgroundColor: colors.primary },

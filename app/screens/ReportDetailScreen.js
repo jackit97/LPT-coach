@@ -6,6 +6,7 @@ import api from '../api/client';
 import { useAthlete } from '../context/AthleteContext';
 import { InlinePlayer } from '../components/VideoPlayer';
 import { colors, spacing, radius, typography } from '../theme';
+import ChatThread from '../components/ChatThread';
 
 function ExecutionVideo({ url }) {
   const [playing, setPlaying] = useState(false);
@@ -19,20 +20,17 @@ function ExecutionVideo({ url }) {
   );
 }
 
-// Coach: dettaglio del report inviato dall'atleta + risposta
+// Coach: dettaglio del report inviato dall'atleta + chat con l'atleta
 export default function ReportDetailScreen({ route, navigation }) {
   const { reportId } = route.params || {};
   const { clients, setSelectedAthlete } = useAthlete();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [reply, setReply] = useState('');
-  const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/reports/${reportId}`);
       setReport(data);
-      setReply(data.risposta || '');
     } catch (e) {
       Alert.alert('Errore', e?.response?.data?.message || 'Impossibile aprire il report');
     } finally {
@@ -41,20 +39,6 @@ export default function ReportDetailScreen({ route, navigation }) {
   }, [reportId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const sendReply = async () => {
-    if (!reply.trim()) return;
-    setSending(true);
-    try {
-      const { data } = await api.put(`/reports/${reportId}/risposta`, { testo: reply });
-      setReport((current) => ({ ...current, ...data }));
-      Alert.alert('Risposta inviata', 'L\'atleta riceverà una notifica.');
-    } catch (e) {
-      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile inviare la risposta');
-    } finally {
-      setSending(false);
-    }
-  };
 
   const openWorkout = () => {
     const athlete = clients.find((row) => row.utenteid === report.athlete_id);
@@ -130,23 +114,24 @@ export default function ReportDetailScreen({ route, navigation }) {
       })}
 
       <View style={styles.card}>
-        <Text style={styles.section}>La tua risposta</Text>
-        {!!report.risposta_at && <Text style={typography.caption}>Inviata il {new Date(report.risposta_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}: puoi modificarla e reinviarla.</Text>}
-        <TextInput
-          value={reply}
-          onChangeText={setReply}
-          style={styles.input}
-          multiline
-          placeholder="Correzioni sull'esecuzione, risposte ai dubbi, indicazioni per la prossima volta"
+        <Text style={styles.section}>Conversazione con l'atleta</Text>
+        <Text style={typography.caption}>Correzioni sull'esecuzione, risposte ai dubbi, indicazioni per la prossima volta: l'atleta riceve una notifica e può risponderti qui.</Text>
+        <ChatThread
+          reloadKey={`report-${reportId}`}
+          load={async () => {
+            const { data } = await api.get(`/reports/${reportId}/messages`);
+            return {
+              messages: (data.messages || []).map((message) => ({
+                key: message.message_id, mine: message.da_coach, author: message.da_coach ? 'Tu' : report.atleta || 'Atleta',
+                testo: message.testo, created_at: message.created_at,
+              })),
+              otherReadAt: data.letto_atleta_at,
+            };
+          }}
+          send={(testo) => api.post(`/reports/${reportId}/messages`, { testo })}
+          placeholder="Scrivi all'atleta"
+          emptyText="Nessun messaggio: scrivi il primo commento al report."
         />
-        <Pressable style={[styles.sendBtn, (!reply.trim() || sending) && { opacity: 0.6 }]} onPress={sendReply} disabled={!reply.trim() || sending}>
-          {sending ? <ActivityIndicator color="#fff" /> : (
-            <>
-              <Ionicons name="send" size={16} color="#fff" />
-              <Text style={styles.sendText}>{report.risposta_at ? 'Aggiorna risposta' : 'Invia risposta'}</Text>
-            </>
-          )}
-        </Pressable>
       </View>
     </ScrollView>
   );

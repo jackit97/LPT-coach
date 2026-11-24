@@ -55,7 +55,16 @@ export async function reportFor(sql, workoutId) {
     const rows = await sql`
       SELECT report_id, inviato_at, letto_at, risposta, risposta_at FROM workout_reports WHERE workout_id = ${workoutId}
     `;
-    return rows[0] || null;
+    if (!rows[0]) return null;
+    // messaggi del coach non ancora visti dall'atleta (chat del report)
+    try {
+      const unread = await sql`
+        SELECT COUNT(*)::int AS n FROM workout_report_messages m JOIN workout_reports r ON r.report_id = m.report_id
+        WHERE m.report_id = ${rows[0].report_id} AND m.da_coach AND (r.letto_atleta_at IS NULL OR m.created_at > r.letto_atleta_at)
+      `;
+      rows[0].da_leggere = unread[0]?.n || 0;
+    } catch { /* migrazione 20261130 non ancora applicata */ }
+    return rows[0];
   } catch (error) {
     if (/workout_reports/.test(String(error?.message))) return null;
     throw error;
@@ -270,6 +279,7 @@ app.get('/', async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
   const athleteFilter = c.req.query('utenteId') ? Number(c.req.query('utenteId')) : null;
+  const chatReady = await hasReportChat(sql);
   const rows = user.ruolo === 'personal_trainer'
     ? await sql`
         SELECT r.report_id, r.workout_id, r.athlete_id, TRIM(CONCAT_WS(' ', u.nome, u.cognome)) AS atleta, w.titolo, w.data, r.inviato_at, r.letto_at, r.risposta_at,
@@ -287,12 +297,25 @@ app.get('/', async (c) => {
         FROM workout_reports r JOIN calendar_workouts w ON w.workout_id = r.workout_id
         WHERE r.athlete_id = ${user.userId}
         ORDER BY r.inviato_at DESC LIMIT 200`;
+  // chat: report con messaggi non ancora visti (dell'atleta per il coach, del coach per l'atleta)
+  let unread = new Set();
+  if (chatReady && rows.length) {
+    const ids = rows.map((row) => row.report_id);
+    const coachSide = user.ruolo !== 'cliente';
+    const flagged = await sql`
+      SELECT DISTINCT r.report_id FROM workout_reports r JOIN workout_report_messages m ON m.report_id = r.report_id
+      WHERE r.report_id = ANY(${ids}) AND m.da_coach = ${!coachSide}
+        AND m.created_at > COALESCE(CASE WHEN ${coachSide} THEN r.letto_coach_at ELSE r.letto_atleta_at END, '-infinity'::timestamptz)
+    `;
+    unread = new Set(flagged.map((row) => row.report_id));
+  }
   return c.json(rows.map(({ contenuto_json: json, ...row }) => {
     let content = {};
     try { content = JSON.parse(json || '{}'); } catch { content = {}; }
     const exercises = content.esercizi || [];
     return {
       ...row,
+      nuovi_messaggi: unread.has(row.report_id),
       n_esercizi: exercises.length,
       n_video: exercises.filter((item) => item.ha_video).length,
       n_dubbi: exercises.filter((item) => String(item.dubbi || '').trim()).length,
@@ -332,7 +355,94 @@ app.get('/:id{[0-9]+}', async (c) => {
   });
 });
 
-// PUT /reports/:id/risposta { testo } — il coach risponde all'atleta
+// ---------- chat del report: botta e risposta atleta <-> coach con conferma di lettura ----------
+let reportChatChecked = null;
+async function hasReportChat(sql) {
+  if (reportChatChecked !== null) return reportChatChecked;
+  try {
+    await sql`SELECT letto_coach_at FROM workout_reports LIMIT 0`;
+    await sql`SELECT 1 FROM workout_report_messages LIMIT 0`;
+    reportChatChecked = true;
+  } catch {
+    return false; // migrazione 20261130 non ancora applicata: si riprova alla prossima richiesta
+  }
+  return reportChatChecked;
+}
+
+async function reportForChat(sql, user, id) {
+  const report = (await sql`
+    SELECT r.*, w.titolo FROM workout_reports r JOIN calendar_workouts w ON w.workout_id = r.workout_id WHERE r.report_id = ${id}
+  `)[0];
+  if (!report || !await assertAccessToAthlete(sql, user, report.athlete_id)) return null;
+  return report;
+}
+
+// GET /reports/:id/messages — aprire la chat segna come visti i messaggi dell'altra parte
+app.get('/:id{[0-9]+}/messages', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const report = await reportForChat(sql, user, Number(c.req.param('id')));
+  if (!report) return c.json({ message: 'Report non trovato' }, 404);
+  if (!await hasReportChat(sql)) {
+    const legacy = report.risposta ? [{ message_id: 0, da_coach: true, testo: report.risposta, created_at: report.risposta_at }] : [];
+    return c.json({ messages: legacy, letto_coach_at: null, letto_atleta_at: null });
+  }
+  const messages = await sql`
+    SELECT message_id, da_coach, testo, created_at FROM workout_report_messages WHERE report_id = ${report.report_id}
+    ORDER BY created_at ASC, message_id ASC
+  `;
+  const read = user.ruolo === 'cliente'
+    ? await sql`UPDATE workout_reports SET letto_atleta_at = NOW() WHERE report_id = ${report.report_id} RETURNING letto_coach_at, letto_atleta_at`
+    : await sql`UPDATE workout_reports SET letto_coach_at = NOW(), letto_at = COALESCE(letto_at, NOW()) WHERE report_id = ${report.report_id} RETURNING letto_coach_at, letto_atleta_at`;
+  return c.json({ messages, ...read[0] });
+});
+
+// POST /reports/:id/messages { testo } — messaggio dell'atleta o del coach; l'altra parte riceve notifica (ed email)
+app.post('/:id{[0-9]+}/messages', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const report = await reportForChat(sql, user, Number(c.req.param('id')));
+  if (!report) return c.json({ message: 'Report non trovato' }, 404);
+  if (!await hasReportChat(sql)) return c.json({ message: 'Chat non ancora attiva: va applicata la migrazione 20261130' }, 503);
+  const { testo } = await c.req.json().catch(() => ({}));
+  const text = String(testo ?? '').trim().slice(0, 4000);
+  if (!text) return c.json({ message: 'Scrivi un messaggio' }, 400);
+  const fromCoach = user.ruolo !== 'cliente';
+  const message = (await sql`
+    INSERT INTO workout_report_messages (report_id, autore_id, da_coach, testo)
+    VALUES (${report.report_id}, ${user.userId}, ${fromCoach}, ${text})
+    RETURNING message_id, da_coach, testo, created_at
+  `)[0];
+  if (fromCoach) {
+    // compatibilita': ultima risposta del coach anche nei campi del report
+    await sql`
+      UPDATE workout_reports SET risposta = ${text}, risposta_at = NOW(), letto_at = COALESCE(letto_at, NOW()), letto_coach_at = NOW()
+      WHERE report_id = ${report.report_id}
+    `;
+    await notify(sql, report.athlete_id, {
+      tipo: 'report_risposta',
+      mittenteId: user.userId,
+      titolo: `Il coach ti ha scritto sul report di "${report.titolo}"`,
+      messaggio: text.slice(0, 160),
+      link: { screen: 'WorkoutDetail', params: { workoutId: report.workout_id } },
+    });
+  } else {
+    await sql`UPDATE workout_reports SET letto_atleta_at = NOW() WHERE report_id = ${report.report_id}`;
+    const coachId = report.coach_id || await coachOf(sql, report.athlete_id);
+    if (coachId) {
+      await notify(sql, coachId, {
+        tipo: 'report',
+        mittenteId: user.userId,
+        titolo: `${await userName(sql, user.userId)} ha risposto sul report di "${report.titolo}"`,
+        messaggio: text.slice(0, 160),
+        link: { screen: 'ReportDetail', params: { reportId: report.report_id } },
+      });
+    }
+  }
+  return c.json(message, 201);
+});
+
+// PUT /reports/:id/risposta { testo } — il coach risponde all'atleta (vecchie versioni dell'app)
 app.put('/:id{[0-9]+}/risposta', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
   const sql = db(c.env);
@@ -349,6 +459,9 @@ app.put('/:id{[0-9]+}/risposta', roleCheck('personal_trainer'), async (c) => {
     WHERE report_id = ${report.report_id}
     RETURNING report_id, risposta, risposta_at, letto_at
   `;
+  if (await hasReportChat(sql)) {
+    await sql`INSERT INTO workout_report_messages (report_id, autore_id, da_coach, testo) VALUES (${report.report_id}, ${user.userId}, TRUE, ${text})`;
+  }
   await notify(sql, report.athlete_id, {
     tipo: 'report_risposta',
     mittenteId: user.userId,

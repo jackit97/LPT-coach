@@ -11,6 +11,7 @@ const TABLE_NAMES = [
   'garmin_oauth_states',
   'garmin_workout_sync',
   'plan_assignments',
+  'workout_report_messages',
   'athlete_test_results',
   'body_check_photo_data',
   'body_check_photos',
