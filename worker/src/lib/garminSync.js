@@ -367,8 +367,14 @@ export async function requestActivityRefresh(sql, env, utenteId) {
   const detail = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || '');
   console.error('garmin refresh', utenteId, res.status, String(detail).slice(0, 300));
   if (res.status === 412 && /HISTORICAL_DATA/i.test(detail)) {
-    const error = new GarminError('Per il Sync Garmin serve il permesso di condividere i dati storici: ricollega Garmin e, nella schermata di Garmin, attiva la condivisione dei dati storici.', 412);
-    error.code = 'GARMIN_HISTORY_PERMISSION';
+    // Il permesso manca anche nell'elenco salvato al collegamento: Garmin non l'ha concesso (opzione non
+    // attivata o non presente nella sua schermata). Niente richiesta di ricollegare ad ogni clic.
+    const granted = permissionList(connection);
+    const missing = granted.length > 0 && !granted.includes('HISTORICAL_DATA_EXPORT');
+    const error = missing
+      ? new GarminError('Garmin non ha concesso la condivisione dei dati storici, quindi il recupero degli ultimi giorni non è disponibile. Le attività nuove e le modifiche fatte su Garmin Connect (titolo, descrizione) arrivano comunque in automatico. Per attivarlo: nell\'app Garmin Connect vai su Altro → Impostazioni → App collegate → LPT Coach e attiva «Dati storici».', 412)
+      : new GarminError('Per il Sync Garmin serve il permesso «Dati storici»: nell\'app Garmin Connect vai su Altro → Impostazioni → App collegate → LPT Coach e attivalo (oppure ricollega Garmin e attivalo nella schermata di consenso).', 412);
+    error.code = missing ? 'GARMIN_HISTORY_UNAVAILABLE' : 'GARMIN_HISTORY_PERMISSION';
     throw error;
   }
   throw new GarminError(garminFailure(res, 'Sync Garmin'), res.status === 401 ? 401 : 502);

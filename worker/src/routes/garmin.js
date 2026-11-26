@@ -64,7 +64,7 @@ app.get('/callback', async (c) => {
               ${JSON.stringify(permissions)}, NOW(), NOW(), NULL)
       ON CONFLICT (utenteid) DO UPDATE SET garmin_user_id = EXCLUDED.garmin_user_id, access_token = EXCLUDED.access_token,
         refresh_token = EXCLUDED.refresh_token, access_expires_at = EXCLUDED.access_expires_at, refresh_expires_at = EXCLUDED.refresh_expires_at,
-        permissions = EXCLUDED.permissions, updated_at = NOW(), last_error = NULL
+        permissions = EXCLUDED.permissions, connected_at = NOW(), updated_at = NOW(), last_error = NULL
     `;
     return back('connected');
   } catch (err) {
