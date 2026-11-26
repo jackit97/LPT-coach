@@ -15,7 +15,6 @@ import { colors, spacing, radius, typography } from '../theme';
 import { toISODate, startOfWeek, addDays } from '../utils/dates';
 import { performanceStatus, formatShortDuration } from '../utils/endurance';
 import { fullName } from '../utils/names';
-import { refreshGarminActivities } from '../utils/garmin';
 
 const ALERT_ICONS = { inattivita: '⏸', aderenza: '📉', carico: '⚠', commenti: '💬' };
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
@@ -192,25 +191,6 @@ export default function CalendarScreen({ navigation }) {
     }
   };
 
-  // Garmin: collegato? (mostra "Sync Garmin" solo a chi l'ha collegato)
-  const [garminConnected, setGarminConnected] = useState(false);
-  const [syncingGarmin, setSyncingGarmin] = useState(false);
-  useFocusEffect(useCallback(() => {
-    if (isCoach) return;
-    api.get('/garmin/status').then(({ data }) => setGarminConnected(!!data?.connected)).catch(() => setGarminConnected(false));
-  }, [isCoach]));
-  const syncGarmin = async () => {
-    setSyncingGarmin(true);
-    try {
-      const ok = await refreshGarminActivities();
-      await load();
-      // le attivita' rimandate da Garmin arrivano dopo qualche istante: ricarico il calendario
-      if (ok) setTimeout(() => { load(); }, 45000);
-    } finally {
-      setSyncingGarmin(false);
-    }
-  };
-
   const syncStrava = async () => {
     setSyncingStrava(true);
     try {
@@ -318,16 +298,6 @@ export default function CalendarScreen({ navigation }) {
           <Text style={styles.headerSubtitle}>{fmtDay(weekStart)} – {fmtDay(rangeEnd)} {rangeEnd.getFullYear()}</Text>
         </View>
         <View style={styles.headerActions}>
-          {!isCoach && garminConnected && (
-            <Pressable
-              onPress={syncGarmin}
-              disabled={syncingGarmin}
-              style={[styles.garminSyncHeaderBtn, syncingGarmin && { opacity: 0.6 }]}
-              accessibilityLabel="Aggiorna le attività da Garmin"
-            >
-              {syncingGarmin ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.stravaSyncHeaderText}>⌚ Sync Garmin</Text>}
-            </Pressable>
-          )}
           {!isCoach && (
             <Pressable
               onPress={syncStrava}
@@ -525,7 +495,6 @@ const styles = StyleSheet.create({
   headerSubtitle: { ...typography.caption, marginTop: 2 },
   headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, flexShrink: 1, maxWidth: '100%' },
   stravaSyncHeaderBtn: { backgroundColor: '#FC4C02', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  garminSyncHeaderBtn: { backgroundColor: '#007cc3', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   stravaSyncHeaderText: { color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
   importHeaderBtn: { borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.surface, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   importHeaderText: { color: colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },

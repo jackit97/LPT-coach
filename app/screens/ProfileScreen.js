@@ -6,7 +6,6 @@ import DateField from '../components/DateField';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme';
 import { fullName, initials } from '../utils/names';
-import { refreshGarminActivities, connectGarmin as connectGarminAccount } from '../utils/garmin';
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout, isCoach: coachRole, isDeveloper, enduranceEnabled, profileComplete, refreshAccountStatus, account, setAccount } = useAuth();
@@ -169,12 +168,6 @@ export default function ProfileScreen({ navigation }) {
       setGarminBusy(null);
       loadStravaStatus();
     }
-  };
-
-  // attivita' rinominate o descritte su Garmin Connect: Garmin le rimanda aggiornate
-  const refreshGarmin = async () => {
-    setGarminBusy('refresh');
-    try { await refreshGarminActivities(); } finally { setGarminBusy(null); }
   };
 
   const disconnectGarmin = () => {
@@ -373,20 +366,12 @@ export default function ProfileScreen({ navigation }) {
                   {garminStatus.last_activity_at ? ` · Ultima attività ricevuta: ${new Date(garminStatus.last_activity_at).toLocaleString('it-IT')}` : ''}
                 </Text>
                 <Text style={styles.stravaHint}>
-                  Le attività che registri con l'orologio arrivano da sole nel calendario. {garminStatus.synced?.length ? `${garminStatus.synced.length} allenamenti dei prossimi ${garminStatus.giorni || 7} giorni sono già sul calendario Garmin.` : ''}
+                  Le attività che registri con l'orologio arrivano da sole nel calendario, e anche titolo e descrizione se li modifichi su Garmin Connect. {garminStatus.synced?.length ? `${garminStatus.synced.length} allenamenti dei prossimi ${garminStatus.giorni || 7} giorni sono già sul calendario Garmin.` : ''}
                 </Text>
                 {garminStatus.valid === false || garminStatus.last_error ? (
                   <Text style={styles.stravaWarning}>{garminStatus.valid === false ? 'Collegamento scaduto: scollega e ricollega Garmin.' : garminStatus.last_error}</Text>
                 ) : null}
                 <Text style={styles.stravaHint}>Con il pulsante qui sotto gli allenamenti da oggi ai prossimi 7 giorni vengono inviati al calendario Garmin; se il coach li modifica o li elimina, premilo di nuovo per aggiornarli.</Text>
-                {Array.isArray(garminStatus.permissions) && garminStatus.permissions.length > 0 && !garminStatus.permissions.includes('HISTORICAL_DATA_EXPORT') && (
-                  <Pressable onPress={() => connectGarminAccount().catch(() => {})}>
-                    <Text style={styles.stravaWarning}>Per il Sync Garmin manca il permesso «dati storici»: tocca qui per ricollegare Garmin e attivarlo.</Text>
-                  </Pressable>
-                )}
-                <Pressable style={[styles.garminBtn, garminBusy === 'refresh' && { opacity: 0.6 }]} onPress={refreshGarmin} disabled={garminBusy === 'refresh'}>
-                  {garminBusy === 'refresh' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>🔄 Aggiorna attività da Garmin (titoli e descrizioni)</Text>}
-                </Pressable>
                 <Pressable style={[styles.garminBtn, garminBusy === 'sync' && { opacity: 0.6 }]} onPress={syncGarminNow} disabled={garminBusy === 'sync'}>
                   {garminBusy === 'sync' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>⌚ Invia ora i prossimi 7 giorni a Garmin</Text>}
                 </Pressable>
