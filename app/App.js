@@ -65,6 +65,7 @@ import WorkoutLibraryScreen from './screens/WorkoutLibraryScreen';
 import TemplateDetailScreen from './screens/TemplateDetailScreen';
 import ZonesScreen from './screens/ZonesScreen';
 import AppUpdater from './components/AppUpdater';
+import api from './api/client';
 import MoreScreen from './screens/MoreScreen';
 import ExercisesScreen from './screens/ExercisesScreen';
 import ChecksScreen from './screens/ChecksScreen';
@@ -615,6 +616,15 @@ function useStravaReturnNotice() {
         text = ok
           ? 'Account collegato: le attività che registri arriveranno da sole. Dal Profilo (o dal dettaglio di un allenamento) invia a Garmin gli allenamenti dei prossimi 7 giorni.'
           : /denied/.test(url) ? 'Autorizzazione annullata su Garmin.' : 'Collegamento non riuscito, riprova dal Profilo.';
+      } else if (/pagamento=(ok|annullato)/.test(url)) {
+        // ritorno da Stripe: il server verifica il pagamento e lo segna saldato
+        const sessionId = (url.match(/[?&]session_id=([^&#]+)/) || [])[1];
+        const show = (t, m) => (Platform.OS === 'web' && typeof window !== 'undefined' ? setTimeout(() => window.alert(`${t}\n${m}`), 600) : Alert.alert(t, m));
+        if (/pagamento=annullato/.test(url) || !sessionId) { show('Pagamento', 'Pagamento annullato: puoi riprovare dalla sezione Pagamenti.'); return; }
+        api.get('/payments/stripe/confirm', { params: { session_id: decodeURIComponent(sessionId) } })
+          .then(({ data }) => show(data?.pagato ? 'Pagamento completato' : 'Pagamento', data?.message || 'Pagamento registrato'))
+          .catch((e) => show('Pagamento', e?.response?.data?.message || 'Non è stato possibile verificare il pagamento: controlla nella sezione Pagamenti.'));
+        return;
       } else if (/strava=(connected|error)/.test(url)) {
         const ok = /strava=connected/.test(url);
         const imported = (url.match(/[?&]n=(\d+)/) || [])[1];
@@ -627,7 +637,7 @@ function useStravaReturnNotice() {
     };
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       notify(window.location.search);
-      if (/(strava|garmin)=/.test(window.location.search) && window.history?.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+      if (/(strava|garmin|pagamento)=/.test(window.location.search) && window.history?.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
       return undefined;
     }
     Linking.getInitialURL().then(notify).catch(() => {});

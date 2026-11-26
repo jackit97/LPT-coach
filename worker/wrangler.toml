@@ -30,6 +30,13 @@ EMAIL_FROM_NAME = "LPT Coach"
 #   npx wrangler secret put GARMIN_CLIENT_ID
 #   npx wrangler secret put GARMIN_CLIENT_SECRET
 # Redirect URL registrato nel portale Garmin: https://lpt-worker.gc-jack1997.workers.dev/garmin/callback
+# Pagamenti dall'app. Bonifico: coordinate mostrate all'atleta (senza PAYMENT_IBAN si vede un IBAN di esempio).
+PAYMENT_IBAN = "IT00X000000000000000000TEST"
+PAYMENT_HOLDER = "Filippo Cavallini"
+PAYMENT_BANK = "Test Bank"
+# Carta con Stripe (secret): npx wrangler secret put STRIPE_SECRET_KEY  e  npx wrangler secret put STRIPE_WEBHOOK_SECRET
+# Webhook Stripe: https://lpt-worker.gc-jack1997.workers.dev/payments/stripe/webhook (evento checkout.session.completed)
+
 # Invio degli allenamenti a Garmin solo manuale (pulsanti nell'app): nessun cron, cosi' il database Neon
 # non viene risvegliato di continuo. Le attivita' svolte arrivano comunque subito via push.
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Alert, Modal, Platform, Linking } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../api/client';
 import DateField from '../components/DateField';
@@ -9,10 +9,102 @@ import AthletePicker from '../components/AthletePicker';
 import { colors, spacing, radius, typography } from '../theme';
 import { fullName } from '../utils/names';
 
-const STATO_COLORS = { 'Pagato': colors.success, 'In sospeso': colors.warning, 'Scaduto': colors.danger };
+const STATO_COLORS = { 'Pagato': colors.success, 'In sospeso': colors.warning, 'Scaduto': colors.danger, 'In verifica': '#2563EB' };
+
+const fmtIban = (iban) => String(iban || '').replace(/(.{4})/g, '$1 ').trim();
+
+// Copia negli appunti (web); altrimenti mostra il testo da copiare a mano
+async function copyText(text) {
+  try {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) { await navigator.clipboard.writeText(text); return true; }
+  } catch { /* fallback sotto */ }
+  Alert.alert('Copia', text);
+  return false;
+}
+
+// Popup dell'atleta per saldare un pagamento: bonifico (IBAN da copiare) oppure carta con Stripe
+function PayModal({ payment, athleteName, onClose, onDone }) {
+  const [methods, setMethods] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const [busy, setBusy] = useState(null);
+  React.useEffect(() => {
+    if (!payment) return;
+    setCopied(null);
+    api.get('/payments/methods').then(({ data }) => setMethods(data)).catch(() => setMethods({ bonifico: null, stripe: false }));
+  }, [payment]);
+  if (!payment) return null;
+  const importo = `€${Number(payment.importo).toFixed(2)}`;
+  const causale = `LPT Coach - ${payment.causale || 'Pagamento'}${athleteName ? ` - ${athleteName}` : ''}`;
+  const bank = methods?.bonifico;
+  const copy = async (key, text) => { if (await copyText(text)) { setCopied(key); setTimeout(() => setCopied(null), 2000); } };
+  const bonificoFatto = async () => {
+    setBusy('bonifico');
+    try {
+      const { data } = await api.post(`/payments/${payment.pagamentoid}/bonifico`);
+      Alert.alert('Bonifico', data?.message || 'Grazie! Il coach confermerà il pagamento.');
+      onDone();
+    } catch (e) { Alert.alert('Errore', e?.response?.data?.message || 'Non è stato possibile inviare la segnalazione'); }
+    finally { setBusy(null); }
+  };
+  const payStripe = async () => {
+    setBusy('stripe');
+    try {
+      const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+      const { data } = await api.post(`/payments/${payment.pagamentoid}/stripe`, { origin: isWeb ? window.location.origin : undefined });
+      if (isWeb) { window.location.href = data.url; return; }
+      await Linking.openURL(data.url);
+    } catch (e) { Alert.alert('Pagamento con carta', e?.response?.data?.message || 'Non è stato possibile aprire Stripe'); }
+    finally { setBusy(null); }
+  };
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.payOverlay}>
+        <View style={styles.payCard}>
+          <Text style={styles.payAmount}>{importo}</Text>
+          <Text style={styles.payReason}>{payment.causale || 'Pagamento'}{payment.scadenza ? ` · scade il ${String(payment.scadenza).slice(0, 10).split('-').reverse().join('/')}` : ''}</Text>
+          {payment.stato === 'In verifica' && <Text style={styles.payInfo}>Hai già segnalato un bonifico: il coach lo confermerà appena vede l'accredito.</Text>}
+          {!methods ? <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} /> : (
+            <>
+              <View style={styles.payBlock}>
+                <Text style={styles.payBlockTitle}>🏦 Paga con bonifico</Text>
+                {bank ? (
+                  <>
+                    <Text style={styles.payLabel}>Intestatario</Text>
+                    <Text style={styles.payValue}>{bank.intestatario}{bank.banca ? ` · ${bank.banca}` : ''}</Text>
+                    <Text style={styles.payLabel}>IBAN</Text>
+                    <View style={styles.copyRow}>
+                      <Text style={styles.iban} selectable>{fmtIban(bank.iban)}</Text>
+                      <Pressable style={styles.copyBtn} onPress={() => copy('iban', bank.iban)}><Text style={styles.copyText}>{copied === 'iban' ? 'Copiato ✓' : 'Copia'}</Text></Pressable>
+                    </View>
+                    <Text style={styles.payLabel}>Causale</Text>
+                    <View style={styles.copyRow}>
+                      <Text style={[styles.payValue, { flex: 1 }]} selectable>{causale}</Text>
+                      <Pressable style={styles.copyBtn} onPress={() => copy('causale', causale)}><Text style={styles.copyText}>{copied === 'causale' ? 'Copiato ✓' : 'Copia'}</Text></Pressable>
+                    </View>
+                    {bank.esempio && <Text style={styles.payNote}>IBAN di esempio: il coach deve ancora inserire quello vero.</Text>}
+                    <Pressable style={[styles.payButtonSecondary, busy === 'bonifico' && { opacity: 0.6 }]} onPress={bonificoFatto} disabled={!!busy}>
+                      {busy === 'bonifico' ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.payButtonSecondaryText}>Ho fatto il bonifico</Text>}
+                    </Pressable>
+                  </>
+                ) : <Text style={styles.payNote}>Coordinate bancarie non disponibili.</Text>}
+              </View>
+              <Text style={styles.payOr}>oppure</Text>
+              <Pressable style={[styles.payButton, (!methods.stripe || busy) && { opacity: 0.5 }]} onPress={payStripe} disabled={!methods.stripe || !!busy}>
+                {busy === 'stripe' ? <ActivityIndicator color="#fff" /> : <Text style={styles.payButtonText}>💳 Paga con carta ({importo})</Text>}
+              </Pressable>
+              <Text style={styles.payNote}>{methods.stripe ? 'Pagamento sicuro su Stripe: carta, Apple Pay o Google Pay. Al termine torni nell\'app.' : 'Il pagamento con carta non è ancora attivo.'}</Text>
+            </>
+          )}
+          <Pressable style={styles.payClose} onPress={onClose}><Text style={styles.payCloseText}>Chiudi</Text></Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export default function PaymentsScreen({ navigation, route }) {
-  const { isCoach } = useAuth();
+  const { isCoach, user } = useAuth();
+  const [payModal, setPayModal] = useState(null);
   const { selectedAthlete, targetUserId, clients } = useAthlete();
   // Coach dalla barra in basso: panoramica di tutti gli atleti; dalla pagina di un atleta: solo i suoi
   const overview = isCoach && !route?.params?.fromHub;
@@ -183,11 +275,16 @@ export default function PaymentsScreen({ navigation, route }) {
           contentContainerStyle={{ padding: spacing.lg }}
           ListEmptyComponent={<Text style={styles.empty}>Nessun pagamento registrato.</Text>}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <Pressable
+              style={({ pressed }) => [styles.card, !isCoach && item.stato !== 'Pagato' && styles.cardPayable, pressed && !isCoach && item.stato !== 'Pagato' && { opacity: 0.85 }]}
+              onPress={!isCoach && item.stato !== 'Pagato' ? () => setPayModal(item) : undefined}
+              disabled={isCoach || item.stato === 'Pagato'}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={typography.h3}>€{Number(item.importo).toFixed(2)}</Text>
                 <Text style={typography.caption}>{item.causale || 'Pagamento'}</Text>
-                {!!item.scadenza && <Text style={typography.caption}>Scadenza: {String(item.scadenza).slice(0, 10)}</Text>}
+                {!!item.scadenza && <Text style={typography.caption}>Scadenza: {String(item.scadenza).slice(0, 10).split('-').reverse().join('/')}</Text>}
+                {!isCoach && item.stato !== 'Pagato' && <Text style={styles.payHint}>{item.stato === 'In verifica' ? 'Bonifico in verifica · tocca per i dettagli' : 'Tocca per pagare'}</Text>}
               </View>
               <View style={[styles.statusPill, { backgroundColor: (STATO_COLORS[item.stato] || colors.textMuted) + '1A' }]}>
                 <Text style={{ color: STATO_COLORS[item.stato] || colors.textMuted, fontWeight: '700', fontSize: 12 }}>{item.stato}</Text>
@@ -197,8 +294,17 @@ export default function PaymentsScreen({ navigation, route }) {
                   <Text style={styles.markPaidText}>✓</Text>
                 </Pressable>
               )}
-            </View>
+            </Pressable>
           )}
+        />
+      )}
+
+      {!isCoach && (
+        <PayModal
+          payment={payModal}
+          athleteName={fullName(user || {})}
+          onClose={() => setPayModal(null)}
+          onDone={() => { setPayModal(null); load(); }}
         />
       )}
 
@@ -263,4 +369,27 @@ const styles = StyleSheet.create({
   athleteName: { fontSize: 12, fontWeight: '800', color: colors.primary, textTransform: 'uppercase' },
   athleteChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   modalActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xl },
+  cardPayable: { borderColor: colors.primary },
+  payHint: { fontSize: 12, fontWeight: '800', color: colors.primary, marginTop: 4 },
+  payOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  payCard: { width: '100%', maxWidth: 440, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl },
+  payAmount: { fontSize: 30, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  payReason: { ...typography.caption, textAlign: 'center', marginTop: 2 },
+  payInfo: { marginTop: spacing.sm, color: '#1D4ED8', backgroundColor: '#EFF6FF', borderRadius: radius.md, padding: spacing.sm, fontSize: 13, textAlign: 'center' },
+  payBlock: { marginTop: spacing.lg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, backgroundColor: colors.bg },
+  payBlockTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  payLabel: { fontSize: 11, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', marginTop: spacing.sm },
+  payValue: { fontSize: 14, color: colors.text, marginTop: 2 },
+  copyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
+  iban: { flex: 1, fontSize: 15, fontWeight: '800', color: colors.text, letterSpacing: 0.5, fontFamily: Platform.OS === 'web' ? 'ui-monospace, Menlo, Consolas, monospace' : undefined },
+  copyBtn: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 5 },
+  copyText: { color: colors.primary, fontWeight: '800', fontSize: 12 },
+  payNote: { fontSize: 12, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
+  payButtonSecondary: { marginTop: spacing.md, borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  payButtonSecondaryText: { color: colors.primary, fontWeight: '800' },
+  payOr: { textAlign: 'center', color: colors.textMuted, fontWeight: '700', marginVertical: spacing.md },
+  payButton: { backgroundColor: '#635BFF', borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
+  payButtonText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  payClose: { marginTop: spacing.lg, alignSelf: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  payCloseText: { color: colors.textMuted, fontWeight: '700' },
 });
