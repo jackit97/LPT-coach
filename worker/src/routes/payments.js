@@ -267,6 +267,38 @@ app.put('/:id', roleCheck('personal_trainer'), async (c) => {
   return c.json(updated[0]);
 });
 
+// POST /payments/:id/conferma-bonifico { ricevuto: true|false } — il coach controlla l'accredito del bonifico segnalato
+app.post('/:id{[0-9]+}/conferma-bonifico', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const payment = (await sql`SELECT * FROM pagamenti WHERE pagamentoid = ${Number(c.req.param('id'))}`)[0];
+  if (!payment || !await assertCoachOwnsAthlete(sql, user.userId, payment.utenteid)) return c.json({ message: 'Pagamento non trovato' }, 404);
+  const { ricevuto } = await c.req.json().catch(() => ({}));
+  const importo = `${Number(payment.importo).toFixed(2)} €`;
+  let updated;
+  if (ricevuto) {
+    updated = (await sql`
+      UPDATE pagamenti SET stato = 'Pagato', datapagamento = COALESCE(datapagamento, NOW()), metodo = COALESCE(metodo, 'bonifico')
+      WHERE pagamentoid = ${payment.pagamentoid} RETURNING *
+    `)[0];
+    await notify(sql, payment.utenteid, {
+      tipo: 'pagamento', mittenteId: user.userId,
+      titolo: `Pagamento confermato: ${payment.causale || 'quota'}`,
+      messaggio: `Il coach ha ricevuto il bonifico di ${importo}. Grazie!`,
+      link: { screen: 'PaymentsHome', params: {} },
+    });
+  } else {
+    updated = (await sql`UPDATE pagamenti SET stato = 'In sospeso' WHERE pagamentoid = ${payment.pagamentoid} RETURNING *`)[0];
+    await notify(sql, payment.utenteid, {
+      tipo: 'pagamento', mittenteId: user.userId,
+      titolo: `Bonifico non ancora ricevuto: ${payment.causale || 'quota'}`,
+      messaggio: `Il coach non ha ancora visto l'accredito di ${importo}: controlla il bonifico (IBAN e importo) o contattalo.`,
+      link: { screen: 'PaymentsHome', params: {} },
+    });
+  }
+  return c.json(updated);
+});
+
 // DELETE /payments/:id
 app.delete('/:id', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);

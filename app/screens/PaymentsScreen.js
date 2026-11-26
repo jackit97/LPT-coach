@@ -160,6 +160,44 @@ export default function PaymentsScreen({ navigation, route }) {
     }
   };
 
+  // bonifico segnalato dall'atleta: il coach conferma l'accredito (o lo rimanda "in sospeso")
+  const [confirming, setConfirming] = useState(null);
+  const confirmTransfer = (payment, ricevuto) => {
+    const label = `€${Number(payment.importo).toFixed(2)}${payment.atleta ? ` di ${payment.atleta}` : ''}`;
+    Alert.alert(
+      ricevuto ? 'Conferma bonifico' : 'Bonifico non ricevuto',
+      ricevuto ? `Confermi di aver ricevuto il bonifico di ${label}? L'atleta riceverà una notifica.` : `Il bonifico di ${label} non risulta ancora? Il pagamento torna "In sospeso" e l'atleta viene avvisato.`,
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: ricevuto ? 'Confermo' : 'Non ricevuto',
+          onPress: async () => {
+            setConfirming(payment.pagamentoid);
+            try { await api.post(`/payments/${payment.pagamentoid}/conferma-bonifico`, { ricevuto }); await load(); }
+            catch (e) { Alert.alert('Errore', e?.response?.data?.message || 'Operazione non riuscita'); }
+            finally { setConfirming(null); }
+          },
+        },
+      ],
+    );
+  };
+  const TransferActions = ({ item }) => (item.stato === 'In verifica' ? (
+    <View style={styles.transferBox}>
+      <Text style={styles.transferText}>
+        🏦 Bonifico segnalato dall'atleta{item.segnalato_at ? ` il ${new Date(item.segnalato_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}` : ''}: controlla l'accredito.
+      </Text>
+      <View style={styles.transferActions}>
+        <Pressable style={[styles.transferOk, confirming === item.pagamentoid && { opacity: 0.6 }]} disabled={confirming === item.pagamentoid} onPress={() => confirmTransfer(item, true)}>
+          <Text style={styles.transferOkText}>✓ Ricevuto</Text>
+        </Pressable>
+        <Pressable style={styles.transferNo} disabled={confirming === item.pagamentoid} onPress={() => confirmTransfer(item, false)}>
+          <Text style={styles.transferNoText}>Non ricevuto</Text>
+        </Pressable>
+      </View>
+    </View>
+  ) : null);
+  const methodLabel = (item) => (item.stato === 'Pagato' && item.metodo ? ({ stripe: ' · carta', bonifico: ' · bonifico' }[item.metodo] || '') : '');
+
   const markPaid = async (payment) => {
     await api.put(`/payments/${payment.pagamentoid}`, { stato: 'Pagato', datapagamento: new Date().toISOString() });
     load();
@@ -198,20 +236,23 @@ export default function PaymentsScreen({ navigation, route }) {
             contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 90 }}
             ListEmptyComponent={<Text style={styles.empty}>{filter === 'aperti' ? 'Nessun pagamento da incassare.' : 'Nessun pagamento.'}</Text>}
             renderItem={({ item }) => (
-              <View style={[styles.card, isLate(item) && { borderColor: '#FECACA' }]}>
+              <View style={[styles.cardWrap, isLate(item) && { borderColor: '#FECACA' }, item.stato === 'In verifica' && { borderColor: '#93C5FD' }]}>
+              <View style={styles.cardRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.athleteName} numberOfLines={1}>{item.atleta}</Text>
                   <Text style={typography.h3}>€{Number(item.importo).toFixed(2)}</Text>
-                  <Text style={typography.caption}>{item.causale || 'Pagamento'}{item.scadenza ? ` · scade il ${String(item.scadenza).slice(0, 10).split('-').reverse().join('/')}` : ''}</Text>
+                  <Text style={typography.caption}>{item.causale || 'Pagamento'}{item.scadenza ? ` · scade il ${String(item.scadenza).slice(0, 10).split('-').reverse().join('/')}` : ''}{methodLabel(item)}</Text>
                 </View>
                 <View style={[styles.statusPill, { backgroundColor: ((isLate(item) ? colors.danger : STATO_COLORS[item.stato]) || colors.textMuted) + '1A' }]}>
                   <Text style={{ color: (isLate(item) ? colors.danger : STATO_COLORS[item.stato]) || colors.textMuted, fontWeight: '700', fontSize: 12 }}>{isLate(item) ? 'Scaduto' : item.stato}</Text>
                 </View>
-                {item.stato !== 'Pagato' && (
+                {item.stato !== 'Pagato' && item.stato !== 'In verifica' && (
                   <Pressable onPress={() => markPaid(item)} style={styles.markPaidBtn} accessibilityLabel="Segna pagato">
                     <Text style={styles.markPaidText}>✓</Text>
                   </Pressable>
                 )}
+              </View>
+              <TransferActions item={item} />
               </View>
             )}
           />
@@ -282,17 +323,20 @@ export default function PaymentsScreen({ navigation, route }) {
             >
               <View style={{ flex: 1 }}>
                 <Text style={typography.h3}>€{Number(item.importo).toFixed(2)}</Text>
-                <Text style={typography.caption}>{item.causale || 'Pagamento'}</Text>
+                <Text style={typography.caption}>{item.causale || 'Pagamento'}{methodLabel(item)}</Text>
                 {!!item.scadenza && <Text style={typography.caption}>Scadenza: {String(item.scadenza).slice(0, 10).split('-').reverse().join('/')}</Text>}
                 {!isCoach && item.stato !== 'Pagato' && <Text style={styles.payHint}>{item.stato === 'In verifica' ? 'Bonifico in verifica · tocca per i dettagli' : 'Tocca per pagare'}</Text>}
               </View>
               <View style={[styles.statusPill, { backgroundColor: (STATO_COLORS[item.stato] || colors.textMuted) + '1A' }]}>
                 <Text style={{ color: STATO_COLORS[item.stato] || colors.textMuted, fontWeight: '700', fontSize: 12 }}>{item.stato}</Text>
               </View>
-              {isCoach && item.stato !== 'Pagato' && (
+              {isCoach && item.stato !== 'Pagato' && item.stato !== 'In verifica' && (
                 <Pressable onPress={() => markPaid(item)} style={styles.markPaidBtn}>
                   <Text style={styles.markPaidText}>✓</Text>
                 </Pressable>
+              )}
+              {isCoach && item.stato === 'In verifica' && (
+                <View style={{ width: '100%' }}><TransferActions item={item} /></View>
               )}
             </Pressable>
           )}
@@ -342,7 +386,16 @@ export default function PaymentsScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
-  card: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
+  cardWrap: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  transferBox: { marginTop: spacing.sm, backgroundColor: '#EFF6FF', borderRadius: radius.md, padding: spacing.sm },
+  transferText: { fontSize: 13, color: '#1E3A8A', fontWeight: '600' },
+  transferActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  transferOk: { flex: 1, backgroundColor: colors.success, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  transferOkText: { color: '#fff', fontWeight: '800' },
+  transferNo: { flex: 1, borderWidth: 1, borderColor: colors.danger, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center', backgroundColor: colors.surface },
+  transferNoText: { color: colors.danger, fontWeight: '800' },
+  card: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   statusPill: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 },
   markPaidBtn: { width: 32, height: 32, borderRadius: radius.pill, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
   markPaidText: { color: colors.success, fontWeight: '700' },
