@@ -21,14 +21,31 @@ const RELOAD_KEY = 'lpt_reload_for';
 const readReloadFor = () => { try { return window.sessionStorage.getItem(RELOAD_KEY); } catch { return null; } };
 const writeReloadFor = (version) => { try { window.sessionStorage.setItem(RELOAD_KEY, version); } catch { /* ignore */ } };
 
+const RELOADED_AT_KEY = 'lpt_reloaded_at';
+const justUpdated = () => {
+  try { return Date.now() - Number(window.sessionStorage.getItem(RELOADED_AT_KEY) || 0) < 20000; } catch { return false; }
+};
+
+// Una sola ricarica: prima si attiva il service worker nuovo (e si aspetta che prenda il controllo),
+// poi si svuota la cache e si riapre la pagina. Prima la pagina nuova veniva ricaricata una seconda volta
+// quando il service worker prendeva il controllo dopo la navigazione.
 async function hardReload(registration) {
   try {
-    registration?.waiting?.postMessage({ type: 'SKIP_WAITING' });
+    const waiting = registration?.waiting;
+    if (waiting && 'serviceWorker' in navigator) {
+      await new Promise((resolve) => {
+        const done = () => { navigator.serviceWorker.removeEventListener('controllerchange', done); resolve(); };
+        navigator.serviceWorker.addEventListener('controllerchange', done);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+        setTimeout(done, 4000);
+      });
+    }
     if ('caches' in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((key) => caches.delete(key)));
     }
   } catch { /* ignore */ }
+  try { window.sessionStorage.setItem(RELOADED_AT_KEY, String(Date.now())); } catch { /* ignore */ }
   // cache-buster: forza il browser a riscaricare index.html
   const url = new URL(window.location.href);
   url.searchParams.set('v', Date.now().toString(36));
@@ -73,8 +90,11 @@ export default function AppUpdater() {
     checkNow = () => { const now = Date.now(); if (now - throttle > 10000) { throttle = now; checkVersion(); } };
 
     const hasSw = 'serviceWorker' in navigator;
+    // il service worker nuovo ha preso il controllo mentre la pagina era aperta (aggiornamento avviato da
+    // un'altra scheda): ricarica. Non alla prima installazione ne' subito dopo un aggiornamento appena fatto.
+    const hadController = hasSw && !!navigator.serviceWorker.controller;
     const onControllerChange = () => {
-      if (reloadingRef.current) return;
+      if (reloadingRef.current || !hadController || justUpdated()) return;
       reloadingRef.current = true;
       window.location.reload();
     };
