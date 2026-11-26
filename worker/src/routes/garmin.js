@@ -48,10 +48,13 @@ app.get('/callback', async (c) => {
   try {
     const tokens = await exchangeCode(c.env, { code: String(code), verifier: stateRow.code_verifier, redirectUri: garminRedirectUri(c.env, c.req.url) });
     const cols = tokenColumns(tokens);
-    const idRes = await garminApi(cols.access_token, 'GET', '/partner-gateway/rest/user/id');
+    // percorsi documentati nel portale (wellness-api); partner-gateway come riserva
+    let idRes = await garminApi(cols.access_token, 'GET', '/wellness-api/rest/user/id');
+    if (!idRes.ok) idRes = await garminApi(cols.access_token, 'GET', '/partner-gateway/rest/user/id');
     const garminUserId = idRes.data?.userId ? String(idRes.data.userId) : null;
     if (!garminUserId) throw new Error(`user id Garmin non letto (${idRes.status})`);
-    const permRes = await garminApi(cols.access_token, 'GET', '/partner-gateway/rest/user/permissions');
+    let permRes = await garminApi(cols.access_token, 'GET', '/wellness-api/rest/user/permissions');
+    if (!permRes.ok) permRes = await garminApi(cols.access_token, 'GET', '/partner-gateway/rest/user/permissions');
     const permissions = Array.isArray(permRes.data) ? permRes.data : (permRes.data?.permissions || []);
     // un account Garmin puo' essere collegato a un solo utente LPT
     await sql`DELETE FROM garmin_connections WHERE garmin_user_id = ${garminUserId} AND utenteid <> ${stateRow.utenteid}`;
@@ -185,7 +188,8 @@ app.post('/disconnect', auth, async (c) => {
     for (const row of future) {
       if (row.garmin_workout_id) await garminApi(token, 'DELETE', `/training-api/workout/v2/${row.garmin_workout_id}`);
     }
-    await garminApi(token, 'DELETE', '/partner-gateway/rest/user/registration');
+    const unreg = await garminApi(token, 'DELETE', '/wellness-api/rest/user/registration');
+    if (!unreg.ok && unreg.status !== 404) await garminApi(token, 'DELETE', '/partner-gateway/rest/user/registration');
   } catch (error) {
     console.error('garmin disconnect', error?.message);
   }

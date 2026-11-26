@@ -349,21 +349,43 @@ export const BACKFILL_DAYS = 7;
 export async function requestActivityRefresh(sql, env, utenteId) {
   const connection = (await sql`SELECT * FROM garmin_connections WHERE utenteid = ${utenteId}`)[0];
   if (!connection) throw new GarminError('Account Garmin non collegato', 404);
-  const last = connection.last_backfill_at ? new Date(connection.last_backfill_at).getTime() : null;
-  if (last && Date.now() - last < 10 * 60 * 1000) {
-    return { requested: false, message: 'Aggiornamento già richiesto da poco: le attività arrivano entro qualche minuto.' };
-  }
   const token = await accessTokenFor(sql, env, connection);
   const end = Math.floor(Date.now() / 1000);
-  const start = end - BACKFILL_DAYS * 86400;
-  let accepted = 0;
-  let lastFailure = null;
-  for (const kind of ['activities', 'activityFiles']) {
-    const res = await garminApi(token, 'GET', `/wellness-api/rest/backfill/${kind}?summaryStartTimeInSeconds=${start}&summaryEndTimeInSeconds=${end}`);
-    if (res.ok || res.status === 409) accepted += 1; // 409 = stesso periodo gia' richiesto
-    else lastFailure = res;
+  const failures = [];
+
+  // 1) subito: attivita' modificate su Connect (titolo, descrizione...) e caricate nelle ultime 24 ore
+  let pulled = 0;
+  for (const [path, kind] of [['manuallyUpdatedActivities', 'summary'], ['activities', 'summary']]) {
+    const res = await garminApi(token, 'GET', `/wellness-api/rest/${path}?uploadStartTimeInSeconds=${end - 86400}&uploadEndTimeInSeconds=${end}`);
+    if (res.ok && Array.isArray(res.data)) pulled += await enqueueActivities(sql, kind, res.data);
+    else if (!res.ok) failures.push(`${path} ${res.status}`);
   }
-  try { await sql`UPDATE garmin_connections SET last_backfill_at = NOW() WHERE utenteid = ${utenteId}`; } catch { /* migrazione 20261201 */ }
-  if (!accepted && lastFailure) throw new GarminError(garminFailure(lastFailure, 'Aggiornamento da Garmin'), lastFailure.status === 401 ? 401 : 502);
-  return { requested: true, message: `Richiesta inviata a Garmin: le attività degli ultimi ${BACKFILL_DAYS} giorni, con titolo e descrizione aggiornati, arrivano entro qualche minuto.` };
+  let processed = 0;
+  if (pulled) processed = (await drainActivityQueue(sql, env, { limit: 3 })).processed;
+
+  // 2) storico degli ultimi giorni: Garmin rimanda le attivita' (arrivano tramite le notifiche push)
+  let backfill = 'skip';
+  const last = connection.last_backfill_at ? new Date(connection.last_backfill_at).getTime() : null;
+  if (!last || Date.now() - last > 10 * 60 * 1000) {
+    const res = await garminApi(token, 'GET', `/wellness-api/rest/backfill/activities?summaryStartTimeInSeconds=${end - BACKFILL_DAYS * 86400}&summaryEndTimeInSeconds=${end}`);
+    if (res.ok || res.status === 409) { // 409 = stesso periodo gia' richiesto
+      backfill = 'ok';
+      try { await sql`UPDATE garmin_connections SET last_backfill_at = NOW() WHERE utenteid = ${utenteId}`; } catch { /* migrazione 20261201 */ }
+    } else {
+      backfill = 'error';
+      const detail = typeof res.data === 'string' ? res.data : res.data?.errorMessage || res.data?.message || '';
+      failures.push(`backfill ${res.status}${detail ? ` ${String(detail).slice(0, 120)}` : ''}`);
+    }
+  }
+  if (failures.length) console.error('garmin refresh', utenteId, failures.join(' | '));
+
+  if (!pulled && backfill === 'error' && failures.length >= 3) {
+    throw new GarminError(`Garmin non ha accettato la richiesta (${failures.join(', ')})`, 502);
+  }
+  const parts = [];
+  if (processed) parts.push(`${processed} ${processed === 1 ? 'attività aggiornata' : 'attività aggiornate'} subito`);
+  if (backfill === 'ok') parts.push(`le attività degli ultimi ${BACKFILL_DAYS} giorni arrivano entro qualche minuto`);
+  if (backfill === 'skip') parts.push('l\'aggiornamento degli ultimi giorni è già stato richiesto da poco');
+  if (!parts.length) parts.push('nessuna modifica trovata nelle ultime 24 ore');
+  return { requested: true, processed, backfill, message: `Sync Garmin: ${parts.join('; ')}.` };
 }
