@@ -345,11 +345,22 @@ app.get('/:id{[0-9]+}', async (c) => {
   // video e dubbi sempre aggiornati (l'atleta puo' averli cambiati dopo l'invio)
   const live = await executionsFor(c, sql, report.workout_id);
   // serie fatte (ripetizioni e kg) registrate dall'atleta: sempre aggiornate, anche se le ha inserite dopo l'invio
+  // Il report salva gli esercizi al momento dell'invio: se poi il coach modifica l'allenamento gli esercizi
+  // vengono ricreati con un altro id, quindi serie, video e dubbi si cercano anche per nome.
+  const nameKey = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   let logged = new Map();
+  const currentByName = new Map();
   try {
-    const rows = await sql`SELECT exercise_id, serie_eseguite_json FROM calendar_workout_exercises WHERE workout_id = ${report.workout_id}`;
+    const rows = await sql`SELECT exercise_id, nome, serie_eseguite_json FROM calendar_workout_exercises WHERE workout_id = ${report.workout_id}`;
     logged = new Map(rows.map((row) => [row.exercise_id, safeSets(row.serie_eseguite_json)]));
-  } catch { /* migrazione 20261124 non applicata */ }
+    rows.forEach((row) => { if (!currentByName.has(nameKey(row.nome))) currentByName.set(nameKey(row.nome), row.exercise_id); });
+  } catch {
+    try {
+      const rows = await sql`SELECT exercise_id, nome FROM calendar_workout_exercises WHERE workout_id = ${report.workout_id}`;
+      rows.forEach((row) => { if (!currentByName.has(nameKey(row.nome))) currentByName.set(nameKey(row.nome), row.exercise_id); });
+    } catch { /* ignore */ }
+  }
+  const currentId = (exercise) => (logged.has(exercise.exercise_id) || live[exercise.exercise_id] ? exercise.exercise_id : currentByName.get(nameKey(exercise.nome)) ?? exercise.exercise_id);
   // in mancanza, le serie registrate dall'orologio (file .fit / Garmin)
   let watchSets = [];
   if (![...logged.values()].some((sets) => sets.length)) {
@@ -363,12 +374,15 @@ app.get('/:id{[0-9]+}', async (c) => {
   return c.json({
     ...rest,
     feedback: content.feedback || null,
-    esercizi: (content.esercizi || []).map((exercise) => ({
-      ...exercise,
-      dubbi: live[exercise.exercise_id]?.dubbi ?? exercise.dubbi ?? null,
-      video_url: live[exercise.exercise_id]?.video_url || null,
-      serie_eseguite: logged.get(exercise.exercise_id) || [],
-    })),
+    esercizi: (content.esercizi || []).map((exercise) => {
+      const id = currentId(exercise);
+      return {
+        ...exercise,
+        dubbi: live[id]?.dubbi ?? exercise.dubbi ?? null,
+        video_url: live[id]?.video_url || null,
+        serie_eseguite: logged.get(id) || [],
+      };
+    }),
     serie_orologio: watchSets,
   });
 });

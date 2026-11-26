@@ -1058,10 +1058,12 @@ app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
   const { esercizi } = await c.req.json();
   if (!Array.isArray(esercizi)) return c.json({ message: 'esercizi deve essere un array' }, 400);
 
-  // note e serie gia' registrate dall'atleta restano sugli esercizi con lo stesso nome
+  // note, serie (kg/ripetizioni) e video/dubbi gia' registrati dall'atleta restano sugli esercizi con lo stesso nome.
+  // Prima si creano i nuovi esercizi, poi si spostano video e dubbi e solo alla fine si tolgono i vecchi
+  // (cancellarli per primi eliminava anche i video di esecuzione collegati).
   const previous = await sql`SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id}`;
   const keep = new Map(previous.map((row) => [nameKey(row.nome), row]));
-  await sql`DELETE FROM calendar_workout_exercises WHERE workout_id = ${id}`;
+  const moves = [];
   for (let i = 0; i < esercizi.length; i += 1) {
     const ex = esercizi[i] || {};
     if (!ex.nome) continue;
@@ -1074,13 +1076,28 @@ app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
       RETURNING exercise_id
     `;
     const old = keep.get(nameKey(ex.nome));
-    if (old && (old.note_atleta || old.serie_eseguite_json)) {
-      try {
-        await sql`UPDATE calendar_workout_exercises SET note_atleta = ${old.note_atleta || null}, note_atleta_at = ${old.note_atleta_at || null},
-          serie_eseguite_json = ${old.serie_eseguite_json || null} WHERE exercise_id = ${inserted[0].exercise_id}`;
-      } catch { /* colonne non ancora migrate */ }
+    if (old) {
+      keep.delete(nameKey(ex.nome));
+      moves.push({ from: old.exercise_id, to: inserted[0].exercise_id });
+      if (old.note_atleta || old.serie_eseguite_json) {
+        try {
+          await sql`UPDATE calendar_workout_exercises SET note_atleta = ${old.note_atleta || null}, note_atleta_at = ${old.note_atleta_at || null},
+            serie_eseguite_json = ${old.serie_eseguite_json || null} WHERE exercise_id = ${inserted[0].exercise_id}`;
+        } catch { /* colonne non ancora migrate */ }
+      }
     }
   }
+  if (moves.length) {
+    try {
+      await sql`
+        UPDATE esecuzioni_video v SET exercise_id = m.to_id
+        FROM jsonb_to_recordset(${JSON.stringify(moves.map((m) => ({ from_id: m.from, to_id: m.to })))}::jsonb) AS m(from_id int, to_id int)
+        WHERE v.exercise_id = m.from_id
+      `;
+    } catch { /* tabella video non ancora migrata */ }
+  }
+  const oldIds = previous.map((row) => row.exercise_id);
+  if (oldIds.length) await sql`DELETE FROM calendar_workout_exercises WHERE exercise_id = ANY(${oldIds})`;
   const rows = await sql`SELECT * FROM calendar_workout_exercises WHERE workout_id = ${id} ORDER BY order_index ASC`;
   return c.json(rows);
 });
