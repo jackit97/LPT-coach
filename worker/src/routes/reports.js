@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import { authenticate, roleCheck } from '../auth.js';
 import { assertAccessToAthlete } from '../utils.js';
 import { notify, coachOf, userName, fmtDay } from '../lib/notify.js';
+import { safeSets, exercisesFromFileSets } from '../lib/strengthAnalysis.js';
 
 // Allenamenti di forza: l'atleta carica il video di esecuzione e scrive i dubbi per ogni esercizio.
 // Quando segna l'allenamento come completato puo' inviare al coach un report (feedback, note, dubbi, video)
@@ -343,6 +344,21 @@ app.get('/:id{[0-9]+}', async (c) => {
   try { content = JSON.parse(report.contenuto_json || '{}'); } catch { content = {}; }
   // video e dubbi sempre aggiornati (l'atleta puo' averli cambiati dopo l'invio)
   const live = await executionsFor(c, sql, report.workout_id);
+  // serie fatte (ripetizioni e kg) registrate dall'atleta: sempre aggiornate, anche se le ha inserite dopo l'invio
+  let logged = new Map();
+  try {
+    const rows = await sql`SELECT exercise_id, serie_eseguite_json FROM calendar_workout_exercises WHERE workout_id = ${report.workout_id}`;
+    logged = new Map(rows.map((row) => [row.exercise_id, safeSets(row.serie_eseguite_json)]));
+  } catch { /* migrazione 20261124 non applicata */ }
+  // in mancanza, le serie registrate dall'orologio (file .fit / Garmin)
+  let watchSets = [];
+  if (![...logged.values()].some((sets) => sets.length)) {
+    try {
+      const stream = (await sql`SELECT samples_json FROM activity_streams WHERE workout_id = ${report.workout_id}`)[0];
+      const samples = stream?.samples_json ? JSON.parse(stream.samples_json) : null;
+      watchSets = exercisesFromFileSets(samples?.sets || []);
+    } catch { watchSets = []; }
+  }
   const { contenuto_json: _json, ...rest } = report;
   return c.json({
     ...rest,
@@ -351,7 +367,9 @@ app.get('/:id{[0-9]+}', async (c) => {
       ...exercise,
       dubbi: live[exercise.exercise_id]?.dubbi ?? exercise.dubbi ?? null,
       video_url: live[exercise.exercise_id]?.video_url || null,
+      serie_eseguite: logged.get(exercise.exercise_id) || [],
     })),
+    serie_orologio: watchSets,
   });
 });
 

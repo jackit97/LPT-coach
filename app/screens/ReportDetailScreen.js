@@ -20,6 +20,36 @@ function ExecutionVideo({ url }) {
   );
 }
 
+const fmtKg = (kg) => (kg === null || kg === undefined ? null : `${Number(kg).toLocaleString('it-IT', { maximumFractionDigits: 1 })} kg`);
+
+// Serie fatte: ripetizioni x kg per ogni serie, con carico massimo e volume (rip x kg) dell'esercizio
+function SetsTable({ sets, title = 'Serie eseguite' }) {
+  if (!sets?.length) return null;
+  const done = sets.filter((set) => set.fatta !== false);
+  const maxKg = Math.max(0, ...done.map((set) => Number(set.kg) || 0));
+  const volume = done.reduce((sum, set) => sum + (Number(set.reps) || 0) * (Number(set.kg) || 0), 0);
+  return (
+    <View style={styles.setsBox}>
+      <Text style={styles.setsTitle}>{title}</Text>
+      {sets.map((set, index) => (
+        <View key={index} style={[styles.setRow, set.fatta === false && { opacity: 0.45 }]}>
+          <Text style={styles.setIndex}>{index + 1}ª</Text>
+          <Text style={styles.setValue}>
+            {set.reps !== null && set.reps !== undefined ? `${set.reps} rip` : set.secondi ? `${set.secondi}"` : '—'}
+            {set.kg !== null && set.kg !== undefined ? <Text style={styles.setKg}>  ×  {fmtKg(set.kg)}</Text> : null}
+          </Text>
+          {set.fatta === false && <Text style={styles.setSkipped}>non fatta</Text>}
+        </View>
+      ))}
+      {(maxKg > 0 || volume > 0) && (
+        <Text style={styles.setsSummary}>
+          {maxKg > 0 ? `Carico max ${fmtKg(maxKg)}` : ''}{maxKg > 0 && volume > 0 ? ' · ' : ''}{volume > 0 ? `Volume ${Math.round(volume).toLocaleString('it-IT')} kg` : ''}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 // Coach: dettaglio del report inviato dall'atleta + chat con l'atleta
 export default function ReportDetailScreen({ route, navigation }) {
   const { reportId } = route.params || {};
@@ -87,14 +117,17 @@ export default function ReportDetailScreen({ route, navigation }) {
 
       {(report.esercizi || []).map((exercise) => {
         const prescribed = [exercise.serie && `${exercise.serie} serie`, exercise.ripetizioni && `${exercise.ripetizioni} rip`, exercise.carico, exercise.recupero && `rec ${exercise.recupero}`].filter(Boolean).join(' · ');
-        const empty = !exercise.video_url && !exercise.dubbi && !exercise.note_atleta;
+        const empty = !exercise.video_url && !exercise.dubbi && !exercise.note_atleta && !exercise.serie_eseguite?.length;
         return (
           <View key={exercise.exercise_id} style={[styles.card, empty && { opacity: 0.7 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
               <Ionicons name="barbell" size={18} color={colors.primary} />
               <Text style={styles.exerciseName}>{exercise.nome}</Text>
             </View>
-            {!!prescribed && <Text style={styles.prescribed}>{prescribed}</Text>}
+            {!!prescribed && <Text style={styles.prescribed}>Previsto: {prescribed}</Text>}
+            {exercise.serie_eseguite?.length ? <SetsTable sets={exercise.serie_eseguite} /> : (
+              !report.serie_orologio?.length && <Text style={[typography.caption, { marginTop: 4 }]}>L'atleta non ha registrato ripetizioni e kg per questo esercizio.</Text>
+            )}
             {!!exercise.video_url && <View style={{ marginTop: spacing.sm }}><ExecutionVideo url={exercise.video_url} /></View>}
             {!!exercise.dubbi && (
               <View style={styles.doubtBox}>
@@ -112,6 +145,18 @@ export default function ReportDetailScreen({ route, navigation }) {
           </View>
         );
       })}
+
+      {report.serie_orologio?.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.section}>Serie registrate dall'orologio</Text>
+          {report.serie_orologio.map((group, index) => (
+            <View key={`${group.nome}-${index}`} style={{ marginTop: spacing.sm }}>
+              <Text style={styles.exerciseName}>{group.nome}</Text>
+              <SetsTable sets={group.sets} title="Serie" />
+            </View>
+          ))}
+        </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.section}>Conversazione con l'atleta</Text>
@@ -138,6 +183,14 @@ export default function ReportDetailScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  setsBox: { marginTop: spacing.sm, backgroundColor: colors.bg, borderRadius: radius.md, padding: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  setsTitle: { fontSize: 11, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', marginBottom: 4 },
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 3 },
+  setIndex: { width: 26, fontSize: 12, fontWeight: '800', color: colors.primary },
+  setValue: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+  setKg: { color: colors.primary, fontWeight: '800' },
+  setSkipped: { fontSize: 11, color: colors.danger, fontWeight: '700' },
+  setsSummary: { marginTop: 4, fontSize: 12, fontWeight: '700', color: colors.textMuted },
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   athlete: { fontSize: 13, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
