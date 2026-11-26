@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing } from '../theme';
 
-// Aggiornamento automatico della versione web/PWA. A ogni deploy (npm run build:web) cambiano sw.js e
-// version.json: quando l'app trova una versione nuova si ricarica da sola dopo pochi secondi, cosi'
-// non si resta mai con un'app vecchia che parla con il worker nuovo. Se si sta scrivendo in un campo
-// aspetta che si finisca, per non perdere il testo. Il login resta valido: non serve rientrare.
+// Aggiornamento della versione web/PWA. A ogni deploy (npm run build:web) cambiano sw.js e version.json:
+// quando l'app trova una versione nuova mostra un avviso a tutto schermo che blocca l'app; con "OK"
+// si aggiorna. Cosi' non si resta con un'app vecchia che parla con il worker nuovo e non si puo'
+// continuare a usarla mentre si aggiorna. Il login resta valido: non serve rientrare.
 const CHECK_EVERY_MS = 2 * 60 * 1000;
-const COUNTDOWN_S = 5;
 
 let checkNow = null;
 // chiamata dal client API quando il server risponde con un errore: magari l'app e' vecchia
@@ -21,11 +20,6 @@ const metaVersion = () => {
 const RELOAD_KEY = 'lpt_reload_for';
 const readReloadFor = () => { try { return window.sessionStorage.getItem(RELOAD_KEY); } catch { return null; } };
 const writeReloadFor = (version) => { try { window.sessionStorage.setItem(RELOAD_KEY, version); } catch { /* ignore */ } };
-
-const isTyping = () => {
-  const el = typeof document !== 'undefined' ? document.activeElement : null;
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-};
 
 async function hardReload(registration) {
   try {
@@ -43,7 +37,7 @@ async function hardReload(registration) {
 
 export default function AppUpdater() {
   const [pending, setPending] = useState(false);
-  const [seconds, setSeconds] = useState(COUNTDOWN_S);
+  const [updating, setUpdating] = useState(false);
   const registrationRef = useRef(null);
   const knownVersionRef = useRef(metaVersion());
   const reloadingRef = useRef(false);
@@ -113,38 +107,45 @@ export default function AppUpdater() {
     };
   }, [checkVersion]);
 
-  // versione nuova trovata: conto alla rovescia e ricarica (in pausa mentre si scrive in un campo)
-  useEffect(() => {
-    if (!pending) return undefined;
-    const timer = setInterval(() => {
-      if (isTyping()) { setSeconds(COUNTDOWN_S); return; }
-      setSeconds((value) => {
-        if (value <= 1) {
-          clearInterval(timer);
-          if (!reloadingRef.current) {
-            reloadingRef.current = true;
-            if (targetVersionRef.current) writeReloadFor(targetVersionRef.current);
-            hardReload(registrationRef.current);
-          }
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [pending]);
+  const startUpdate = () => {
+    if (reloadingRef.current) return;
+    reloadingRef.current = true;
+    setUpdating(true);
+    if (targetVersionRef.current) writeReloadFor(targetVersionRef.current);
+    hardReload(registrationRef.current);
+  };
 
   if (Platform.OS !== 'web' || !pending) return null;
   return (
-    <View style={styles.banner} pointerEvents="none">
-      <Text style={styles.text}>
-        ⬆ Nuova versione di LPT Coach: {isTyping() ? 'aggiorno appena finisci di scrivere…' : `aggiorno tra ${seconds}s…`}
-      </Text>
+    <View style={styles.overlay} accessibilityViewIsModal>
+      <View style={styles.card} accessibilityRole="alert">
+        <Text style={styles.icon}>⬆</Text>
+        <Text style={styles.title}>Nuova versione di LPT Coach</Text>
+        <Text style={styles.text}>
+          {updating ? 'Aggiornamento in corso, attendi qualche secondo…' : 'È disponibile un aggiornamento dell\'app. Premi OK per aggiornare: rimani collegato con il tuo account.'}
+        </Text>
+        {updating ? (
+          <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: spacing.md }} />
+        ) : (
+          <Pressable style={({ pressed }) => [styles.button, pressed && { opacity: 0.85 }]} onPress={startUpdate} accessibilityLabel="Aggiorna l'app">
+            <Text style={styles.buttonText}>OK, aggiorna</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999, alignItems: 'center', padding: spacing.sm },
-  text: { backgroundColor: colors.primary, color: '#fff', fontWeight: '800', fontSize: 13, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.lg, overflow: 'hidden' },
+  // a tutto schermo sopra l'app: finche' non si aggiorna non si puo' toccare nient'altro
+  overlay: {
+    position: Platform.OS === 'web' ? 'fixed' : 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
+  },
+  card: { width: '100%', maxWidth: 380, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, alignItems: 'center' },
+  icon: { fontSize: 30, color: colors.primary, fontWeight: '900' },
+  title: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: spacing.xs, textAlign: 'center' },
+  text: { fontSize: 14, color: colors.textMuted, lineHeight: 20, textAlign: 'center', marginTop: spacing.sm },
+  button: { marginTop: spacing.lg, backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, alignSelf: 'stretch', alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });
