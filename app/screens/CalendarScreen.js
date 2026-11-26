@@ -15,6 +15,7 @@ import { colors, spacing, radius, typography } from '../theme';
 import { toISODate, startOfWeek, addDays } from '../utils/dates';
 import { performanceStatus, formatShortDuration } from '../utils/endurance';
 import { fullName } from '../utils/names';
+import { refreshGarminActivities } from '../utils/garmin';
 
 const ALERT_ICONS = { inattivita: '⏸', aderenza: '📉', carico: '⚠', commenti: '💬' };
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
@@ -201,13 +202,10 @@ export default function CalendarScreen({ navigation }) {
   const syncGarmin = async () => {
     setSyncingGarmin(true);
     try {
-      const { data } = await api.post('/garmin/refresh');
+      const ok = await refreshGarminActivities();
       await load();
-      Alert.alert('Garmin', data.message || 'Aggiornamento richiesto a Garmin');
       // le attivita' rimandate da Garmin arrivano dopo qualche istante: ricarico il calendario
-      setTimeout(() => { load(); }, 45000);
-    } catch (e) {
-      Alert.alert('Garmin', e?.response?.data?.message || 'Sync Garmin non riuscito');
+      if (ok) setTimeout(() => { load(); }, 45000);
     } finally {
       setSyncingGarmin(false);
     }

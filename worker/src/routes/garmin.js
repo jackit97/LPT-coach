@@ -238,12 +238,13 @@ app.post('/refresh', auth, async (c) => {
   if (!garminConfigured(c.env)) return c.json({ message: 'Il collegamento Garmin non è ancora attivo sul server' }, 503);
   const sql = db(c.env);
   try {
-    // intanto elabora quello che e' gia' arrivato ed e' in coda
+    // intanto elabora le attivita' gia' arrivate e rimaste in coda
     try { await drainActivityQueue(sql, c.env, { limit: 2 }); } catch (error) { console.error('garmin refresh drain', error?.message); }
     return c.json(await requestActivityRefresh(sql, c.env, user.userId));
   } catch (err) {
     if (err instanceof GarminError) {
-      return c.json({ message: err.message, code: err.status === 404 ? 'GARMIN_NOT_CONNECTED' : undefined }, err.status === 404 ? 400 : err.status === 401 ? 409 : 502);
+      const code = err.code || (err.status === 404 ? 'GARMIN_NOT_CONNECTED' : err.status === 401 ? 'GARMIN_RECONNECT' : undefined);
+      return c.json({ message: err.message, code }, err.status === 404 ? 400 : [401, 412].includes(err.status) ? 409 : 502);
     }
     throw err;
   }
