@@ -446,6 +446,8 @@ export function activityFromSummary(summary, sportKey) {
     format: 'garmin',
     rawSport: raw,
     name: summary.activityName || null,
+    // descrizione/note dell'attivita' su Garmin Connect, se Garmin la invia
+    notes: summary.description || summary.activityDescription || summary.notes || null,
     start: new Date(Number(summary.startTimeInSeconds) * 1000),
     localOffsetSeconds: Number.isFinite(Number(summary.startTimeOffsetInSeconds)) ? Number(summary.startTimeOffsetInSeconds) : undefined,
     durationSeconds: Math.round(Number(summary.durationInSeconds) || 0),

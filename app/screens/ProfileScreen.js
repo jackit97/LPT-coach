@@ -170,6 +170,19 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  // attivita' rinominate o descritte su Garmin Connect: Garmin le rimanda aggiornate
+  const refreshGarminActivities = async () => {
+    setGarminBusy('refresh');
+    try {
+      const { data } = await api.post('/garmin/refresh');
+      Alert.alert('Garmin', data.message || 'Aggiornamento richiesto');
+    } catch (err) {
+      Alert.alert('Garmin', err?.response?.data?.message || 'Aggiornamento non riuscito');
+    } finally {
+      setGarminBusy(null);
+    }
+  };
+
   const disconnectGarmin = () => {
     Alert.alert('Scollega Garmin', 'Vuoi scollegare il tuo account Garmin? Gli allenamenti futuri inviati verranno tolti dal calendario Garmin.', [
       { text: 'Annulla', style: 'cancel' },
@@ -372,6 +385,9 @@ export default function ProfileScreen({ navigation }) {
                   <Text style={styles.stravaWarning}>{garminStatus.valid === false ? 'Collegamento scaduto: scollega e ricollega Garmin.' : garminStatus.last_error}</Text>
                 ) : null}
                 <Text style={styles.stravaHint}>Con il pulsante qui sotto gli allenamenti da oggi ai prossimi 7 giorni vengono inviati al calendario Garmin; se il coach li modifica o li elimina, premilo di nuovo per aggiornarli.</Text>
+                <Pressable style={[styles.garminBtn, garminBusy === 'refresh' && { opacity: 0.6 }]} onPress={refreshGarminActivities} disabled={garminBusy === 'refresh'}>
+                  {garminBusy === 'refresh' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>🔄 Aggiorna attività da Garmin (titoli e descrizioni)</Text>}
+                </Pressable>
                 <Pressable style={[styles.garminBtn, garminBusy === 'sync' && { opacity: 0.6 }]} onPress={syncGarminNow} disabled={garminBusy === 'sync'}>
                   {garminBusy === 'sync' ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.stravaSyncBtnText}>⌚ Invia ora i prossimi 7 giorni a Garmin</Text>}
                 </Pressable>

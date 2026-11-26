@@ -828,3 +828,9 @@ SELECT r.report_id, r.coach_id, TRUE, r.risposta, COALESCE(r.risposta_at, r.invi
 FROM lptapp.workout_reports r
 WHERE r.risposta IS NOT NULL AND TRIM(r.risposta) <> ''
   AND NOT EXISTS (SELECT 1 FROM lptapp.workout_report_messages m WHERE m.report_id = r.report_id);
+
+-- Descrizione dell'attivita' sotto il titolo (come su Garmin Connect / Strava), scritta dall'atleta o dal coach
+-- o arrivata da Garmin; external_name = ultimo nome visto su Garmin (per riconoscere quando viene rinominata)
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS descrizione_attivita TEXT;
+ALTER TABLE lptapp.calendar_workouts ADD COLUMN IF NOT EXISTS external_name VARCHAR(255);
+ALTER TABLE lptapp.garmin_connections ADD COLUMN IF NOT EXISTS last_backfill_at TIMESTAMPTZ;

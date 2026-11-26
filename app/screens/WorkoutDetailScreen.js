@@ -142,6 +142,22 @@ export default function WorkoutDetailScreen({ route, navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Descrizione sotto il titolo (come su Garmin Connect / Strava): atleta sui propri allenamenti, coach su quelli dei suoi atleti
+  const [editingDesc, setEditingDesc] = useState(null);
+  const [savingDesc, setSavingDesc] = useState(false);
+  const saveDescription = async () => {
+    setSavingDesc(true);
+    try {
+      const { data } = await api.put(`/calendar/${workoutId}/descrizione-attivita`, { testo: editingDesc });
+      setWorkout((current) => ({ ...current, descrizione_attivita: data.descrizione_attivita }));
+      setEditingDesc(null);
+    } catch (e) {
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile salvare la descrizione');
+    } finally {
+      setSavingDesc(false);
+    }
+  };
+
   // Garmin Connect: invio dell'allenamento al calendario Garmin (da oggi a 7 giorni)
   const [garmin, setGarmin] = useState(null);
   const [sendingGarmin, setSendingGarmin] = useState(false);
@@ -342,6 +358,27 @@ export default function WorkoutDetailScreen({ route, navigation }) {
             </Pressable>
           )}
         </View>
+      )}
+      {editingDesc !== null ? (
+        <View style={{ marginTop: spacing.xs }}>
+          <TextInput value={editingDesc} onChangeText={setEditingDesc} style={styles.descInput} multiline autoFocus placeholder="Come è andata? Sensazioni, percorso, condizioni…" placeholderTextColor={colors.textMuted} />
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs }}>
+            <Pressable style={styles.titleSave} onPress={saveDescription} disabled={savingDesc}>
+              {savingDesc ? <ActivityIndicator color="#fff" /> : <Text style={styles.titleSaveText}>Salva descrizione</Text>}
+            </Pressable>
+            <Pressable style={styles.titleCancel} onPress={() => setEditingDesc(null)}><Text style={styles.titleCancelText}>Annulla</Text></Pressable>
+          </View>
+        </View>
+      ) : workout.descrizione_attivita ? (
+        <Pressable onPress={() => setEditingDesc(workout.descrizione_attivita || '')} style={styles.descBox} accessibilityLabel="Modifica descrizione">
+          <Text style={styles.descText}>{workout.descrizione_attivita}</Text>
+          <Ionicons name="create-outline" size={16} color={colors.primary} />
+        </Pressable>
+      ) : (
+        <Pressable onPress={() => setEditingDesc('')} style={styles.descAdd} hitSlop={6}>
+          <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+          <Text style={styles.descAddText}>Aggiungi una descrizione</Text>
+        </Pressable>
       )}
       <Text style={styles.date}>{String(workout.data).slice(0, 10)} · {calculatedStepSeconds > 0 ? formatDuration({ durata_secondi: calculatedStepSeconds }) : workout.load?.secondi_pianificati ? formatDuration({ durata_secondi: workout.load.secondi_pianificati }) : formatDuration(workout)}</Text>
 
@@ -669,6 +706,11 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, marginTop: spacing.sm },
   titleEdit: { marginTop: spacing.sm + 6, padding: 4 },
   titleInput: { ...typography.h2, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface, color: colors.text },
+  descInput: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surface, color: colors.text, minHeight: 80, textAlignVertical: 'top', fontSize: 15 },
+  descBox: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xs },
+  descText: { flex: 1, fontSize: 15, lineHeight: 21, color: colors.text },
+  descAdd: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, alignSelf: 'flex-start' },
+  descAddText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
   titleSave: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center' },
   titleSaveText: { color: '#fff', fontWeight: '800' },
   titleCancel: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },

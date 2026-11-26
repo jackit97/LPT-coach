@@ -219,10 +219,12 @@ async function processQueueItem(sql, env, item, connection) {
       throw error;
     }
     activity.format = String(payload.fileType || 'fit').toLowerCase();
-    if (payload.activityName && (!activity.name || /^\d{4}-\d{2}-\d{2}/.test(activity.name))) {
+    if (payload.activityName) {
+      // il nome su Garmin Connect (anche se rinominata) vale piu' di quello scritto nel file dall'orologio
       activity.name = payload.activityName;
       activity.title = String(payload.activityName).slice(0, 255);
     }
+    activity.notes = payload.description || payload.activityDescription || payload.notes || null;
   } else {
     const summary = item.kind === 'details' ? (payload.summary || payload) : payload;
     activity = activityFromSummary(summary, sportKey);
@@ -339,4 +341,29 @@ export async function runGarminCron(sql, env) {
     }
   }
   return { drained, synced };
+}
+
+// ---------- "Sync Garmin": Garmin rimanda le attivita' recenti (nome e dati aggiornati) ----------
+export const BACKFILL_DAYS = 7;
+
+export async function requestActivityRefresh(sql, env, utenteId) {
+  const connection = (await sql`SELECT * FROM garmin_connections WHERE utenteid = ${utenteId}`)[0];
+  if (!connection) throw new GarminError('Account Garmin non collegato', 404);
+  const last = connection.last_backfill_at ? new Date(connection.last_backfill_at).getTime() : null;
+  if (last && Date.now() - last < 10 * 60 * 1000) {
+    return { requested: false, message: 'Aggiornamento già richiesto da poco: le attività arrivano entro qualche minuto.' };
+  }
+  const token = await accessTokenFor(sql, env, connection);
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - BACKFILL_DAYS * 86400;
+  let accepted = 0;
+  let lastFailure = null;
+  for (const kind of ['activities', 'activityFiles']) {
+    const res = await garminApi(token, 'GET', `/wellness-api/rest/backfill/${kind}?summaryStartTimeInSeconds=${start}&summaryEndTimeInSeconds=${end}`);
+    if (res.ok || res.status === 409) accepted += 1; // 409 = stesso periodo gia' richiesto
+    else lastFailure = res;
+  }
+  try { await sql`UPDATE garmin_connections SET last_backfill_at = NOW() WHERE utenteid = ${utenteId}`; } catch { /* migrazione 20261201 */ }
+  if (!accepted && lastFailure) throw new GarminError(garminFailure(lastFailure, 'Aggiornamento da Garmin'), lastFailure.status === 401 ? 401 : 502);
+  return { requested: true, message: `Richiesta inviata a Garmin: le attività degli ultimi ${BACKFILL_DAYS} giorni, con titolo e descrizione aggiornati, arrivano entro qualche minuto.` };
 }

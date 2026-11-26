@@ -8,7 +8,7 @@ import {
   garminApi, accessTokenFor, GarminError,
 } from '../lib/garmin.js';
 import {
-  syncUserWorkouts, syncMessage, enqueueActivities, drainActivityQueue, permissionList, romeDay, SYNC_DAYS,
+  syncUserWorkouts, syncMessage, enqueueActivities, drainActivityQueue, permissionList, romeDay, SYNC_DAYS, requestActivityRefresh,
 } from '../lib/garminSync.js';
 
 // Garmin Connect: collegamento account (OAuth2 PKCE), invio della settimana di allenamenti al calendario Garmin
@@ -221,6 +221,25 @@ app.post('/sync', auth, async (c) => {
   } catch (err) {
     if (err instanceof GarminError) {
       return c.json({ message: err.message }, err.status === 404 ? 404 : err.status === 400 ? 400 : err.status === 401 ? 409 : 502);
+    }
+    throw err;
+  }
+});
+
+// POST /garmin/refresh — "Sync Garmin": chiede a Garmin di rimandare le attivita' degli ultimi 7 giorni,
+// cosi' titolo e descrizione cambiati su Garmin Connect (e attivita' mancanti) arrivano nell'app
+app.post('/refresh', auth, async (c) => {
+  const user = c.get('user');
+  if (user.ruolo !== 'cliente') return c.json({ message: 'Il sync Garmin lo fa l\'atleta' }, 403);
+  if (!garminConfigured(c.env)) return c.json({ message: 'Il collegamento Garmin non è ancora attivo sul server' }, 503);
+  const sql = db(c.env);
+  try {
+    // intanto elabora quello che e' gia' arrivato ed e' in coda
+    try { await drainActivityQueue(sql, c.env, { limit: 2 }); } catch (error) { console.error('garmin refresh drain', error?.message); }
+    return c.json(await requestActivityRefresh(sql, c.env, user.userId));
+  } catch (err) {
+    if (err instanceof GarminError) {
+      return c.json({ message: err.message, code: err.status === 404 ? 'GARMIN_NOT_CONNECTED' : undefined }, err.status === 404 ? 400 : err.status === 401 ? 409 : 502);
     }
     throw err;
   }

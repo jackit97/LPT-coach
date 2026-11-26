@@ -968,6 +968,29 @@ app.put('/:id{[0-9]+}/title', async (c) => {
   return c.json(rows[0]);
 });
 
+// PUT /calendar/:id/descrizione-attivita { testo } — descrizione sotto il titolo (come su Garmin Connect / Strava):
+// l'atleta sui propri allenamenti, il coach su quelli dei suoi atleti
+app.put('/:id{[0-9]+}/descrizione-attivita', async (c) => {
+  const user = c.get('user');
+  const sql = db(c.env);
+  const id = Number(c.req.param('id'));
+  const { testo } = await c.req.json().catch(() => ({}));
+  const clean = String(testo ?? '').trim().slice(0, 4000) || null;
+  const workout = (await sql`SELECT workout_id, utenteid FROM calendar_workouts WHERE workout_id = ${id}`)[0];
+  if (!workout) return c.json({ message: 'Allenamento non trovato' }, 404);
+  const allowed = user.ruolo === 'personal_trainer'
+    ? await assertCoachOwnsAthlete(sql, user.userId, workout.utenteid)
+    : workout.utenteid === user.userId;
+  if (!allowed) return c.json({ message: 'Non puoi modificare questo allenamento' }, 403);
+  try {
+    const rows = await sql`UPDATE calendar_workouts SET descrizione_attivita = ${clean}, updated_at = NOW() WHERE workout_id = ${id} RETURNING workout_id, descrizione_attivita`;
+    return c.json(rows[0]);
+  } catch (error) {
+    if (/descrizione_attivita/.test(String(error?.message))) return c.json({ message: 'Descrizione non ancora attiva: va applicata la migrazione 20261201' }, 503);
+    throw error;
+  }
+});
+
 app.put('/:id', roleCheck('personal_trainer'), async (c) => {
   const sql = db(c.env);
   const id = Number(c.req.param('id'));

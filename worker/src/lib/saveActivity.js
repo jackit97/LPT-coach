@@ -51,6 +51,45 @@ async function saveStreams(sql, workoutId, utenteId, activity) {
   }
 }
 
+// ---------- titolo e descrizione da Garmin ----------
+let textColumns = null;
+async function hasActivityText(sql) {
+  if (textColumns !== null) return textColumns;
+  try {
+    await sql`SELECT descrizione_attivita, external_name FROM calendar_workouts LIMIT 0`;
+    textColumns = true;
+  } catch {
+    return false; // migrazione 20261201 non ancora applicata
+  }
+  return textColumns;
+}
+
+/**
+ * Riporta sull'allenamento il nome e la descrizione dell'attivita' su Garmin Connect.
+ * La prima volta si ricorda solo il nome (il titolo del coach o quello gia' scelto resta);
+ * se poi l'atleta rinomina l'attivita' su Connect, il nuovo nome diventa il titolo.
+ * Il nome accorciato dall'orologio (inizio del titolo attuale) non sostituisce il titolo completo.
+ */
+export async function syncActivityText(sql, workoutId, activity) {
+  if (!(await hasActivityText(sql))) return;
+  const name = String(activity.name || '').trim().slice(0, 255) || null;
+  const notes = String(activity.notes || '').trim().slice(0, 4000) || null;
+  if (!name && !notes) return;
+  const row = (await sql`SELECT titolo, external_name, descrizione_attivita FROM calendar_workouts WHERE workout_id = ${workoutId}`)[0];
+  if (!row) return;
+  let titolo = row.titolo;
+  if (name && row.external_name && name !== row.external_name) {
+    const truncated = String(row.titolo || '').toLowerCase().startsWith(name.toLowerCase());
+    if (!truncated) titolo = name;
+  }
+  const descrizione = notes || row.descrizione_attivita;
+  if (titolo === row.titolo && (name || row.external_name) === row.external_name && descrizione === row.descrizione_attivita) return;
+  await sql`
+    UPDATE calendar_workouts SET titolo = ${titolo}, external_name = ${name || row.external_name}, descrizione_attivita = ${descrizione}, updated_at = NOW()
+    WHERE workout_id = ${workoutId}
+  `;
+}
+
 const FAMILY = (tipo) => (['forza', 'funzionale'].includes(tipo) ? 'forza' : tipo || 'altro');
 
 // inizio attivita' dall'external_id "<sport>-<ISO>" (import da file e Garmin)
@@ -75,6 +114,7 @@ async function updateExisting(sql, workoutId, utenteId, activity) {
     `;
   }
   await saveStreams(sql, workoutId, utenteId, activity);
+  await syncActivityText(sql, workoutId, activity);
 }
 
 /**
@@ -143,6 +183,7 @@ export async function saveImportedActivity(sql, { utenteId, activity, provider =
           note = COALESCE(workout_feedback.note, EXCLUDED.note), updated_at = NOW()
       `;
       await saveStreams(sql, workout.workout_id, utenteId, activity);
+      await syncActivityText(sql, workout.workout_id, activity);
       await notifyCoach(sql, { utenteId, actor, provider, workout, day, description, verb: 'completato' });
       return { workout, merged: true, day, description };
     }
@@ -156,7 +197,8 @@ export async function saveImportedActivity(sql, { utenteId, activity, provider =
 
   // L'orologio salva il nome dell'allenamento accorciato (es. "Ripetute 6x1000 m Z" invece del titolo completo
   // dato dal coach): se in calendario, a +/- 3 giorni, c'e' un allenamento il cui titolo inizia cosi', si usa quello intero.
-  if (activity.name && activity.title === String(activity.name).slice(0, 255)) {
+  // (solo nomi lunghi: "Corsa" o "Allenamento" non sono un titolo accorciato)
+  if (activity.name && activity.title === String(activity.name).slice(0, 255) && String(activity.name).trim().length >= 12) {
     const short = String(activity.name).trim();
     try {
       const planned = await sql`
@@ -201,7 +243,7 @@ export async function saveImportedActivity(sql, { utenteId, activity, provider =
     ON CONFLICT (workout_id, utenteid) DO NOTHING
   `;
   await saveStreams(sql, workout.workout_id, utenteId, activity);
-
+  await syncActivityText(sql, workout.workout_id, activity);
   await notifyCoach(sql, { utenteId, actor, provider, workout, day, description, verb: provider === 'garmin' ? 'sincronizzato' : 'caricato', title: activity.title });
   return { workout, created: true, day, description };
 }
