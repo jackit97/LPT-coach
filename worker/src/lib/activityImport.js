@@ -84,6 +84,45 @@ const average = (values) => {
   return list.length ? Math.round(list.reduce((sum, value) => sum + value, 0) / list.length) : null;
 };
 
+// Struttura dell'allenamento seguito con l'orologio (messaggi workout_step del .fit): fasi, ripetute e target.
+// Serve al coach per salvarlo in libreria senza ricrearlo a mano. Restituisce blocchi
+// { type, name, repeats, children: [{ type, name, seconds, meters, target }] }.
+const STEP_TYPE = { warmup: 'Riscaldamento', cooldown: 'Defaticamento', rest: 'Recupero', recovery: 'Recupero' };
+export function workoutStepsFromFit(stepMesgs = []) {
+  const steps = [...stepMesgs].sort((a, b) => (a.messageIndex ?? 0) - (b.messageIndex ?? 0));
+  const out = []; // { index, block }
+  for (const step of steps) {
+    const index = Number(step.messageIndex ?? out.length);
+    if (step.durationType === 'repeatUntilStepsCmplt' || step.durationType === 6) {
+      const from = Number(step.durationStep ?? step.durationValue ?? 0);
+      const times = Number(step.repeatSteps ?? step.targetValue ?? 1) || 1;
+      const inside = out.filter((item) => item.index >= from);
+      if (!inside.length) continue;
+      const rest = out.filter((item) => item.index < from);
+      const children = inside.flatMap((item) => item.block.children);
+      out.length = 0;
+      out.push(...rest, { index: inside[0].index, block: { type: 'Lavoro', name: null, repeats: times, children } });
+      continue;
+    }
+    const target = {};
+    if (Number(step.targetHrZone) > 0) target.zone = `Z${Math.min(5, Number(step.targetHrZone))}`;
+    else if (Number(step.customTargetHeartRateLow) > 0) target.hr = [Number(step.customTargetHeartRateLow) - 100, Number(step.customTargetHeartRateHigh) - 100];
+    if (Number(step.customTargetSpeedLow) > 0) target.speed = [Number(step.customTargetSpeedLow), Number(step.customTargetSpeedHigh)];
+    if (Number(step.customTargetPowerLow) > 0) target.power = [Number(step.customTargetPowerLow) - 1000, Number(step.customTargetPowerHigh) - 1000];
+    if (Number(step.targetPowerZone) > 0 && !target.zone) target.zone = `Z${Math.min(7, Number(step.targetPowerZone))}`;
+    const child = {
+      type: STEP_TYPE[step.intensity] || 'Lavoro',
+      intensity: step.intensity || 'active',
+      name: step.wktStepName || null,
+      seconds: step.durationType === 'time' ? Math.round(Number(step.durationTime) || Number(step.durationValue) / 1000 || 0) : 0,
+      meters: step.durationType === 'distance' ? Math.round(Number(step.durationDistance) || Number(step.durationValue) / 100 || 0) : 0,
+      target,
+    };
+    out.push({ index, block: { type: child.type, name: child.name, repeats: 1, children: [child] } });
+  }
+  return out.map((item) => item.block).slice(0, 80);
+}
+
 function parseFit(bytes) {
   const stream = Stream.fromByteArray(bytes);
   const decoder = new Decoder(stream);
@@ -144,9 +183,12 @@ function parseFit(bytes) {
       kg: Number.isFinite(Number(set.weight)) && Number(set.weight) > 0 ? Math.round(Number(set.weight) * 10) / 10 : null,
       secondi: Number.isFinite(Number(set.duration)) ? Math.round(Number(set.duration)) : null,
     }));
+  let workoutSteps = [];
+  try { workoutSteps = workoutStepsFromFit(messages.workoutStepMesgs || []); } catch { workoutSteps = []; }
+  const extra = { ...(sets.length ? { sets } : {}), ...(workoutSteps.length ? { workout_steps: workoutSteps } : {}) };
   return {
     format: 'fit',
-    streams: sets.length ? { ...(streams || {}), sets } : streams,
+    streams: Object.keys(extra).length ? { ...(streams || {}), ...extra } : streams,
     laps,
     localOffsetSeconds: Number.isFinite(localOffsetSeconds) && Math.abs(localOffsetSeconds) <= 14 * 3600 ? localOffsetSeconds : null,
     rawSport,

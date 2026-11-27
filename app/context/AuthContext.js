@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [enduranceEnabled, setEnduranceEnabled] = useState(true);
   const [dietEnabled, setDietEnabled] = useState(true);
+  const [strengthEnabled, setStrengthEnabled] = useState(true);
   // email verificata, notifiche email, consensi privacy (da /users/me)
   const [account, setAccount] = useState(null);
   const [profileComplete, setProfileComplete] = useState(true);
@@ -22,6 +23,7 @@ export function AuthProvider({ children }) {
       const { data } = await api.get('/users/me');
       setEnduranceEnabled(data?.endurance_visible !== false);
       setDietEnabled(data?.dieta_visible !== false);
+      setStrengthEnabled(data?.forza_visible !== false);
       setAccount({
         emailVerified: data?.email_verificata !== false,
         emailNotifications: data?.notifiche_email !== false,
@@ -83,6 +85,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setEnduranceEnabled(true);
     setDietEnabled(true);
+    setStrengthEnabled(true);
     setAccount(null);
     setProfileComplete(true);
   }, []);
@@ -90,8 +93,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer',
     isDeveloper: user?.ruolo === 'developer',
-    enduranceEnabled, setEnduranceEnabled, dietEnabled, profileComplete, refreshAccountStatus, account, setAccount,
-  }), [user, loading, login, register, logout, enduranceEnabled, dietEnabled, profileComplete, refreshAccountStatus, account]);
+    enduranceEnabled, setEnduranceEnabled, dietEnabled, strengthEnabled, profileComplete, refreshAccountStatus, account, setAccount,
+  }), [user, loading, login, register, logout, enduranceEnabled, dietEnabled, strengthEnabled, profileComplete, refreshAccountStatus, account]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -82,6 +82,7 @@ export async function insertWorkoutsBulk(sql, items) {
       exercises.push({
         workout_id: workoutId, nome: text(ex.nome, 150), serie: int(ex.serie), ripetizioni: text(ex.ripetizioni, 50), carico: text(ex.carico, 50),
         recupero: text(ex.recupero, 50), note: ex.note || null, video_url: text(ex.video_url || ex.videoUrl, 255), order_index: position,
+        superserie: ex.superserie ? String(ex.superserie).trim().toUpperCase().slice(0, 5) || null : null,
       });
     });
   });
@@ -109,10 +110,10 @@ export async function insertWorkoutsBulk(sql, items) {
   `;
   if (exercises.length) {
     await sql`
-      INSERT INTO calendar_workout_exercises (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
-      SELECT workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index
+      INSERT INTO calendar_workout_exercises (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index, superserie)
+      SELECT workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index, superserie
       FROM jsonb_to_recordset(${JSON.stringify(exercises)}::jsonb) AS x(workout_id int, nome text, serie int, ripetizioni text,
-        carico text, recupero text, note text, video_url text, order_index int)
+        carico text, recupero text, note text, video_url text, order_index int, superserie text)
     `;
   }
   const byId = new Map(inserted.map((row) => [Number(row.workout_id), row]));

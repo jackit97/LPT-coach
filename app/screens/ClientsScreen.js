@@ -44,6 +44,23 @@ export default function ClientsScreen({ navigation, route }) {
       setSavingDiet(null);
     }
   };
+  // ...e la sezione forza/palestra (es. atleti che fanno solo endurance)
+  const [strengthById, setStrengthById] = useState({});
+  const [savingStrength, setSavingStrength] = useState(null);
+  const toggleAthleteStrength = async (athlete, visible) => {
+    setSavingStrength(athlete.utenteid);
+    setStrengthById((current) => ({ ...current, [athlete.utenteid]: visible }));
+    try {
+      await api.put(`/users/clients/${athlete.utenteid}/forza`, { visible });
+      loadClients();
+    } catch (e) {
+      setStrengthById((current) => ({ ...current, [athlete.utenteid]: !visible }));
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile aggiornare la sezione forza');
+    } finally {
+      setSavingStrength(null);
+    }
+  };
+  const athleteStrength = (athlete) => (athlete.utenteid in strengthById ? strengthById[athlete.utenteid] : athlete.forza_visible !== false);
   const athleteDiet = (athlete) => (athlete.utenteid in dietById ? dietById[athlete.utenteid] : athlete.dieta_visible !== false);
   const athleteEndurance = (athlete) => (athlete.utenteid in enduranceById ? enduranceById[athlete.utenteid] : athlete.endurance_visible !== false);
   const [email, setEmail] = useState('');
@@ -136,6 +153,15 @@ export default function ClientsScreen({ navigation, route }) {
               {!!item.giorni_allenamento && <Text style={styles.detail}>Giorni: {item.giorni_allenamento}</Text>}
               {!!item.livellofitness && <Text style={styles.detail}>Livello: {item.livellofitness}</Text>}
             </Pressable>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Sezione pesistica</Text>
+                <Text style={styles.switchHint}>{athleteStrength(item) ? 'Visibile all\'atleta' : 'Nascosta all\'atleta'}</Text>
+              </View>
+              {savingStrength === item.utenteid ? <ActivityIndicator color={colors.primary} /> : (
+                <Switch value={athleteStrength(item)} onValueChange={(value) => toggleAthleteStrength(item, value)} trackColor={{ true: colors.primary }} />
+              )}
+            </View>
             <View style={styles.switchRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.switchLabel}>Sezione endurance</Text>

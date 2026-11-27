@@ -26,7 +26,7 @@ const EVENT_TYPES = ['dieta', 'scadenza_dieta', 'scheda', 'scadenza_scheda', 'pa
 const fmtDay = (d) => d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
 
 export default function CalendarScreen({ navigation }) {
-  const { isCoach, enduranceEnabled, profileComplete } = useAuth();
+  const { isCoach, enduranceEnabled, strengthEnabled, profileComplete } = useAuth();
   const { selectedAthlete, targetUserId, clients, setSelectedAthlete } = useAthlete();
 
   const [weekStart, setWeekStart] = useState(() => addDays(startOfWeek(new Date()), -7));
@@ -84,7 +84,8 @@ export default function CalendarScreen({ navigation }) {
     const to = toISO;
     try {
       const { data } = await api.get('/calendar', { params: { utenteId: targetUserId, from, to } });
-      setWorkouts(enduranceEnabled ? (data || []) : (data || []).filter((w) => w.tipo !== 'endurance'));
+      // sezioni nascoste dal coach: niente allenamenti endurance o di forza/palestra nel calendario dell'atleta
+      setWorkouts((data || []).filter((w) => (enduranceEnabled || w.tipo !== 'endurance') && (strengthEnabled || !['forza', 'funzionale'].includes(w.tipo))));
       setLoadError(null);
     } catch (e) {
       setLoadError(e?.response?.data?.detail || e?.response?.data?.message || 'Impossibile caricare il calendario.');
@@ -92,7 +93,7 @@ export default function CalendarScreen({ navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [targetUserId, fromISO, toISO, enduranceEnabled]);
+  }, [targetUserId, fromISO, toISO, enduranceEnabled, strengthEnabled]);
 
   // Carico acuto/cronico/performance: ultime 8 settimane + 2 di proiezione sul pianificato
   const loadTrainingLoad = useCallback(async () => {

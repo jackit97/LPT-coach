@@ -225,7 +225,7 @@ app.get('/execution/:id{[0-9]+}/file', async (c) => {
 // Contenuto del report: fotografia dell'allenamento al momento dell'invio
 async function buildSnapshot(sql, workout) {
   const exercises = await sql`
-    SELECT x.exercise_id, x.nome, x.serie, x.ripetizioni, x.carico, x.recupero, x.note, x.note_atleta,
+    SELECT x.exercise_id, x.nome, x.serie, x.ripetizioni, x.carico, x.recupero, x.superserie, x.note, x.note_atleta,
            e.dubbi, (e.storage_key IS NOT NULL) AS ha_video
     FROM calendar_workout_exercises x
     LEFT JOIN esecuzioni_video e ON e.exercise_id = x.exercise_id

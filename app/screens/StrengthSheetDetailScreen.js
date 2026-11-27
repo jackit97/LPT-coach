@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import SupersetTag, { supersetBorder } from '../components/SupersetTag';
+import { supersetInfo } from '../utils/superset';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import ExerciseSheet from '../components/ExerciseSheet';
@@ -80,7 +82,8 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
             )}
           </View>
           {day.esercizi.map((exercise, index) => (
-            <Pressable key={exercise.esercizioid || `${day.schedaid}-${index}`} style={({ pressed }) => [styles.exercise, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(exercise)}>
+            <Pressable key={exercise.esercizioid || `${day.schedaid}-${index}`} style={({ pressed }) => [styles.exercise, supersetInfo(day.esercizi)[index] && supersetBorder, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(exercise)}>
+              <SupersetTag info={supersetInfo(day.esercizi)[index]} />
               <View style={styles.exerciseHeader}>
                 <Text style={styles.exerciseName}>{exercise.nome}</Text>
                 {!!exercise.video_url && (

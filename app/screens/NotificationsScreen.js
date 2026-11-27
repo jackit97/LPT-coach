@@ -47,7 +47,7 @@ function timeAgo(value) {
 export default function NotificationsScreen({ navigation }) {
   const { clients, setSelectedAthlete } = useAthlete();
   const { setUnread } = useNotifications();
-  const { dietEnabled } = useAuth();
+  const { dietEnabled, strengthEnabled } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -90,6 +90,7 @@ export default function NotificationsScreen({ navigation }) {
     if (link.screen === 'Feedback') { navigation.navigate('Feedback', link.params || {}); return; }
     const tab = TARGET_TABS[link.screen];
     if (tab === 'DietsTab' && !dietEnabled) return; // sezione dieta nascosta dal coach
+    if (tab === 'StrengthTab' && !strengthEnabled) return; // sezione forza nascosta dal coach
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });
   };
 

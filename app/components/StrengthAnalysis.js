@@ -129,7 +129,7 @@ export default function StrengthAnalysis({ analysis, onOpenExercise }) {
               <Text style={[styles.setCell, { flex: 0.4, color: colors.textMuted }]}>{index + 1}</Text>
               <Text style={[styles.setCell, { flex: 2, textAlign: 'left', fontWeight: '700' }]} numberOfLines={1}>{set.nome}</Text>
               <Text style={styles.setCell}>{set.reps ?? '—'}</Text>
-              <Text style={styles.setCell}>{set.kg ? fmtNum(set.kg) : '—'}</Text>
+              <Text style={styles.setCell}>{typeof set.kg === 'number' ? fmtNum(set.kg) : (set.kg || '—')}</Text>
               <Text style={styles.setCell}>{set.secondi ? `${Math.floor(set.secondi / 60)}:${String(set.secondi % 60).padStart(2, '0')}` : '—'}</Text>
             </View>
           ))}

@@ -36,13 +36,25 @@ const dayOf = (value) => {
   return String(value || '').slice(0, 10);
 };
 
+// Valore di una serie come scritto (numero, oppure testo libero tipo "4-6" o "20 kg"): niente medie.
+// I conti (volume, carico max, 1RM) usano parseReps/parseKg solo internamente.
+const setValue = (value) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const n = Number(text.replace(',', '.'));
+  return Number.isFinite(n) ? n : text.slice(0, 15);
+};
+export const repsNum = (value) => (typeof value === 'number' ? value : parseReps(value));
+export const kgNum = (value) => (typeof value === 'number' ? value : parseKg(value));
+
 export function safeSets(json) {
   if (!json) return [];
   try {
     const list = typeof json === 'string' ? JSON.parse(json) : json;
     return Array.isArray(list) ? list.map((set) => ({
-      reps: Number.isFinite(Number(set?.reps)) && set?.reps !== '' && set?.reps !== null ? Number(set.reps) : null,
-      kg: Number.isFinite(Number(set?.kg)) && set?.kg !== '' && set?.kg !== null ? Number(set.kg) : null,
+      reps: setValue(set?.reps),
+      kg: setValue(set?.kg),
       fatta: set?.fatta !== false,
     })) : [];
   } catch {
@@ -50,11 +62,11 @@ export function safeSets(json) {
   }
 }
 
-// serie pianificate dal coach (serie x ripetizioni @ carico)
+// serie pianificate dal coach, con ripetizioni e carico come li ha scritti (es. "4-6", "60-70 kg")
 export function plannedSets(exercise) {
   const count = Math.max(0, Math.min(30, Number(exercise.serie) || 0));
-  const reps = parseReps(exercise.ripetizioni);
-  const kg = parseKg(exercise.carico);
+  const reps = setValue(exercise.ripetizioni);
+  const kg = setValue(exercise.carico);
   return Array.from({ length: count }, () => ({ reps, kg, fatta: true }));
 }
 
@@ -64,7 +76,8 @@ export function setStats(sets) {
   let volume = 0;
   let topKg = null;
   let e1rm = null;
-  for (const set of done) {
+  for (const raw of done) {
+    const set = { reps: repsNum(raw.reps), kg: kgNum(raw.kg) };
     if (set.reps) reps += set.reps;
     if (set.reps && set.kg) volume += set.reps * set.kg;
     if (set.kg && (topKg === null || set.kg > topKg)) topKg = set.kg;

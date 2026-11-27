@@ -6,6 +6,7 @@ import {
 import api from '../api/client';
 import DateField from '../components/DateField';
 import OptionPicker from '../components/OptionPicker';
+import ValuePicker from '../components/ValuePicker';
 import { useAthlete } from '../context/AthleteContext';
 import { colors, radius, spacing, typography } from '../theme';
 import { toISODate } from '../utils/dates';
@@ -745,10 +746,12 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                   {isRepeat && (
                     <View style={styles.repeatTopBar}>
                       <View style={styles.repeatCountBox}>
-                        <TextInput
+                        <ValuePicker
                           value={String(block.repeats)}
-                          onChangeText={(v) => updateBlockField(bi, 'repeats', v.replace(/\D/g, '') || '1')}
-                          keyboardType="numeric"
+                          field="repeats"
+                          label="Ripetizioni"
+                          compact
+                          onChange={(v) => updateBlockField(bi, 'repeats', String(v).replace(/\D/g, '') || '1')}
                           style={styles.repeatInput}
                         />
                         <Text style={styles.repeatX}>x</Text>
@@ -770,12 +773,14 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                         {/* Repeat count if single step */}
                         {!isRepeat && (
                           <View style={styles.singleRepBox}>
-                            <TextInput
-                              value={String(block.repeats)}
-                              onChangeText={(v) => updateBlockField(bi, 'repeats', v.replace(/\D/g, '') || '1')}
-                              keyboardType="numeric"
-                              style={styles.singleRepInput}
-                            />
+                            <ValuePicker
+                          value={String(block.repeats)}
+                          field="repeats"
+                          label="Ripetizioni"
+                          compact
+                          onChange={(v) => updateBlockField(bi, 'repeats', String(v).replace(/\D/g, '') || '1')}
+                          style={styles.singleRepInput}
+                        />
                             <Text style={styles.repeatX}>x</Text>
                           </View>
                         )}
@@ -796,12 +801,23 @@ export default function EnduranceWorkoutEditorScreen({ route, navigation }) {
                         />
 
                         {/* Value input */}
-                        <TextInput
-                          value={step.value}
-                          onChangeText={(v) => updateStepField(bi, si, 'value', v)}
-                          style={styles.stepValInput}
-                          placeholder="Valore"
-                        />
+                        {step.unit === 'mt' || step.unit === 'km' ? (
+                          <ValuePicker
+                            value={step.value}
+                            unit={step.unit === 'mt' ? 'm' : 'km'}
+                            label={step.unit === 'mt' ? 'Metri' : 'Chilometri'}
+                            compact
+                            onChange={(v) => updateStepField(bi, si, 'value', step.unit === 'km' ? String(v).replace(',', '.') : v)}
+                            style={styles.stepValPicker}
+                          />
+                        ) : (
+                          <TextInput
+                            value={step.value}
+                            onChangeText={(v) => updateStepField(bi, si, 'value', v)}
+                            style={styles.stepValInput}
+                            placeholder="Valore"
+                          />
+                        )}
 
                         {/* Zone dropdown */}
                         <OptionPicker
@@ -1298,30 +1314,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   repeatCountBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  repeatInput: {
-    borderWidth: 1,
-    borderColor: '#e7eaec',
-    borderRadius: 4,
-    width: 36,
-    height: 28,
-    textAlign: 'center',
-    fontWeight: '700',
-    backgroundColor: '#fff',
-  },
+  repeatInput: { width: 48, minHeight: 28, borderRadius: 4, borderColor: '#e7eaec' },
   repeatX: { fontSize: 13, fontWeight: '700', color: '#676a6c' },
   repeatSummaryText: { fontSize: 11, fontWeight: '700', color: '#676a6c' },
 
   singleRepBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  singleRepInput: {
-    borderWidth: 1,
-    borderColor: '#e7eaec',
-    borderRadius: 4,
-    width: 32,
-    height: 28,
-    textAlign: 'center',
-    fontWeight: '700',
-    backgroundColor: '#fff',
-  },
+  singleRepInput: { width: 46, minHeight: 28, borderRadius: 4, borderColor: '#e7eaec' },
 
   stepRow: {
     flexDirection: 'row',
@@ -1344,6 +1342,7 @@ const styles = StyleSheet.create({
     minWidth: 50,
   },
   unitText: { fontSize: 12, fontWeight: '600', color: '#333' },
+  stepValPicker: { width: 84, minHeight: 28, borderRadius: 4, borderColor: '#e7eaec' },
   stepValInput: {
     borderWidth: 1,
     borderColor: '#e7eaec',

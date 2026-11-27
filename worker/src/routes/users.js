@@ -32,8 +32,13 @@ app.get('/me', async (c) => {
   // Il coach vede sempre le sezioni endurance; per l'atleta decide il coach (sezione Atleti).
   let enduranceVisible = true;
   if (row.ruolo === 'cliente') enduranceVisible = await athleteEnduranceVisible(sql, row);
+  // sezione forza/palestra (migrazione 20261203): visibile se la colonna non c'e' ancora
+  let strengthVisible = true;
+  if (row.ruolo === 'cliente') {
+    try { strengthVisible = (await sql`SELECT forza_visibile FROM utenti WHERE utenteid = ${user.userId}`)[0]?.forza_visibile !== false; } catch { strengthVisible = true; }
+  }
   const { endurance_visibile: _ignored, dieta_visibile: dietVisible, ...rest } = row;
-  return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false });
+  return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false, forza_visible: strengthVisible });
 });
 
 // POST /users/me/consent { privacy: true, datiSalute: true } — consensi per chi si era registrato prima
@@ -103,6 +108,23 @@ app.put('/clients/:id{[0-9]+}/dieta', roleCheck('personal_trainer'), async (c) =
   return c.json({ utenteid: athleteId, dieta_visible: !!visible });
 });
 
+// Coach: mostra/nasconde la sezione forza/palestra a un singolo atleta (es. chi fa solo endurance)
+app.put('/clients/:id{[0-9]+}/forza', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const athleteId = Number(c.req.param('id'));
+  const { visible } = await c.req.json().catch(() => ({}));
+  const sql = db(c.env);
+  const link = await sql`SELECT 1 FROM pt_clienti WHERE pt_userid = ${user.userId} AND cliente_userid = ${athleteId} AND attivo = 1`;
+  if (!link.length) return c.json({ message: 'Atleta non trovato' }, 404);
+  try {
+    await sql`UPDATE utenti SET forza_visibile = ${!!visible} WHERE utenteid = ${athleteId}`;
+  } catch (error) {
+    if (/forza_visibile/.test(String(error?.message))) return c.json({ message: 'Va applicata la migrazione 20261203_forza_superserie.sql' }, 503);
+    throw error;
+  }
+  return c.json({ utenteid: athleteId, forza_visible: !!visible });
+});
+
 // Coach: toggle visibility of endurance sections for themselves and their athletes
 app.put('/me/endurance-settings', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
@@ -159,8 +181,14 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
   `;
   const fallback = rows.some((row) => row.endurance_visibile === null || row.endurance_visibile === undefined)
     ? await athleteEnduranceVisible(sql, {}) : true;
+  let strength = new Map();
+  try {
+    const flags = await sql`SELECT utenteid, forza_visibile FROM utenti WHERE utenteid = ANY(${rows.map((row) => row.utenteid)})`;
+    strength = new Map(flags.map((row) => [row.utenteid, row.forza_visibile !== false]));
+  } catch { /* migrazione 20261203 non applicata */ }
   return c.json(rows.map(({ endurance_visibile: visible, dieta_visibile: dietVisible, ...row }) => ({
     ...row, endurance_visible: visible === true || visible === false ? visible : fallback, dieta_visible: dietVisible !== false,
+    forza_visible: strength.has(row.utenteid) ? strength.get(row.utenteid) : true,
   })));
 });
 

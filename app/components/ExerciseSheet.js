@@ -11,25 +11,15 @@ import { colors, radius, spacing } from '../theme';
 // video tutorial e note personali dell'atleta.
 // source: 'scheda' (esercizischeda.esercizioid) | 'workout' (calendar_workout_exercises.exercise_id)
 // allowExecution: allenamento di forza del calendario -> video di esecuzione e dubbi per il coach.
-// valori del programma -> numeri per precompilare le serie ("8-10" -> 9, "60 kg" -> 60)
-const plannedReps = (value) => {
-  const text = String(value ?? '').toLowerCase();
-  if (/\d\s*(s|sec|min)\b|["']|amrap|max/.test(text)) return '';
-  const range = text.match(/(\d+)\s*[-–/]\s*(\d+)/);
-  if (range) return String(Math.round((Number(range[1]) + Number(range[2])) / 2));
-  return (text.match(/\d+/) || [''])[0];
-};
-const plannedKg = (value) => {
-  const text = String(value ?? '').toLowerCase().replace(',', '.');
-  if (/%|rpe|rir|corpo libero/.test(text)) return '';
-  return (text.match(/\d+(?:\.\d+)?/) || [''])[0];
-};
+// le serie si precompilano con ripetizioni e carico come li ha scritti il coach (es. "4-6", "60-70 kg"):
+// niente medie, l'atleta scrive liberamente quello che ha fatto
+const plannedText = (value) => String(value ?? '').trim().slice(0, 15);
 const readSets = (json) => { try { const list = JSON.parse(json || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } };
 function initialSets(exercise) {
   const saved = readSets(exercise?.serie_eseguite_json);
   if (saved.length) return saved.map((set) => ({ reps: set.reps === null || set.reps === undefined ? '' : String(set.reps), kg: set.kg === null || set.kg === undefined ? '' : String(set.kg) }));
   const count = Math.min(12, Math.max(1, Number(exercise?.serie) || 3));
-  return Array.from({ length: count }, () => ({ reps: plannedReps(exercise?.ripetizioni), kg: plannedKg(exercise?.carico) }));
+  return Array.from({ length: count }, () => ({ reps: plannedText(exercise?.ripetizioni), kg: plannedText(exercise?.carico).replace(/\s*kg$/i, '') }));
 }
 
 export default function ExerciseSheet({ visible, exercise, source, isCoach, onClose, onSaved, allowExecution = false, onExecutionChange, onSetsSaved }) {
@@ -98,7 +88,7 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
   const execUrl = exercise.esecuzione_video_url || null;
   const trackSets = source === 'workout' && allowExecution;
   const hasSavedSets = readSets(exercise.serie_eseguite_json).length > 0;
-  const updateSet = (index, key, value) => { setSets((current) => current.map((set, i) => (i === index ? { ...set, [key]: value.replace(/[^0-9.,]/g, '') } : set))); setSetsSaved(false); };
+  const updateSet = (index, key, value) => { setSets((current) => current.map((set, i) => (i === index ? { ...set, [key]: value.slice(0, 15) } : set))); setSetsSaved(false); };
   const addSet = () => { setSets((current) => [...current, { ...(current[current.length - 1] || { reps: '', kg: '' }) }]); setSetsSaved(false); };
   const removeSet = (index) => { setSets((current) => current.filter((_, i) => i !== index)); setSetsSaved(false); };
   const saveSets = async () => {
@@ -203,7 +193,7 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
               <>
                 <Text style={styles.section}>{isCoach ? 'Serie eseguite dall\'atleta' : 'Serie eseguite'}</Text>
                 {isCoach && !hasSavedSets && <Text style={styles.muted}>L'atleta non ha ancora registrato le serie: puoi inserirle tu (es. seduta seguita di persona).</Text>}
-                {!isCoach && !hasSavedSets && <Text style={styles.muted}>Precompilate dal programma: correggi carichi e ripetizioni che hai fatto davvero e salva.</Text>}
+                {!isCoach && !hasSavedSets && <Text style={styles.muted}>Precompilate con quanto scritto dal coach: scrivi ripetizioni e kg che hai fatto davvero (anche 4-6, 20+20…) e salva.</Text>}
                 <View style={styles.setHeader}>
                   <Text style={[styles.setHeadText, { width: 46 }]}>Serie</Text>
                   <Text style={[styles.setHeadText, { flex: 1 }]}>Ripetizioni</Text>
@@ -213,8 +203,8 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
                 {sets.map((set, index) => (
                   <View key={index} style={styles.setRow}>
                     <Text style={styles.setIndex}>{index + 1}</Text>
-                    <TextInput value={set.reps} onChangeText={(value) => updateSet(index, 'reps', value)} keyboardType="numeric" style={styles.setInput} placeholder="Rip" placeholderTextColor={colors.textMuted} accessibilityLabel={`Ripetizioni serie ${index + 1}`} />
-                    <TextInput value={set.kg} onChangeText={(value) => updateSet(index, 'kg', value)} keyboardType="decimal-pad" style={styles.setInput} placeholder="Kg" placeholderTextColor={colors.textMuted} accessibilityLabel={`Kg serie ${index + 1}`} />
+                    <TextInput value={set.reps} onChangeText={(value) => updateSet(index, 'reps', value)} style={styles.setInput} placeholder="Rip" placeholderTextColor={colors.textMuted} accessibilityLabel={`Ripetizioni serie ${index + 1}`} />
+                    <TextInput value={set.kg} onChangeText={(value) => updateSet(index, 'kg', value)} style={styles.setInput} placeholder="Kg" placeholderTextColor={colors.textMuted} accessibilityLabel={`Kg serie ${index + 1}`} />
                     <Pressable onPress={() => removeSet(index)} hitSlop={8} style={styles.setRemove} accessibilityLabel={`Togli serie ${index + 1}`}>
                       <Ionicons name="close" size={18} color={colors.textMuted} />
                     </Pressable>

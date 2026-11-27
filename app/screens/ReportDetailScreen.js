@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import SupersetTag, { supersetBorder } from '../components/SupersetTag';
+import { supersetInfo } from '../utils/superset';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { useAthlete } from '../context/AthleteContext';
@@ -20,7 +22,12 @@ function ExecutionVideo({ url }) {
   );
 }
 
-const fmtKg = (kg) => (kg === null || kg === undefined ? null : `${Number(kg).toLocaleString('it-IT', { maximumFractionDigits: 1 })} kg`);
+// numero -> "62,5 kg"; testo libero scritto dall'atleta (es. "20-22") mostrato com'e'
+const fmtKg = (kg) => {
+  if (kg === null || kg === undefined || kg === '') return null;
+  if (typeof kg === 'number' || Number.isFinite(Number(kg))) return `${Number(kg).toLocaleString('it-IT', { maximumFractionDigits: 1 })} kg`;
+  return /kg/i.test(String(kg)) ? String(kg) : `${kg} kg`;
+};
 
 // Serie fatte: ripetizioni x kg per ogni serie, con carico massimo e volume (rip x kg) dell'esercizio
 function SetsTable({ sets, title = 'Serie eseguite' }) {
@@ -115,11 +122,12 @@ export default function ReportDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {(report.esercizi || []).map((exercise) => {
+      {(report.esercizi || []).map((exercise, exIndex, list) => {
         const prescribed = [exercise.serie && `${exercise.serie} serie`, exercise.ripetizioni && `${exercise.ripetizioni} rip`, exercise.carico, exercise.recupero && `rec ${exercise.recupero}`].filter(Boolean).join(' · ');
         const empty = !exercise.video_url && !exercise.dubbi && !exercise.note_atleta && !exercise.serie_eseguite?.length;
         return (
-          <View key={exercise.exercise_id} style={[styles.card, empty && { opacity: 0.7 }]}>
+          <View key={exercise.exercise_id} style={[styles.card, supersetInfo(list)[exIndex] && supersetBorder, empty && { opacity: 0.7 }]}>
+            <SupersetTag info={supersetInfo(list)[exIndex]} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
               <Ionicons name="barbell" size={18} color={colors.primary} />
               <Text style={styles.exerciseName}>{exercise.nome}</Text>

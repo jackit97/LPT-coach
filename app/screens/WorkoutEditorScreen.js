@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import api from '../api/client';
+import ValuePicker from '../components/ValuePicker';
 import DateField from '../components/DateField';
 import RpeSelector from '../components/RpeSelector';
 import OptionPicker from '../components/OptionPicker';
 import { useAthlete } from '../context/AthleteContext';
 import DraggableList, { moveItem } from '../components/DraggableList';
 import ReorderHandle from '../components/ReorderHandle';
+import { Ionicons } from '@expo/vector-icons';
+import { linkedToNext, normalizeSupersets, supersetInfo, toggleSupersetLink, SUPERSET_COLOR } from '../utils/superset';
 import { colors, spacing, radius, typography, workoutTypeColors } from '../theme';
 import { trimpFromRpe } from '../utils/endurance';
 
@@ -52,7 +55,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         setRpePianificato(template.rpe_pianificato ? String(template.rpe_pianificato) : '');
         setEsercizi((template.esercizi || []).map((e) => withKey({
           nome: e.nomeesercizio, serie: e.serie ?? '', ripetizioni: e.ripetizioni ?? '', carico: e.carico ?? '',
-          recupero: e.recupero ?? '', note: e.descrizione ?? '', video_url: e.videourl || '',
+          recupero: e.recupero ?? '', note: e.descrizione ?? '', video_url: e.videourl || '', superserie: e.superserie || null,
         })));
       })
       .catch(() => Alert.alert('Errore', 'Impossibile caricare l\'allenamento della libreria'))
@@ -88,11 +91,12 @@ export default function WorkoutEditorScreen({ route, navigation }) {
   ];
 
   const addExercise = () => setEsercizi((prev) => [...prev, withKey({ nome: '', serie: '', ripetizioni: '', carico: '', recupero: '', note: '' })]);
-  const reorderExercise = (from, to) => { setExerciseSearch({ index: null, query: '', results: [] }); setEsercizi((prev) => moveItem(prev, from, to)); };
+  const reorderExercise = (from, to) => { setExerciseSearch({ index: null, query: '', results: [] }); setEsercizi((prev) => normalizeSupersets(moveItem(prev, from, to))); };
+  const toggleSuperset = (idx) => setEsercizi((prev) => toggleSupersetLink(prev, idx));
   const updateExercise = (idx, field, value) => {
     setEsercizi((prev) => prev.map((ex, i) => (i === idx ? { ...ex, [field]: value } : ex)));
   };
-  const removeExercise = (idx) => setEsercizi((prev) => prev.filter((_, i) => i !== idx));
+  const removeExercise = (idx) => setEsercizi((prev) => normalizeSupersets(prev.filter((_, i) => i !== idx)));
 
   useEffect(() => {
     if (exerciseSearch.index === null || exerciseSearch.query.trim().length < 2) {
@@ -131,9 +135,9 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         tipo,
         durataMinuti: durataMinuti ? Number(durataMinuti) : null,
         rpePianificato: rpePianificato ? Number(rpePianificato) : null,
-        esercizi: esercizi.filter((e) => e.nome).map((e) => ({
+        esercizi: normalizeSupersets(esercizi.filter((e) => e.nome)).map((e) => ({
           nome: e.nome, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero,
-          descrizione: e.note, videoUrl: e.video_url,
+          descrizione: e.note, videoUrl: e.video_url, superserie: e.superserie || null,
         })),
       };
       if (libraryTemplateId) await api.put(`/workouts/templates/${libraryTemplateId}`, payload);
@@ -159,7 +163,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
         descrizione,
         durataMinuti: durataMinuti ? Number(durataMinuti) : null,
         rpePianificato: rpePianificato ? Number(rpePianificato) : null,
-        esercizi: esercizi.filter((e) => e.nome).map(({ _key, ...e }) => e),
+        esercizi: normalizeSupersets(esercizi.filter((e) => e.nome)).map(({ _key, ...e }) => e),
       };
 
       let workoutId = editId;
@@ -234,6 +238,7 @@ export default function WorkoutEditorScreen({ route, navigation }) {
           <View style={[styles.exerciseCard, styles.exerciseRow, dragging && styles.exerciseDragging]}>
             <ReorderHandle handleProps={handleProps} moveUp={moveUp} moveDown={moveDown} />
             <View style={{ flex: 1 }}>
+            {supersetInfo(esercizi)[idx] && <Text style={styles.ssBadge}>Superserie {supersetInfo(esercizi)[idx].label}</Text>}
             <View style={styles.exerciseCardHeader}>
               <TextInput
                 value={ex.nome}
@@ -250,8 +255,8 @@ export default function WorkoutEditorScreen({ route, navigation }) {
               </Pressable>
             ))}
             <View style={styles.row}>
-              <TextInput value={String(ex.serie ?? '')} onChangeText={(v) => updateExercise(idx, 'serie', v)} placeholder="Serie" keyboardType="numeric" style={[styles.input, styles.quarter]} />
-              <TextInput value={String(ex.ripetizioni ?? '')} onChangeText={(v) => updateExercise(idx, 'ripetizioni', v)} placeholder="Rip" style={[styles.input, styles.quarter]} />
+              <ValuePicker value={String(ex.serie ?? '')} field="serie" label="Serie" onChange={(v) => updateExercise(idx, 'serie', v)} style={styles.quarter} />
+              <ValuePicker value={String(ex.ripetizioni ?? '')} field="ripetizioni" label="Rip" onChange={(v) => updateExercise(idx, 'ripetizioni', v)} style={styles.quarter} />
               <TextInput value={String(ex.carico ?? '')} onChangeText={(v) => updateExercise(idx, 'carico', v)} placeholder="Carico" style={[styles.input, styles.quarter]} />
               <TextInput value={String(ex.recupero ?? '')} onChangeText={(v) => updateExercise(idx, 'recupero', v)} placeholder="Recupero" style={[styles.input, styles.quarter]} />
             </View>
@@ -265,6 +270,12 @@ export default function WorkoutEditorScreen({ route, navigation }) {
               textStyle={styles.videoPickerText}
               renderLabel={(option) => `🎬 ${option?.value ? option.label : 'Video: automatico'}`}
             />
+            {idx < esercizi.length - 1 && (
+              <Pressable style={[styles.ssToggle, linkedToNext(esercizi, idx) && styles.ssToggleOn]} onPress={() => toggleSuperset(idx)} accessibilityRole="checkbox" accessibilityState={{ checked: linkedToNext(esercizi, idx) }}>
+                <Ionicons name={linkedToNext(esercizi, idx) ? 'link' : 'link-outline'} size={16} color={linkedToNext(esercizi, idx) ? '#fff' : SUPERSET_COLOR} />
+                <Text style={[styles.ssToggleText, linkedToNext(esercizi, idx) && styles.ssToggleTextOn]}>{linkedToNext(esercizi, idx) ? 'In superserie con il successivo' : 'Superserie con il successivo'}</Text>
+              </Pressable>
+            )}
             </View>
           </View>
           )}
@@ -285,6 +296,11 @@ export default function WorkoutEditorScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  ssBadge: { alignSelf: 'flex-start', color: '#fff', backgroundColor: SUPERSET_COLOR, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontSize: 11, fontWeight: '800', marginBottom: 4, overflow: 'hidden' },
+  ssToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderWidth: 1, borderColor: SUPERSET_COLOR, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginTop: spacing.xs },
+  ssToggleOn: { backgroundColor: SUPERSET_COLOR },
+  ssToggleText: { color: SUPERSET_COLOR, fontWeight: '700', fontSize: 12 },
+  ssToggleTextOn: { color: '#fff' },
   addExerciseBtn: { marginTop: spacing.sm, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', backgroundColor: colors.primaryLight },
   addExerciseText: { color: colors.primary, fontWeight: '800', fontSize: 15 },
   dragHint: { ...typography.caption, marginBottom: spacing.xs },

@@ -8,6 +8,9 @@ import { isoDay, zoneSecondsFromSamples, todayIso, addDaysIso } from '../lib/tra
 import { executionsFor, reportFor } from './reports.js';
 import { buildStrengthAnalysis, nameKey } from '../lib/strengthAnalysis.js';
 
+// Superserie: lettera del gruppo (A, B, ...) condivisa dagli esercizi da eseguire di seguito
+const superset = (value) => (value ? String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || null : null);
+
 const app = new Hono();
 app.use('*', authenticate());
 
@@ -70,9 +73,9 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
 
   if (includeStrength) await sql`
     INSERT INTO calendar_workout_exercises
-      (workout_id, nome, serie, ripetizioni, note, video_url, recupero, order_index)
+      (workout_id, nome, serie, ripetizioni, note, video_url, recupero, superserie, order_index)
     SELECT w.workout_id, e.nomeesercizio, e.serie, e.ripetizioni, e.noteutente, e.videourl,
-           e.recupero, ROW_NUMBER() OVER (PARTITION BY w.workout_id ORDER BY e.order_index NULLS LAST, e.esercizioid) - 1
+           e.recupero, e.superserie, ROW_NUMBER() OVER (PARTITION BY w.workout_id ORDER BY e.order_index NULLS LAST, e.esercizioid) - 1
     FROM calendar_workouts w
     JOIN esercizischeda e ON e.schedaid = w.schedaid
     WHERE w.utenteid = ${utenteId}
@@ -87,7 +90,8 @@ async function syncSourceWorkouts(sql, utenteId, includeStrength) {
       UPDATE calendar_workout_exercises x
       SET note = COALESCE(NULLIF(x.note, ''), NULLIF(e.descrizione, ''), NULLIF(e.noteutente, '')),
           video_url = COALESCE(x.video_url, e.videourl),
-          recupero = COALESCE(x.recupero, e.recupero)
+          recupero = COALESCE(x.recupero, e.recupero),
+          superserie = COALESCE(x.superserie, e.superserie)
       FROM calendar_workouts w, esercizischeda e
       WHERE x.workout_id = w.workout_id AND w.schedaid = e.schedaid
         AND e.nomeesercizio = x.nome AND w.utenteid = ${utenteId} AND w.tipo = 'forza'
@@ -242,7 +246,7 @@ app.get('/strength-sheets', async (c) => {
   try {
     rows = await sql`
     SELECT s.*, e.esercizioid AS esercizioid, e.nomeesercizio, e.serie, e.ripetizioni,
-           e.descrizione AS exercise_description, e.recupero, e.noteutente, e.videourl AS legacy_video_url,
+           e.descrizione AS exercise_description, e.recupero, e.superserie, e.noteutente, e.videourl AS legacy_video_url,
            e.note_atleta, e.note_atleta_at,
            vid.videoid, vid.titolo AS video_title, vid.videourl AS catalog_video_url
     FROM schedeallenamento s
@@ -265,7 +269,7 @@ app.get('/strength-sheets', async (c) => {
     if (!/note_atleta/.test(String(error?.message))) throw error;
     rows = await sql`
     SELECT s.*, e.esercizioid AS esercizioid, e.nomeesercizio, e.serie, e.ripetizioni,
-           e.descrizione AS exercise_description, e.recupero, e.noteutente, e.videourl AS legacy_video_url,
+           e.descrizione AS exercise_description, e.recupero, e.superserie, e.noteutente, e.videourl AS legacy_video_url,
            NULL::text AS note_atleta, NULL::timestamp AS note_atleta_at,
            vid.videoid, vid.titolo AS video_title, vid.videourl AS catalog_video_url
     FROM schedeallenamento s
@@ -310,7 +314,7 @@ app.get('/strength-sheets', async (c) => {
     if (row.nomeesercizio && !group.giorni.get(row.schedaid).esercizi.some((exercise) => exercise.esercizioid === row.esercizioid)) {
       group.giorni.get(row.schedaid).esercizi.push({
         esercizioid: row.esercizioid, nome: row.nomeesercizio, serie: row.serie, ripetizioni: row.ripetizioni,
-        descrizione: row.exercise_description, recupero: row.recupero, note: row.noteutente,
+        descrizione: row.exercise_description, recupero: row.recupero, superserie: row.superserie || null, note: row.noteutente,
         video_url: row.legacy_video_url || row.catalog_video_url, video_title: row.video_title, legacy_video_url: row.legacy_video_url || null,
         note_atleta: row.note_atleta, note_atleta_at: row.note_atleta_at,
       });
@@ -357,9 +361,9 @@ export function autoSchedule(start, end, weekdays, dayCount) {
 async function insertSheetExercise(sql, schedaId, exercise, position) {
   try {
     await sql`
-      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl, order_index)
+      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl, order_index, superserie)
       VALUES (${schedaId}, ${String(exercise.nome).trim()}, ${Number(exercise.serie) || null}, ${exercise.ripetizioni || null},
-              ${exercise.descrizione || null}, ${exercise.recupero || null}, ${exercise.note || null}, ${exercise.videoUrl || null}, ${position})
+              ${exercise.descrizione || null}, ${exercise.recupero || null}, ${exercise.note || null}, ${exercise.videoUrl || null}, ${position}, ${superset(exercise.superserie)})
     `;
   } catch (error) {
     if (!/order_index/.test(String(error?.message))) throw error; // migrazione 20261123 non ancora applicata
@@ -377,7 +381,7 @@ const sheetExerciseRow = (schedaid, exercise, position) => ({
   schedaid, nome: String(exercise.nome).trim().slice(0, 100), serie: Number.isFinite(Math.round(Number(exercise.serie))) && Number(exercise.serie) > 0 ? Math.round(Number(exercise.serie)) : null,
   ripetizioni: exercise.ripetizioni ? String(exercise.ripetizioni).slice(0, 50) : null, descrizione: exercise.descrizione || null,
   recupero: exercise.recupero ? String(exercise.recupero).slice(0, 50) : null, note: exercise.note || null,
-  video: exercise.videoUrl ? String(exercise.videoUrl).slice(0, 255) : null, pos: position,
+  video: exercise.videoUrl ? String(exercise.videoUrl).slice(0, 255) : null, pos: position, superserie: superset(exercise.superserie),
 });
 
 async function insertSheetExercisesBulk(sql, rows) {
@@ -385,9 +389,9 @@ async function insertSheetExercisesBulk(sql, rows) {
   const json = JSON.stringify(rows);
   try {
     await sql`
-      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl, order_index)
-      SELECT schedaid, nome, serie, ripetizioni, descrizione, recupero, note, video, pos
-      FROM jsonb_to_recordset(${json}::jsonb) AS x(schedaid int, nome text, serie int, ripetizioni text, descrizione text, recupero text, note text, video text, pos int)
+      INSERT INTO esercizischeda (schedaid, nomeesercizio, serie, ripetizioni, descrizione, recupero, noteutente, videourl, order_index, superserie)
+      SELECT schedaid, nome, serie, ripetizioni, descrizione, recupero, note, video, pos, superserie
+      FROM jsonb_to_recordset(${json}::jsonb) AS x(schedaid int, nome text, serie int, ripetizioni text, descrizione text, recupero text, note text, video text, pos int, superserie text)
     `;
   } catch (error) {
     if (!/order_index/.test(String(error?.message))) throw error; // migrazione 20261123 non ancora applicata
@@ -471,8 +475,8 @@ app.put('/strength-sheets', roleCheck('personal_trainer'), async (c) => {
     try {
       await sql`
         UPDATE esercizischeda SET nomeesercizio = x.nome, serie = x.serie, ripetizioni = x.ripetizioni, descrizione = x.descrizione,
-          recupero = x.recupero, noteutente = x.note, order_index = x.pos
-        FROM jsonb_to_recordset(${json}::jsonb) AS x(id int, nome text, serie int, ripetizioni text, descrizione text, recupero text, note text, pos int)
+          recupero = x.recupero, noteutente = x.note, order_index = x.pos, superserie = x.superserie
+        FROM jsonb_to_recordset(${json}::jsonb) AS x(id int, nome text, serie int, ripetizioni text, descrizione text, recupero text, note text, pos int, superserie text)
         WHERE esercizischeda.esercizioid = x.id
       `;
     } catch (error) {
@@ -811,12 +815,15 @@ app.put('/exercises/:id{[0-9]+}/sets', async (c) => {
   const id = Number(c.req.param('id'));
   const { serie } = await c.req.json().catch(() => ({}));
   if (!Array.isArray(serie)) return c.json({ message: 'serie deve essere un elenco' }, 400);
-  const num = (value, max) => {
+  // numero oppure testo libero scritto dall'atleta (es. "4-6", "20+20", "max"): salvato com'e'
+  const val = (value, max) => {
     if (value === null || value === undefined || String(value).trim() === '') return null;
-    const n = Number(String(value).replace(',', '.'));
-    return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n * 100) / 100 : null;
+    const text = String(value).trim();
+    const n = Number(text.replace(',', '.'));
+    if (Number.isFinite(n)) return n >= 0 && n <= max ? Math.round(n * 100) / 100 : null;
+    return text.replace(/[^0-9a-zA-Zàèéìòù .,+\-–/x×"']/g, '').slice(0, 15) || null;
   };
-  const clean = serie.slice(0, 30).map((set) => ({ reps: num(set?.reps, 500), kg: num(set?.kg, 1000), fatta: set?.fatta !== false }))
+  const clean = serie.slice(0, 30).map((set) => ({ reps: val(set?.reps, 500), kg: val(set?.kg, 1000), fatta: set?.fatta !== false }))
     .filter((set) => set.reps !== null || set.kg !== null);
   const rows = await sql`
     SELECT x.exercise_id, w.utenteid FROM calendar_workout_exercises x JOIN calendar_workouts w ON w.workout_id = x.workout_id
@@ -936,10 +943,10 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
       if (!ex.nome) continue;
       await sql`
         INSERT INTO calendar_workout_exercises
-          (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
+          (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index, superserie)
         VALUES
           (${workout.workout_id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
-           ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i})
+           ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i}, ${superset(ex.superserie)})
       `;
     }
   }
@@ -1069,10 +1076,10 @@ app.put('/:id/exercises', roleCheck('personal_trainer'), async (c) => {
     if (!ex.nome) continue;
     const inserted = await sql`
       INSERT INTO calendar_workout_exercises
-        (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
+        (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index, superserie)
       VALUES
         (${id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
-         ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i})
+         ${ex.recupero || null}, ${ex.note || null}, ${ex.videoUrl || ex.video_url || null}, ${i}, ${superset(ex.superserie)})
       RETURNING exercise_id
     `;
     const old = keep.get(nameKey(ex.nome));

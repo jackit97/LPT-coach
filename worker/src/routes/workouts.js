@@ -8,6 +8,9 @@ import { loadMergedZones } from '../lib/athleteData.js';
 import { hrToZone } from '../lib/trainingLoad.js';
 import { exercisesFromFileSets } from '../lib/strengthAnalysis.js';
 
+// Superserie: lettera del gruppo (A, B, ...) condivisa dagli esercizi da eseguire di seguito
+const superset = (value) => (value ? String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || null : null);
+
 const app = new Hono();
 app.use('*', authenticate());
 app.use('*', roleCheck('personal_trainer'));
@@ -41,6 +44,26 @@ const clock = (seconds) => {
   return `${Math.floor(total / 3600)}:${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 };
 
+// Zona del coach corrispondente a un target in bpm / velocita' / watt dell'allenamento seguito con l'orologio
+function zoneForTarget(target, zones, sport) {
+  if (target.zone) return target.zone;
+  const mid = (pair) => (Number(pair[0]) + Number(pair[1])) / 2;
+  const inRange = (list, value, parse = Number) => (list || []).find((zone) => {
+    const a = parse(zone.min); const b = parse(zone.max);
+    return Number.isFinite(a) && Number.isFinite(b) && value >= Math.min(a, b) && value <= Math.max(a, b);
+  })?.key;
+  if (target.hr) return hrToZone(mid(target.hr), zones.heartRate || []);
+  if (target.power) return inRange(zones.power, mid(target.power));
+  if (target.speed) {
+    const pace = (sport === 'nuoto' ? 100 : 1000) / mid(target.speed); // secondi per km (o 100 m)
+    const toSec = (value) => { const m = String(value || '').match(/(\d+):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : Number(value); };
+    return inRange(sport === 'nuoto' ? zones.swimPace : zones.pace, pace, toSec);
+  }
+  return null;
+}
+const DEFAULT_ZONE = { Riscaldamento: 'Z1', Defaticamento: 'Z1', Recupero: 'Z1', Lavoro: 'Z3' };
+
+// Solo la struttura dell'allenamento (niente dati dell'atleta: FC, kg, tempi reali)
 async function structureFromActivity(sql, workout) {
   let row;
   try { row = (await sql`SELECT samples_json, laps_json FROM activity_streams WHERE workout_id = ${workout.workout_id}`)[0]; } catch { row = null; }
@@ -55,39 +78,63 @@ async function structureFromActivity(sql, workout) {
     return {
       esercizi: groups.map((group) => {
         const reps = group.sets.map((set) => set.reps).filter(Boolean);
-        const kgs = group.sets.map((set) => set.kg).filter(Boolean);
         const secs = group.sets.map((set) => set.secondi).filter(Boolean);
-        const common = reps.length ? reps.sort((a, b) => reps.filter((v) => v === b).length - reps.filter((v) => v === a).length)[0] : null;
+        const common = reps.length ? [...reps].sort((a, b) => reps.filter((v) => v === b).length - reps.filter((v) => v === a).length)[0] : null;
         return {
           nome: group.nome, serie: group.sets.length,
           ripetizioni: common ? String(common) : secs.length && !reps.length ? `${Math.round(Math.max(...secs))}s` : null,
-          carico: kgs.length ? `${Math.max(...kgs)} kg` : null, note: null, video_url: null, recupero: null,
+          carico: null, note: null, video_url: null, recupero: null,
         };
       }),
     };
   }
 
-  const valid = laps.filter((lap) => Number(lap.secondi) > 0);
-  if (!valid.length) return {};
-  let hrZones = [];
-  try { hrZones = (await loadMergedZones(sql, workout.utenteid)).heartRate || []; } catch { hrZones = []; }
-  const steps = valid.slice(0, 60).map((lap, index) => {
-    const meters = Math.round(Number(lap.metri) || 0);
-    const type = valid.length > 2 && index === 0 ? 'Riscaldamento' : valid.length > 2 && index === valid.length - 1 ? 'Defaticamento' : 'Lavoro';
+  let zones = {};
+  try { zones = await loadMergedZones(sql, workout.utenteid); } catch { zones = {}; }
+  const sport = workout.sport || 'corsa';
+  const toStep = (child) => {
+    const timed = !child.meters;
+    const seconds = child.seconds || 0;
     return {
-      type,
-      ...(meters >= 50 ? { unit: 'mt', value: String(meters) } : { unit: 'mm:ss', value: clock(lap.secondi).replace(/^0:/, '') }),
-      duration: clock(lap.secondi),
-      zone: hrToZone(lap.fc_media, hrZones) || 'Z2',
-      notes: lap.fc_media ? `FC media ${Math.round(lap.fc_media)} bpm` : '',
+      type: child.type,
+      ...(child.meters ? { unit: 'mt', value: String(child.meters) } : { unit: 'mm:ss', value: clock(seconds).replace(/^0:/, '') }),
+      duration: timed ? clock(seconds) : clock(0),
+      zone: zoneForTarget(child.target || {}, zones, sport) || DEFAULT_ZONE[child.type] || 'Z2',
+      notes: child.name && child.name !== child.type ? child.name : '',
     };
-  });
-  const seconds = valid.reduce((sum, lap) => sum + Number(lap.secondi), 0);
+  };
+
+  // 1) l'allenamento strutturato seguito con l'orologio (fasi e ripetute esatte)
+  const planned = Array.isArray(samples.workout_steps) ? samples.workout_steps : [];
+  let steps;
+  if (planned.length) {
+    steps = planned.map((block) => {
+      const children = (block.children || []).map(toStep);
+      if ((block.repeats || 1) > 1 || children.length > 1) {
+        return { type: block.type || 'Lavoro', title: block.name || 'Ripetute', repeats: String(block.repeats || 1), children };
+      }
+      return children[0];
+    }).filter(Boolean);
+  } else {
+    // 2) altrimenti le fasi si ricavano dai giri (distanza o tempo di ogni giro)
+    const valid = laps.filter((lap) => Number(lap.secondi) > 0);
+    if (!valid.length) return {};
+    steps = valid.slice(0, 60).map((lap, index) => {
+      const meters = Math.round(Number(lap.metri) || 0);
+      const type = valid.length > 2 && index === 0 ? 'Riscaldamento' : valid.length > 2 && index === valid.length - 1 ? 'Defaticamento' : 'Lavoro';
+      return {
+        type,
+        ...(meters >= 50 ? { unit: 'mt', value: String(Math.round(meters / 10) * 10) } : { unit: 'mm:ss', value: clock(lap.secondi).replace(/^0:/, '') }),
+        duration: clock(lap.secondi),
+        zone: hrToZone(lap.fc_media, zones.heartRate || []) || DEFAULT_ZONE[type],
+        notes: '',
+      };
+    });
+  }
   return {
     endurance: {
       zone: null, target: null, description: null, rpe_target: null, steps_text: null, steps_json: JSON.stringify(steps),
-      duration_minutes: Math.round(seconds / 60), duration_seconds: Math.round(seconds), sport: workout.sport,
-      elevation_m: workout.elev_gain_m || null, video_urls_json: null,
+      duration_minutes: workout.durata_minuti || null, duration_seconds: null, sport: workout.sport, elevation_m: null, video_urls_json: null,
     },
   };
 }
@@ -126,9 +173,9 @@ async function insertWorkoutFromSnapshot(sql, coachId, utenteId, data, snap) {
   for (let i = 0; i < (snap.esercizi || []).length; i += 1) {
     const ex = snap.esercizi[i];
     await sql`
-      INSERT INTO calendar_workout_exercises (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index)
+      INSERT INTO calendar_workout_exercises (workout_id, nome, serie, ripetizioni, carico, recupero, note, video_url, order_index, superserie)
       VALUES (${workout.workout_id}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.carico || null},
-        ${ex.recupero || null}, ${ex.note || null}, ${ex.video_url || null}, ${i})
+        ${ex.recupero || null}, ${ex.note || null}, ${ex.video_url || null}, ${i}, ${superset(ex.superserie)})
     `;
   }
   return workout;
@@ -180,7 +227,7 @@ app.post('/templates/from-workout/:id', async (c) => {
   }) : null;
   const templates = await sql`
     INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo, durata_minuti, durata_secondi, endurance_json, rpe_pianificato)
-    VALUES (${user.userId}, ${(nomeTemplate || w.titolo).trim()}, ${w.descrizione || null}, ${w.tipo || 'forza'},
+    VALUES (${user.userId}, ${(nomeTemplate || w.titolo).trim()}, ${w.external_provider ? null : (w.descrizione || null)}, ${w.tipo || 'forza'},
       ${w.durata_minuti || null}, ${w.durata_secondi || null}, ${enduranceJson}, ${w.rpe_pianificato || null})
     RETURNING templateid
   `;
@@ -189,9 +236,9 @@ app.post('/templates/from-workout/:id', async (c) => {
     const ex = snap.esercizi[i];
     await sql`
       INSERT INTO workouttemplateexercises
-        (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
+        (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex, superserie)
       VALUES (${templateId}, ${ex.nome}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.note || null},
-        ${ex.video_url || null}, ${ex.recupero || null}, ${ex.carico || null}, ${i})
+        ${ex.video_url || null}, ${ex.recupero || null}, ${ex.carico || null}, ${i}, ${superset(ex.superserie)})
     `;
   }
   return c.json(await getTemplate(sql, templateId, user.userId), 201);
@@ -205,7 +252,7 @@ app.post('/templates/from-sheet/:schedaid', async (c) => {
   const sheets = await sql`SELECT * FROM schedeallenamento WHERE schedaid = ${schedaId}`;
   const sheet = sheets[0];
   if (!sheet || !await assertCoachOwnsAthlete(sql, user.userId, sheet.utenteid)) return c.json({ message: 'Scheda non trovata' }, 404);
-  const exercises = await sql`SELECT * FROM esercizischeda WHERE schedaid = ${schedaId} ORDER BY esercizioid ASC`;
+  const exercises = await sql`SELECT * FROM esercizischeda WHERE schedaid = ${schedaId} ORDER BY order_index ASC NULLS LAST, esercizioid ASC`;
   const templates = await sql`
     INSERT INTO workouttemplates (ptuserid, nometemplate, notegenerali, tipo)
     VALUES (${user.userId}, ${String(sheet.nomescheda || 'Scheda palestra').trim()}, ${sheet.notegenerali || null}, 'forza')
@@ -215,9 +262,9 @@ app.post('/templates/from-sheet/:schedaid', async (c) => {
   for (let i = 0; i < exercises.length; i += 1) {
     const ex = exercises[i];
     await sql`
-      INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, orderindex)
+      INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, orderindex, superserie)
       VALUES (${templateId}, ${ex.nomeesercizio}, ${ex.serie || null}, ${ex.ripetizioni || null}, ${ex.descrizione || ex.noteutente || null},
-        ${ex.videourl || null}, ${ex.recupero || null}, ${i})
+        ${ex.videourl || null}, ${ex.recupero || null}, ${i}, ${superset(ex.superserie)})
     `;
   }
   return c.json(await getTemplate(sql, templateId, user.userId), 201);
@@ -270,15 +317,15 @@ async function saveTemplateExercises(sql, templateId, esercizi = []) {
     rows.push({
       nome, serie: Number.isFinite(serie) && serie > 0 ? Math.min(serie, 100) : null, ripetizioni: text(exercise.ripetizioni, 50),
       descrizione: exercise.descrizione ?? exercise.note ?? null, video: text(exercise.videoUrl || exercise.video_url, 255),
-      recupero: text(exercise.recupero, 50), carico: text(exercise.carico, 50), pos: rows.length,
+      recupero: text(exercise.recupero, 50), carico: text(exercise.carico, 50), pos: rows.length, superserie: superset(exercise.superserie),
     });
   }
   if (!rows.length) return;
   // tutti gli esercizi in una query
   await sql`
-    INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex)
-    SELECT ${templateId}::int, nome, serie, ripetizioni, descrizione, video, recupero, carico, pos
-    FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(nome text, serie int, ripetizioni text, descrizione text, video text, recupero text, carico text, pos int)
+    INSERT INTO workouttemplateexercises (templateid, nomeesercizio, serie, ripetizioni, descrizione, videourl, recupero, carico, orderindex, superserie)
+    SELECT ${templateId}::int, nome, serie, ripetizioni, descrizione, video, recupero, carico, pos, superserie
+    FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(nome text, serie int, ripetizioni text, descrizione text, video text, recupero text, carico text, pos int, superserie text)
   `;
 }
 
@@ -303,7 +350,7 @@ app.post('/templates/:id{[0-9]+}/duplicate', async (c) => {
     RETURNING templateid
   `;
   await saveTemplateExercises(sql, rows[0].templateid, source.esercizi.map((e) => ({
-    nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero, descrizione: e.descrizione, videoUrl: e.videourl,
+    nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico, recupero: e.recupero, descrizione: e.descrizione, videoUrl: e.videourl, superserie: e.superserie,
   })));
   return c.json(await getTemplate(sql, rows[0].templateid, user.userId), 201);
 });
@@ -378,7 +425,7 @@ function templateSnapshot(template, titolo) {
     rpe: template.rpe_pianificato,
     esercizi: template.esercizi.map((e) => ({
       nome: e.nomeesercizio, serie: e.serie, ripetizioni: e.ripetizioni, carico: e.carico,
-      recupero: e.recupero, note: e.descrizione, video_url: e.videourl,
+      recupero: e.recupero, note: e.descrizione, video_url: e.videourl, superserie: e.superserie || null,
     })),
     endurance,
   };

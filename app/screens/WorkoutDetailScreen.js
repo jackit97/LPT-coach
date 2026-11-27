@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography, workoutTypeColors, statusColors } from '../theme';
 import RpeSelector from '../components/RpeSelector';
 import ExerciseSheet from '../components/ExerciseSheet';
+import SupersetTag, { supersetBorder } from '../components/SupersetTag';
+import { supersetInfo } from '../utils/superset';
 import { Ionicons } from '@expo/vector-icons';
 import { ZONE_COLORS, sportInfo, formatHMS, formatKm, performanceStatus } from '../utils/endurance';
 import LoadChart from '../components/LoadChart';
@@ -542,8 +544,9 @@ export default function WorkoutDetailScreen({ route, navigation }) {
       {workout.esercizi?.length > 0 && (
         <View style={styles.section}>
           <Text style={typography.h3}>Esercizi</Text>
-          {workout.esercizi.map((ex) => (
-            <Pressable key={ex.exercise_id} style={({ pressed }) => [styles.exerciseRow, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(ex)}>
+          {workout.esercizi.map((ex, exIndex, list) => (
+            <Pressable key={ex.exercise_id} style={({ pressed }) => [styles.exerciseRow, supersetInfo(list)[exIndex] && supersetBorder, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(ex)}>
+              <SupersetTag info={supersetInfo(list)[exIndex]} />
               <View style={styles.exerciseHeader}>
                 <Text style={[styles.exerciseName, { flex: 1 }]}>{ex.nome}</Text>
                 {/* video solo per gli allenamenti di pesistica/forza */}

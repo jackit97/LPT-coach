@@ -420,7 +420,7 @@ const DevErrorsStack = devStack('DevErrors', DevErrorsScreen, 'Errori');
 const DevFeedbackStack = devStack('DevFeedback', DevFeedbackScreen, 'Segnalazioni');
 
 function MainTabs() {
-  const { isCoach, isDeveloper, enduranceEnabled, dietEnabled } = useAuth();
+  const { isCoach, isDeveloper, enduranceEnabled, dietEnabled, strengthEnabled } = useAuth();
   const { width } = useWindowDimensions();
   const compact = width < 700;
   return (
@@ -492,7 +492,7 @@ function MainTabs() {
         <>
           <Tab.Screen name="HomeTab" component={AthleteHomeStack} options={tabOptions('Home', 'home')} />
           <Tab.Screen name="CalendarTab" component={CalendarStack} options={tabOptions('Calendario', 'calendar')} />
-          <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />
+          {strengthEnabled && <Tab.Screen name="StrengthTab" component={StrengthStack} options={tabOptions('Pesistica', 'barbell')} />}
           {dietEnabled && <Tab.Screen name="DietsTab" component={DietsStack} options={tabOptions('Diete', 'restaurant')} />}
           {enduranceEnabled && <Tab.Screen name="ZonesTab" component={ZonesStack} options={tabOptions('Zone', 'speedometer')} />}
           <Tab.Screen name="MoreTab" component={MoreStack} options={tabOptions('Altro', 'menu')} />
