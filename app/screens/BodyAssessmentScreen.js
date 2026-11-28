@@ -139,6 +139,7 @@ export default function BodyAssessmentScreen({ navigation, route }) {
             <Text style={styles.headDate}>{longDay(current.data)}</Text>
             <Text style={styles.headMeta}>{[r.metodo?.label, current.eta && `${current.eta} anni`, current.altezza_cm && `${fmt(current.altezza_cm, 0)} cm`].filter(Boolean).join(' · ')}</Text>
             {cmp && <Text style={styles.headMeta}>Confronto con il {longDay(cmp.data_precedente)}</Text>}
+            {current.assessment_id === list[list.length - 1]?.assessment_id && !!current.prossima_data && <Text style={styles.headNext}>Prossima valutazione: {longDay(current.prossima_data)}</Text>}
             {isCoach && <View style={styles.headActions}>
               <Pressable style={styles.smallBtn} onPress={() => openEditor(current)}><Ionicons name="create-outline" size={16} color={colors.primary} /><Text style={styles.smallBtnText}>Modifica</Text></Pressable>
               <Pressable style={[styles.smallBtn, styles.smallBtnDanger]} onPress={confirmDelete}><Ionicons name="trash-outline" size={16} color={colors.danger} /><Text style={[styles.smallBtnText, { color: colors.danger }]}>Elimina</Text></Pressable>
@@ -272,6 +273,7 @@ const styles = StyleSheet.create({
   headCard: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md },
   headDate: { color: '#fff', fontSize: 18, fontWeight: '800', textTransform: 'capitalize' },
   headMeta: { color: '#C7D7F5', fontSize: 12, marginTop: 2 },
+  headNext: { color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 },
   headActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   smallBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   smallBtnDanger: { backgroundColor: '#FEE2E2' },

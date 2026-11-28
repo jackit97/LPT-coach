@@ -7,6 +7,7 @@ import { ACTIVITY_LEVELS, CIRCUMFERENCES, PROTOCOLS, SKINFOLDS, computeAssessmen
 import { colors, radius, spacing, typography } from '../theme';
 
 const today = () => new Date().toISOString().slice(0, 10);
+const plusDays = (iso, days) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 const text = (value) => (value === null || value === undefined ? '' : String(value).replace('.', ','));
 const clean = (value) => String(value || '').replace(/[^0-9.,]/g, '').slice(0, 6);
 const fmt = (value, digits = 1) => (value === null || value === undefined ? '—' : Number(value).toFixed(digits).replace('.', ','));
@@ -37,6 +38,8 @@ export default function BodyAssessmentEditorScreen({ navigation, route }) {
   const [pliche, setPliche] = useState(() => Object.fromEntries(SKINFOLDS.map((site) => [site.key, text(source?.pliche?.[site.key])])));
   const [circ, setCirc] = useState(() => Object.fromEntries(CIRCUMFERENCES.map((site) => [site.key, text(source?.circonferenze?.[site.key])])));
   const [note, setNote] = useState(source?.note || '');
+  // prossima valutazione: di default dopo 4 settimane (il Coach Assistant avvisa 7 giorni prima)
+  const [prossima, setProssima] = useState(source ? (source.prossima_data || '') : plusDays(today(), 28));
   const [saving, setSaving] = useState(false);
 
   const required = useMemo(() => new Set(PROTOCOLS.find((p) => p.key === protocollo)?.sites(normalizeSex(sesso)) || []), [protocollo, sesso]);
@@ -47,7 +50,7 @@ export default function BodyAssessmentEditorScreen({ navigation, route }) {
   const save = async () => {
     if (!data) return Alert.alert('Errore', 'Indica la data della valutazione');
     setSaving(true);
-    const body = { utenteId: athleteId, data, sesso, eta, peso_kg: peso, altezza_cm: altezza, protocollo, livello_attivita: pal, obiettivo_bf: obiettivo, pliche, circonferenze: circ, note };
+    const body = { utenteId: athleteId, data, prossima_data: prossima || null, sesso, eta, peso_kg: peso, altezza_cm: altezza, protocollo, livello_attivita: pal, obiettivo_bf: obiettivo, pliche, circonferenze: circ, note };
     try {
       if (source) await api.put(`/body/${source.assessment_id}`, body);
       else await api.post('/body', body);
@@ -83,6 +86,13 @@ export default function BodyAssessmentEditorScreen({ navigation, route }) {
         <NumberField label="Altezza" value={altezza} onChange={setAltezza} unit="cm" />
         <NumberField label="Obiettivo % grasso" value={obiettivo} onChange={setObiettivo} unit="%" />
       </View>
+      <Text style={styles.fieldLabel}>Prossima valutazione</Text>
+      <View style={styles.nextRow}>
+        <View style={{ flex: 1 }}><DateField value={prossima} onChange={setProssima} style={{ width: '100%', minWidth: 0 }} /></View>
+        {[[14, '2 sett.'], [28, '4 sett.'], [42, '6 sett.']].map(([days, label]) => <Pressable key={days} onPress={() => setProssima(plusDays(data || today(), days))} style={styles.miniChip}><Text style={styles.miniChipText}>{label}</Text></Pressable>)}
+        {!!prossima && <Pressable onPress={() => setProssima('')} style={styles.miniChip}><Text style={styles.miniChipText}>Nessuna</Text></Pressable>}
+      </View>
+      <Text style={styles.hint}>Nel Coach Assistant compare un promemoria nei 7 giorni prima.</Text>
       <Text style={styles.fieldLabel}>Livello di attività (per il fabbisogno)</Text>
       <OptionPicker title="Livello di attività" value={pal} options={ACTIVITY_LEVELS.map((level) => ({ value: level.value, label: `${level.label} · ×${String(level.value).replace('.', ',')}` }))} onChange={setPal} style={styles.picker} />
     </View>
@@ -159,6 +169,9 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: '700', color: colors.text },
   chipTextActive: { color: '#fff' },
   hint: { fontSize: 11, color: colors.textMuted, marginBottom: spacing.sm },
+  nextRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 },
+  miniChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.surface },
+  miniChipText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   picker: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, backgroundColor: colors.surfaceAlt },
   preview: { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md },
   previewTitle: { color: '#fff', fontWeight: '800', fontSize: 15, marginBottom: spacing.xs },

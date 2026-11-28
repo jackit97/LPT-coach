@@ -60,6 +60,23 @@ export default function ClientsScreen({ navigation, route }) {
       setSavingStrength(null);
     }
   };
+  // ...e le sezioni check fotografici + valutazione corporea (un solo interruttore)
+  const [progressById, setProgressById] = useState({});
+  const [savingProgress, setSavingProgress] = useState(null);
+  const toggleAthleteProgress = async (athlete, visible) => {
+    setSavingProgress(athlete.utenteid);
+    setProgressById((current) => ({ ...current, [athlete.utenteid]: visible }));
+    try {
+      await api.put(`/users/clients/${athlete.utenteid}/progressi`, { visible });
+      loadClients();
+    } catch (e) {
+      setProgressById((current) => ({ ...current, [athlete.utenteid]: !visible }));
+      Alert.alert('Errore', e?.response?.data?.message || 'Impossibile aggiornare la sezione');
+    } finally {
+      setSavingProgress(null);
+    }
+  };
+  const athleteProgress = (athlete) => (athlete.utenteid in progressById ? progressById[athlete.utenteid] : athlete.progressi_visible !== false);
   const athleteStrength = (athlete) => (athlete.utenteid in strengthById ? strengthById[athlete.utenteid] : athlete.forza_visible !== false);
   const athleteDiet = (athlete) => (athlete.utenteid in dietById ? dietById[athlete.utenteid] : athlete.dieta_visible !== false);
   const athleteEndurance = (athlete) => (athlete.utenteid in enduranceById ? enduranceById[athlete.utenteid] : athlete.endurance_visible !== false);
@@ -178,6 +195,15 @@ export default function ClientsScreen({ navigation, route }) {
               </View>
               {savingDiet === item.utenteid ? <ActivityIndicator color={colors.primary} /> : (
                 <Switch value={athleteDiet(item)} onValueChange={(value) => toggleAthleteDiet(item, value)} trackColor={{ true: colors.primary }} />
+              )}
+            </View>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Check fotografici e valutazione corporea</Text>
+                <Text style={styles.switchHint}>{athleteProgress(item) ? 'Visibili all\'atleta' : 'Nascosti all\'atleta'}</Text>
+              </View>
+              {savingProgress === item.utenteid ? <ActivityIndicator color={colors.primary} /> : (
+                <Switch value={athleteProgress(item)} onValueChange={(value) => toggleAthleteProgress(item, value)} trackColor={{ true: colors.primary }} />
               )}
             </View>
             </View>

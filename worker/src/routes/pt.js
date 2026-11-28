@@ -60,6 +60,81 @@ function daysBetween(fromIso, toIso) {
   return Math.round((new Date(`${toIso}T12:00:00Z`) - new Date(`${fromIso}T12:00:00Z`)) / 86400000);
 }
 
+const shortDay = (iso) => { const [, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}`; };
+const sheetName = (name) => String(name || 'Scheda').replace(/\s+-\s+Giorno\s+[A-Za-z0-9]+$/i, '').trim();
+// una query che fallisce (es. migrazione non ancora applicata) non deve bloccare il Coach Assistant
+const safeQuery = async (run) => { try { return await run(); } catch (error) { console.error('Coach Assistant:', error.message); return []; } };
+
+// Dati di tutti gli atleti del coach in poche query (limite di 50 query per richiesta su Cloudflare)
+async function loadAssistantContext(sql, ids, today, weekAgo, soon) {
+  const [sheets, diets, checks, assessments, workoutNotes, sheetNotes, reports, flags] = await Promise.all([
+    safeQuery(() => sql`SELECT utenteid, nomescheda, datafine FROM schedeallenamento WHERE utenteid = ANY(${ids}) AND datafine >= ${today}`),
+    safeQuery(() => sql`SELECT utenteid, nome, datafine FROM diete WHERE utenteid = ANY(${ids}) AND attiva = 1 AND (datafine IS NULL OR datafine >= ${today})`),
+    safeQuery(() => sql`SELECT athlete_id AS utenteid, scadenza FROM body_checks WHERE athlete_id = ANY(${ids}) AND stato = 'richiesto' AND scadenza IS NOT NULL AND scadenza <= ${soon}`),
+    safeQuery(() => sql`SELECT DISTINCT ON (utenteid) utenteid, prossima_data FROM body_assessments WHERE utenteid = ANY(${ids}) ORDER BY utenteid, data DESC, assessment_id DESC`),
+    safeQuery(() => sql`
+      SELECT w.utenteid, COUNT(*)::int AS n FROM calendar_workout_exercises x JOIN calendar_workouts w ON w.workout_id = x.workout_id
+      WHERE w.utenteid = ANY(${ids}) AND x.note_atleta_at >= ${weekAgo} AND COALESCE(TRIM(x.note_atleta), '') <> '' GROUP BY w.utenteid`),
+    safeQuery(() => sql`
+      SELECT s.utenteid, COUNT(*)::int AS n FROM esercizischeda e JOIN schedeallenamento s ON s.schedaid = e.schedaid
+      WHERE s.utenteid = ANY(${ids}) AND e.note_atleta_at >= ${weekAgo} AND COALESCE(TRIM(e.note_atleta), '') <> '' GROUP BY s.utenteid`),
+    safeQuery(() => sql`
+      SELECT r.athlete_id AS utenteid, COUNT(*)::int AS n FROM workout_reports r
+      WHERE r.athlete_id = ANY(${ids}) AND (r.inviato_at >= ${weekAgo} OR EXISTS (
+        SELECT 1 FROM workout_report_messages m WHERE m.report_id = r.report_id AND m.da_coach = FALSE AND m.created_at >= ${weekAgo}))
+      GROUP BY r.athlete_id`),
+    safeQuery(() => sql`SELECT utenteid, forza_visibile, dieta_visibile, progressi_visibile FROM utenti WHERE utenteid = ANY(${ids})`),
+  ]);
+  const byUser = (rows) => rows.reduce((map, row) => map.set(row.utenteid, [...(map.get(row.utenteid) || []), row]), new Map());
+  const counts = (rows) => new Map(rows.map((row) => [row.utenteid, row.n]));
+  return {
+    soon,
+    sheets: byUser(sheets), diets: byUser(diets), checks: byUser(checks),
+    assessments: new Map(assessments.map((row) => [row.utenteid, row])),
+    workoutNotes: counts(workoutNotes), sheetNotes: counts(sheetNotes), reports: counts(reports),
+    flags: new Map(flags.map((row) => [row.utenteid, row])),
+  };
+}
+
+// Mostra l'atleta solo se: ha svolto allenamenti negli ultimi 7 giorni, ha scritto note/commenti/report per il coach,
+// ha una scheda o una dieta che scade entro 7 giorni (senza una nuova gia' pronta) o un check / una valutazione da fare entro 7 giorni.
+function assistantReasons(ctx, userId, { doneWeek, feedbackNotes, today }) {
+  if (!ctx) return [];
+  const reasons = [];
+  const flags = ctx.flags.get(userId) || {};
+  if (doneWeek > 0) reasons.push({ type: 'allenamenti', message: `${doneWeek} ${doneWeek === 1 ? 'allenamento svolto' : 'allenamenti svolti'} negli ultimi 7 giorni` });
+  const notes = feedbackNotes + (ctx.workoutNotes.get(userId) || 0) + (ctx.sheetNotes.get(userId) || 0);
+  if (notes > 0) reasons.push({ type: 'note', message: `${notes} ${notes === 1 ? 'nota/commento' : 'note/commenti'} per te negli ultimi 7 giorni` });
+  const reports = ctx.reports.get(userId) || 0;
+  if (reports > 0) reasons.push({ type: 'report', message: `${reports} ${reports === 1 ? 'report/messaggio' : 'report/messaggi'} negli ultimi 7 giorni` });
+
+  if (flags.forza_visibile !== false) {
+    const sheets = ctx.sheets.get(userId) || [];
+    const later = sheets.some((row) => isoDay(row.datafine) > ctx.soon);
+    const expiring = sheets.filter((row) => isoDay(row.datafine) <= ctx.soon).sort((a, b) => String(isoDay(a.datafine)).localeCompare(isoDay(b.datafine)));
+    if (expiring.length && !later) reasons.push({ type: 'scheda', urgent: true, message: `Scheda «${sheetName(expiring[0].nomescheda)}» scade il ${shortDay(isoDay(expiring[0].datafine))}` });
+  }
+  if (flags.dieta_visibile !== false) {
+    const diets = ctx.diets.get(userId) || [];
+    const later = diets.some((row) => !row.datafine || isoDay(row.datafine) > ctx.soon);
+    const expiring = diets.filter((row) => row.datafine && isoDay(row.datafine) <= ctx.soon).sort((a, b) => String(isoDay(a.datafine)).localeCompare(isoDay(b.datafine)));
+    if (expiring.length && !later) reasons.push({ type: 'dieta', urgent: true, message: `Dieta «${expiring[0].nome || 'dieta'}» scade il ${shortDay(isoDay(expiring[0].datafine))}` });
+  }
+  if (flags.progressi_visibile !== false) {
+    const checks = (ctx.checks.get(userId) || []).sort((a, b) => String(isoDay(a.scadenza)).localeCompare(isoDay(b.scadenza)));
+    if (checks.length) {
+      const due = isoDay(checks[0].scadenza);
+      reasons.push({ type: 'check', urgent: true, message: due < today ? `Check fotografico scaduto il ${shortDay(due)}` : `Check fotografico entro il ${shortDay(due)}` });
+    }
+  }
+  const assessment = ctx.assessments.get(userId);
+  if (flags.progressi_visibile !== false && assessment?.prossima_data && isoDay(assessment.prossima_data) <= ctx.soon) {
+    const due = isoDay(assessment.prossima_data);
+    reasons.push({ type: 'valutazione', urgent: true, message: due < today ? `Valutazione corporea da fare (era il ${shortDay(due)})` : `Valutazione corporea il ${shortDay(due)}` });
+  }
+  return reasons;
+}
+
 // GET /pt/alerts - Coach Assistant: stato di ogni atleta e alert su inattivita', aderenza al programma,
 // variazione del carico (acuto/cronico) e commenti agli allenamenti.
 app.get('/alerts', async (c) => {
@@ -75,6 +150,10 @@ app.get('/alerts', async (c) => {
     WHERE pc.pt_userid = ${user.userId} AND pc.attivo = 1
     ORDER BY u.nome ASC
   `;
+
+  const ids = athletes.map((athlete) => athlete.utenteid);
+  const soon = addDaysIso(today, 7);
+  const ctx = ids.length ? await loadAssistantContext(sql, ids, today, weekAgo, soon) : null;
 
   const results = [];
   for (const athlete of athletes) {
@@ -106,8 +185,17 @@ app.get('/alerts', async (c) => {
       alerts.push({ type: 'commenti', priority: 'bassa', message: commentDays === null ? 'Nessun commento agli allenamenti' : `Nessun commento da ${commentDays} giorni` });
     }
 
+    // Motivi per cui l'atleta compare nel Coach Assistant (altrimenti resta solo nell'elenco atleti)
+    const doneWeek = training.filter((workout) => isoDay(workout.data) >= weekAgo && isoDay(workout.data) <= today
+      && (workout.load.secondi_eseguiti > 0 || workout.stato === 'completato')).length;
+    const feedbackNotes = training.filter((workout) => isoDay(workout.data) >= weekAgo && !workout.external_provider && String(workout.feedback_note || '').trim()).length;
+    const reasons = assistantReasons(ctx, athlete.utenteid, { doneWeek, feedbackNotes, today });
+
     results.push({
       utenteid: athlete.utenteid,
+      in_evidenza: reasons.length > 0,
+      motivi: reasons,
+      allenamenti_7gg: doneWeek,
       nome: [athlete.nome, athlete.cognome].filter(Boolean).join(' '),
       acuto: current.acuto,
       cronico: current.cronico,
@@ -121,10 +209,11 @@ app.get('/alerts', async (c) => {
   }
 
   const order = { alta: 0, media: 1, bassa: 2 };
+  const urgent = (athlete) => athlete.motivi.some((reason) => reason.urgent);
   results.sort((a, b) => {
     const pa = Math.min(3, ...a.alerts.map((alert) => order[alert.priority]));
     const pb = Math.min(3, ...b.alerts.map((alert) => order[alert.priority]));
-    return pa - pb || a.nome.localeCompare(b.nome);
+    return Number(b.in_evidenza) - Number(a.in_evidenza) || Number(urgent(b)) - Number(urgent(a)) || pa - pb || a.nome.localeCompare(b.nome);
   });
   return c.json({ rules: ALERT_RULES, today, athletes: results });
 });

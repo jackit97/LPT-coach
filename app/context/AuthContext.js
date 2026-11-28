@@ -14,6 +14,7 @@ export function AuthProvider({ children }) {
   const [enduranceEnabled, setEnduranceEnabled] = useState(true);
   const [dietEnabled, setDietEnabled] = useState(true);
   const [strengthEnabled, setStrengthEnabled] = useState(true);
+  const [progressEnabled, setProgressEnabled] = useState(true);
   // email verificata, notifiche email, consensi privacy (da /users/me)
   const [account, setAccount] = useState(null);
   const [profileComplete, setProfileComplete] = useState(true);
@@ -24,6 +25,7 @@ export function AuthProvider({ children }) {
       setEnduranceEnabled(data?.endurance_visible !== false);
       setDietEnabled(data?.dieta_visible !== false);
       setStrengthEnabled(data?.forza_visible !== false);
+      setProgressEnabled(data?.progressi_visible !== false);
       setAccount({
         emailVerified: data?.email_verificata !== false,
         emailNotifications: data?.notifiche_email !== false,
@@ -86,6 +88,7 @@ export function AuthProvider({ children }) {
     setEnduranceEnabled(true);
     setDietEnabled(true);
     setStrengthEnabled(true);
+    setProgressEnabled(true);
     setAccount(null);
     setProfileComplete(true);
   }, []);
@@ -93,8 +96,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     user, loading, login, register, logout, isCoach: user?.ruolo === 'personal_trainer',
     isDeveloper: user?.ruolo === 'developer',
-    enduranceEnabled, setEnduranceEnabled, dietEnabled, strengthEnabled, profileComplete, refreshAccountStatus, account, setAccount,
-  }), [user, loading, login, register, logout, enduranceEnabled, dietEnabled, strengthEnabled, profileComplete, refreshAccountStatus, account]);
+    enduranceEnabled, setEnduranceEnabled, dietEnabled, strengthEnabled, progressEnabled, profileComplete, refreshAccountStatus, account, setAccount,
+  }), [user, loading, login, register, logout, enduranceEnabled, dietEnabled, strengthEnabled, progressEnabled, profileComplete, refreshAccountStatus, account]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

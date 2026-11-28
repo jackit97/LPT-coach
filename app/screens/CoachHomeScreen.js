@@ -9,6 +9,16 @@ import { colors, spacing, radius, typography } from '../theme';
 import { fullName } from '../utils/names';
 
 const PRIORITY_COLORS = { alta: '#dc2626', media: '#d97706', bassa: '#64748b' };
+// motivi per cui l'atleta e' nel Coach Assistant: scadenze in arancio, attivita' recenti in blu
+const REASON_STYLE = {
+  allenamenti: { icon: 'checkmark-done', color: '#16A34A' },
+  note: { icon: 'chatbubble-ellipses', color: '#2563EB' },
+  report: { icon: 'document-text', color: '#9333EA' },
+  scheda: { icon: 'barbell', color: '#EA580C' },
+  dieta: { icon: 'restaurant', color: '#EA580C' },
+  check: { icon: 'camera', color: '#EA580C' },
+  valutazione: { icon: 'body', color: '#EA580C' },
+};
 export { fullName };
 export const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'AT';
 
@@ -40,7 +50,8 @@ export default function CoachHomeScreen({ navigation }) {
   useFocusEffect(useCallback(() => { load(); loadClients(); }, [load, loadClients]));
 
   const openAthlete = (athleteId) => navigation.navigate('AthleteHub', { athleteId });
-  const withAlerts = (assistant?.athletes || []).filter((athlete) => athlete.alerts.length);
+  // solo chi ha allenamenti/note degli ultimi 7 giorni o scadenze entro 7 giorni (con il backend vecchio: chi ha alert)
+  const withAlerts = (assistant?.athletes || []).filter((athlete) => (athlete.in_evidenza === undefined ? athlete.alerts.length : athlete.in_evidenza));
   const shownAlerts = showAll ? withAlerts : withAlerts.slice(0, 4);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -82,7 +93,7 @@ export default function CoachHomeScreen({ navigation }) {
         {loading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} /> : withAlerts.length === 0 ? (
           <View style={styles.allGood}>
             <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={styles.allGoodText}>Nessun atleta richiede attenzione: inattività, aderenza e carico sono nella norma.</Text>
+            <Text style={styles.allGoodText}>Niente da seguire: nessun allenamento o nota negli ultimi 7 giorni e nessuna scadenza nei prossimi 7.</Text>
           </View>
         ) : (
           <>
@@ -93,7 +104,16 @@ export default function CoachHomeScreen({ navigation }) {
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </View>
                 <View style={styles.chips}>
-                  {athlete.alerts.map((alert) => (
+                  {(athlete.motivi || []).map((reason) => {
+                    const style = REASON_STYLE[reason.type] || { icon: 'information-circle', color: colors.primary };
+                    return (
+                      <View key={`m-${reason.type}`} style={[styles.reason, { borderColor: style.color, backgroundColor: `${style.color}12` }]}>
+                        <Ionicons name={style.icon} size={12} color={style.color} />
+                        <Text style={[styles.reasonText, { color: style.color }]}>{reason.message}</Text>
+                      </View>
+                    );
+                  })}
+                  {athlete.alerts.filter((alert) => alert.type !== 'commenti').map((alert) => (
                     <Text key={alert.type} style={[styles.chip, { color: PRIORITY_COLORS[alert.priority], borderColor: PRIORITY_COLORS[alert.priority] }]}>{alert.message}</Text>
                   ))}
                 </View>
@@ -131,6 +151,8 @@ export default function CoachHomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  reason: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  reasonText: { fontSize: 11, fontWeight: '700' },
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, maxWidth: 820, width: '100%', alignSelf: 'center' },
   hello: { ...typography.h1 },

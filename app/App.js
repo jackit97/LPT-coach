@@ -436,7 +436,7 @@ const DevErrorsStack = devStack('DevErrors', DevErrorsScreen, 'Errori');
 const DevFeedbackStack = devStack('DevFeedback', DevFeedbackScreen, 'Segnalazioni');
 
 function MainTabs() {
-  const { isCoach, isDeveloper, enduranceEnabled, dietEnabled, strengthEnabled } = useAuth();
+  const { isCoach, isDeveloper, enduranceEnabled, dietEnabled, strengthEnabled, progressEnabled } = useAuth();
   const { width } = useWindowDimensions();
   const compact = width < 700;
   return (
@@ -516,8 +516,8 @@ function MainTabs() {
 
           {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
           {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
-          <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
-          <Tab.Screen name="BodyTab" component={BodyStack} options={hiddenTab('Valutazione corporea')} />
+          {progressEnabled && <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />}
+          {progressEnabled && <Tab.Screen name="BodyTab" component={BodyStack} options={hiddenTab('Valutazione corporea')} />}
           <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
           <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
         </>

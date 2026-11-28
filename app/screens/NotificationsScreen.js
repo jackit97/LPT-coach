@@ -48,7 +48,7 @@ function timeAgo(value) {
 export default function NotificationsScreen({ navigation }) {
   const { clients, setSelectedAthlete } = useAthlete();
   const { setUnread } = useNotifications();
-  const { dietEnabled, strengthEnabled } = useAuth();
+  const { dietEnabled, strengthEnabled, progressEnabled, isCoach } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,6 +92,7 @@ export default function NotificationsScreen({ navigation }) {
     const tab = TARGET_TABS[link.screen];
     if (tab === 'DietsTab' && !dietEnabled) return; // sezione dieta nascosta dal coach
     if (tab === 'StrengthTab' && !strengthEnabled) return; // sezione forza nascosta dal coach
+    if ((tab === 'ChecksTab' || tab === 'BodyTab') && !isCoach && !progressEnabled) return; // check e valutazione nascosti
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });
   };
 

@@ -28,6 +28,7 @@ function shape(row) {
     livello_attivita: row.livello_attivita === null ? null : Number(row.livello_attivita),
     obiettivo_bf: row.obiettivo_bf === null ? null : Number(row.obiettivo_bf),
     pliche: parseJson(row.pliche_json), circonferenze: parseJson(row.circonferenze_json), note: row.note || '',
+    prossima_data: row.prossima_data ? isoDay(row.prossima_data) : null,
   };
   return { ...base, risultati: computeAssessment(base) };
 }
@@ -53,6 +54,11 @@ app.get('/', async (c) => {
   const utenteId = user.ruolo === 'cliente' ? user.userId : Number(c.req.query('utenteId'));
   if (!utenteId) return c.json({ message: 'utenteId richiesto' }, 400);
   if (!await assertAccessToAthlete(sql, user, utenteId)) return c.json({ message: 'Accesso negato' }, 403);
+  if (user.ruolo === 'cliente') {
+    let visible = true;
+    try { visible = (await sql`SELECT progressi_visibile FROM utenti WHERE utenteid = ${utenteId}`)[0]?.progressi_visibile !== false; } catch { visible = true; }
+    if (!visible) return c.json({ message: 'Sezione non disponibile' }, 403);
+  }
   const rows = await sql`SELECT * FROM body_assessments WHERE utenteid = ${utenteId} ORDER BY data ASC, assessment_id ASC`;
   const list = rows.map(shape);
   list.forEach((item, index) => { item.confronto = index > 0 ? compareAssessments(item, list[index - 1]) : null; });
@@ -61,10 +67,12 @@ app.get('/', async (c) => {
 
 function payload(body) {
   const data = /^\d{4}-\d{2}-\d{2}$/.test(String(body.data || '')) ? body.data : null;
+  const prossima = /^\d{4}-\d{2}-\d{2}$/.test(String(body.prossima_data || '')) && data && body.prossima_data > data ? body.prossima_data : null;
   const protocollo = PROTOCOLS.some((p) => p.key === body.protocollo) ? body.protocollo : 'jp7';
   const eta = Math.round(Number(body.eta));
   return {
     data,
+    prossima_data: prossima,
     sesso: normalizeSex(body.sesso),
     eta: Number.isFinite(eta) && eta > 0 && eta < 120 ? eta : null,
     peso_kg: positive(body.peso_kg, 400),
@@ -90,6 +98,11 @@ async function syncProfile(sql, utenteId) {
   } catch (error) { console.error('Profilo non aggiornato:', error.message); }
 }
 
+async function saveNextDate(sql, row, date) {
+  try { await sql`UPDATE body_assessments SET prossima_data = ${date} WHERE assessment_id = ${row.assessment_id}`; }
+  catch (error) { console.error('prossima_data non salvata (migrazione 20261205?):', error.message); }
+}
+
 // POST /body { utenteId, data, ... }
 app.post('/', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
@@ -105,6 +118,7 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
     VALUES (${utenteId}, ${user.userId}, ${v.data}, ${v.sesso}, ${v.eta}, ${v.peso_kg}, ${v.altezza_cm}, ${v.protocollo}, ${v.livello_attivita}, ${v.obiettivo_bf}, ${v.pliche}, ${v.circonferenze}, ${v.note})
     RETURNING *
   `;
+  await saveNextDate(sql, rows[0], v.prossima_data);
   await syncProfile(sql, utenteId);
   await notify(sql, utenteId, {
     tipo: 'valutazione_corporea', mittenteId: user.userId,
@@ -112,7 +126,7 @@ app.post('/', roleCheck('personal_trainer'), async (c) => {
     messaggio: 'Il coach ha registrato le tue misure: apri Valutazione corporea per vedere risultati e andamento.',
     link: { screen: 'BodyHome', params: { assessmentId: rows[0].assessment_id } },
   });
-  return c.json(shape(rows[0]), 201);
+  return c.json(shape({ ...rows[0], prossima_data: v.prossima_data }), 201);
 });
 
 async function ownedAssessment(sql, user, id) {
@@ -135,8 +149,9 @@ app.put('/:id{[0-9]+}', roleCheck('personal_trainer'), async (c) => {
       pliche_json = ${v.pliche}, circonferenze_json = ${v.circonferenze}, note = ${v.note}, updated_at = NOW()
     WHERE assessment_id = ${row.assessment_id} RETURNING *
   `;
+  await saveNextDate(sql, rows[0], v.prossima_data);
   await syncProfile(sql, row.utenteid);
-  return c.json(shape(rows[0]));
+  return c.json(shape({ ...rows[0], prossima_data: v.prossima_data }));
 });
 
 // DELETE /body/:id

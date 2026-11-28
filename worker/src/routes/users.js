@@ -37,8 +37,13 @@ app.get('/me', async (c) => {
   if (row.ruolo === 'cliente') {
     try { strengthVisible = (await sql`SELECT forza_visibile FROM utenti WHERE utenteid = ${user.userId}`)[0]?.forza_visibile !== false; } catch { strengthVisible = true; }
   }
+  // check fotografici + valutazione corporea (migrazione 20261205)
+  let progressVisible = true;
+  if (row.ruolo === 'cliente') {
+    try { progressVisible = (await sql`SELECT progressi_visibile FROM utenti WHERE utenteid = ${user.userId}`)[0]?.progressi_visibile !== false; } catch { progressVisible = true; }
+  }
   const { endurance_visibile: _ignored, dieta_visibile: dietVisible, ...rest } = row;
-  return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false, forza_visible: strengthVisible });
+  return c.json({ ...rest, endurance_visible: enduranceVisible, dieta_visible: row.ruolo !== 'cliente' || dietVisible !== false, forza_visible: strengthVisible, progressi_visible: progressVisible });
 });
 
 // POST /users/me/consent { privacy: true, datiSalute: true } — consensi per chi si era registrato prima
@@ -125,6 +130,23 @@ app.put('/clients/:id{[0-9]+}/forza', roleCheck('personal_trainer'), async (c) =
   return c.json({ utenteid: athleteId, forza_visible: !!visible });
 });
 
+// Coach: mostra/nasconde all'atleta le sezioni "Check fotografici" e "Valutazione corporea" (un solo interruttore)
+app.put('/clients/:id{[0-9]+}/progressi', roleCheck('personal_trainer'), async (c) => {
+  const user = c.get('user');
+  const athleteId = Number(c.req.param('id'));
+  const { visible } = await c.req.json().catch(() => ({}));
+  const sql = db(c.env);
+  const link = await sql`SELECT 1 FROM pt_clienti WHERE pt_userid = ${user.userId} AND cliente_userid = ${athleteId} AND attivo = 1`;
+  if (!link.length) return c.json({ message: 'Atleta non trovato' }, 404);
+  try {
+    await sql`UPDATE utenti SET progressi_visibile = ${!!visible} WHERE utenteid = ${athleteId}`;
+  } catch (error) {
+    if (/progressi_visibile/.test(String(error?.message))) return c.json({ message: 'Va applicata la migrazione 20261205_progressi_coach_assistant.sql' }, 503);
+    throw error;
+  }
+  return c.json({ utenteid: athleteId, progressi_visible: !!visible });
+});
+
 // Coach: toggle visibility of endurance sections for themselves and their athletes
 app.put('/me/endurance-settings', roleCheck('personal_trainer'), async (c) => {
   const user = c.get('user');
@@ -186,9 +208,15 @@ app.get('/clients', roleCheck('personal_trainer'), async (c) => {
     const flags = await sql`SELECT utenteid, forza_visibile FROM utenti WHERE utenteid = ANY(${rows.map((row) => row.utenteid)})`;
     strength = new Map(flags.map((row) => [row.utenteid, row.forza_visibile !== false]));
   } catch { /* migrazione 20261203 non applicata */ }
+  let progress = new Map();
+  try {
+    const flags = await sql`SELECT utenteid, progressi_visibile FROM utenti WHERE utenteid = ANY(${rows.map((row) => row.utenteid)})`;
+    progress = new Map(flags.map((row) => [row.utenteid, row.progressi_visibile !== false]));
+  } catch { /* migrazione 20261205 non applicata */ }
   return c.json(rows.map(({ endurance_visibile: visible, dieta_visibile: dietVisible, ...row }) => ({
     ...row, endurance_visible: visible === true || visible === false ? visible : fallback, dieta_visible: dietVisible !== false,
     forza_visible: strength.has(row.utenteid) ? strength.get(row.utenteid) : true,
+    progressi_visible: progress.has(row.utenteid) ? progress.get(row.utenteid) : true,
   })));
 });
 
