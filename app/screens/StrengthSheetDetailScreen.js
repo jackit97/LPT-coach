@@ -81,6 +81,7 @@ export default function StrengthSheetDetailScreen({ route, navigation }) {
               </Pressable>
             )}
           </View>
+          {!!String(day.note || '').trim() && <Text style={styles.dayNote}>{day.note}</Text>}
           {day.esercizi.map((exercise, index) => (
             <Pressable key={exercise.esercizioid || `${day.schedaid}-${index}`} style={({ pressed }) => [styles.exercise, supersetInfo(day.esercizi)[index] && supersetBorder, pressed && { opacity: 0.8 }]} onPress={() => setOpenExercise(exercise)}>
               <SupersetTag info={supersetInfo(day.esercizi)[index]} />
@@ -136,7 +137,8 @@ const styles = StyleSheet.create({
   exerciseName: { ...typography.h3, flex: 1 },
   playBadge: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' },
   prescription: { fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 4 },
-  notes: { ...typography.caption, marginTop: 4 },
+  dayNote: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
+  notes: { ...typography.caption, marginTop: 4, fontWeight: '700', color: colors.text },
   noteChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, backgroundColor: colors.primaryLight, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3, alignSelf: 'flex-start', maxWidth: '100%' },
   noteChipText: { fontSize: 12, color: colors.accent, fontWeight: '600', flexShrink: 1 },
   doneButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.success, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6 },

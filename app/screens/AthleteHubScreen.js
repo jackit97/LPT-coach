@@ -57,6 +57,7 @@ export default function AthleteHubScreen({ route, navigation }) {
     endurance && { key: 'piani', label: 'Piani endurance', hint: 'Periodizzazione', icon: 'bicycle', color: '#16A34A', onPress: () => open('EnduranceTab', 'EnduranceHome') },
     endurance && { key: 'zone', label: 'Zone e test', hint: 'FC, passo, potenza', icon: 'speedometer', color: '#F59E0B', onPress: () => open('ZonesTab', 'ZonesHome') },
     diet && { key: 'diete', label: 'Diete', hint: 'Piani alimentari', icon: 'restaurant', color: '#DB2777', onPress: () => open('DietsTab', 'Diets') },
+    { key: 'body', label: 'Valutazione corporea', hint: 'Pliche, misure, massa grassa', icon: 'body', color: '#7C3AED', onPress: () => open('BodyTab', 'BodyHome') },
     { key: 'check', label: 'Check', hint: 'Foto dei progressi', icon: 'camera', color: '#0D9488', badge: counts.checks, onPress: () => open('ChecksTab', 'ChecksHome') },
     { key: 'pay', label: 'Pagamenti', hint: 'Scadenze e incassi', icon: 'card', color: '#EA580C', badge: counts.payments, onPress: () => open('PaymentsTab', 'PaymentsHome') },
     { key: 'report', label: 'Report', hint: 'Video e dubbi', icon: 'document-text', color: '#9333EA', badge: counts.reports, onPress: () => navigation.navigate('ReportsTab', { screen: 'ReportsHome', params: { utenteId: athleteId, athleteName: fullName(athlete) } }) },

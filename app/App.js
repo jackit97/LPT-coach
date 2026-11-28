@@ -64,6 +64,8 @@ import TemplatesScreen from './screens/TemplatesScreen';
 import WorkoutLibraryScreen from './screens/WorkoutLibraryScreen';
 import TemplateDetailScreen from './screens/TemplateDetailScreen';
 import ZonesScreen from './screens/ZonesScreen';
+import BodyAssessmentScreen from './screens/BodyAssessmentScreen';
+import BodyAssessmentEditorScreen from './screens/BodyAssessmentEditorScreen';
 import AppUpdater from './components/AppUpdater';
 import api from './api/client';
 import MoreScreen from './screens/MoreScreen';
@@ -367,6 +369,20 @@ function ReportsStack() {
   );
 }
 
+function BodyStack() {
+  const { isCoach } = useAuth();
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="BodyHome" component={BodyAssessmentScreen} options={{ title: 'Valutazione corporea' }} />
+      {isCoach && <Stack.Screen name="BodyEditor" component={BodyAssessmentEditorScreen} options={({ route }) => ({ title: route.params?.assessment ? 'Modifica valutazione' : 'Nuova valutazione' })} />}
+      <Stack.Screen name="Clients" component={ClientsScreen} options={{ title: 'I miei atleti' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: 'Feedback / errori app' }} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} options={{ title: 'Privacy' }} />
+    </Stack.Navigator>
+  );
+}
+
 function ChecksStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
@@ -483,6 +499,7 @@ function MainTabs() {
           <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />
           <Tab.Screen name="ZonesTab" component={ZonesStack} options={hiddenTab('Zone')} />
           <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
+          <Tab.Screen name="BodyTab" component={BodyStack} options={hiddenTab('Valutazione corporea')} />
           <Tab.Screen name="TemplatesTab" component={TemplatesStack} options={hiddenTab('Template')} />
           <Tab.Screen name="VideosTab" component={VideosStack} options={hiddenTab('Video tutorial')} />
           <Tab.Screen name="ExercisesTab" component={ExercisesStack} options={hiddenTab('Esercizi')} />
@@ -500,6 +517,7 @@ function MainTabs() {
           {/* Sezioni secondarie, aperte dalla pagina "Altro" */}
           {enduranceEnabled && <Tab.Screen name="EnduranceTab" component={EnduranceStack} options={hiddenTab('Endurance')} />}
           <Tab.Screen name="ChecksTab" component={ChecksStack} options={hiddenTab('Check')} />
+          <Tab.Screen name="BodyTab" component={BodyStack} options={hiddenTab('Valutazione corporea')} />
           <Tab.Screen name="NotificationsTab" component={NotificationsStack} options={hiddenTab('Notifiche')} />
           <Tab.Screen name="PaymentsTab" component={PaymentsStack} options={hiddenTab('Pagamenti')} />
         </>

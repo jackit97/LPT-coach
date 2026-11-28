@@ -28,6 +28,7 @@ const TARGET_TABS = {
   WorkoutDetail: 'CalendarTab',
   DietDetail: 'DietsTab',
   CheckDetail: 'ChecksTab',
+  BodyHome: 'BodyTab',
   ReportDetail: 'ReportsTab',
   AthleteHome: 'HomeTab',
   StrengthHome: 'StrengthTab',

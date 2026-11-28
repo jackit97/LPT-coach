@@ -517,7 +517,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
           <Text style={styles.detailLine}>
             Periodo: {String(workout.scheda.datainizio).slice(0, 10)} → {workout.scheda.datafine ? String(workout.scheda.datafine).slice(0, 10) : '—'}
           </Text>
-          {!!workout.scheda.notegenerali && <Text style={styles.paragraph}>{workout.scheda.notegenerali}</Text>}
+          {!!workout.scheda.notegenerali && <Text style={[styles.paragraph, styles.gymNote]}>{workout.scheda.notegenerali}</Text>}
         </View>
       )}
 
@@ -563,7 +563,7 @@ export default function WorkoutDetailScreen({ route, navigation }) {
               {!!ex.serie_eseguite_json && (() => { let list = []; try { list = JSON.parse(ex.serie_eseguite_json) || []; } catch { list = []; } return list.length ? (
                 <Text style={styles.setsDone} numberOfLines={1}>✓ Fatte: {list.map((set) => `${set.reps ?? '—'}×${set.kg ?? '—'}kg`).join(' · ')}</Text>
               ) : null; })()}
-              {!!ex.note && <Text style={styles.exerciseNote} numberOfLines={2}>{ex.note}</Text>}
+              {!!ex.note && <Text style={[styles.exerciseNote, workout.tipo !== 'endurance' && styles.gymNote]} numberOfLines={2}>{ex.note}</Text>}
               {!!ex.note_atleta && <Text style={styles.athleteNote} numberOfLines={1}>📝 {isCoach ? 'Nota atleta' : 'La mia nota'}: {ex.note_atleta}</Text>}
               {(!!ex.esecuzione_video_url || !!ex.esecuzione_dubbi) && (
                 <View style={styles.execChips}>
@@ -769,6 +769,7 @@ const styles = StyleSheet.create({
   exerciseName: { fontWeight: '700', fontSize: 14, color: colors.text },
   exerciseMeta: { ...typography.caption, marginTop: 2 },
   exerciseNote: { ...typography.caption, marginTop: 4, fontStyle: 'italic' },
+  gymNote: { fontWeight: '700', fontStyle: 'normal', color: colors.text },
   coachActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xxl },
   fieldLabel: { ...typography.caption, marginTop: spacing.md, marginBottom: spacing.xs },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },

@@ -227,7 +227,7 @@ export default function ExerciseSheet({ visible, exercise, source, isCoach, onCl
             )}
 
             <Text style={styles.section}>Indicazioni del coach</Text>
-            {coachNotes.length ? coachNotes.map((text, index) => <Text key={index} style={styles.body}>{text}</Text>)
+            {coachNotes.length ? coachNotes.map((text, index) => <Text key={index} style={[styles.body, { fontWeight: '700' }]}>{text}</Text>)
               : <Text style={styles.muted}>Nessuna indicazione aggiuntiva.</Text>}
 
             <Text style={styles.section}>Video</Text>

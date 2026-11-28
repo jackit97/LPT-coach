@@ -19,6 +19,7 @@ import reportsRoutes from './routes/reports.js';
 import tipsRoutes from './routes/tips.js';
 import devRoutes from './routes/dev.js';
 import garminRoutes from './routes/garmin.js';
+import bodyRoutes from './routes/body.js';
 import { runGarminCron } from './lib/garminSync.js';
 import { isDbConfigured, DbNotConfiguredError, db } from './db.js';
 
@@ -51,6 +52,7 @@ app.route('/notifications', notificationsRoutes);
 app.route('/checks', checksRoutes);
 app.route('/dev', devRoutes);
 app.route('/garmin', garminRoutes);
+app.route('/body', bodyRoutes);
 
 app.notFound((c) => c.json({ message: 'Not found' }, 404));
 app.onError((err, c) => {

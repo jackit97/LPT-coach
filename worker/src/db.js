@@ -33,6 +33,7 @@ const TABLE_NAMES = [
   'endurance_sessions',
   'endurance_zones',
   'esercizifull',
+  'body_assessments',
   'esecuzioni_video',
   'esercizischeda',
   'food_and_nutritional_value',

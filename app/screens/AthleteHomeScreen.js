@@ -75,7 +75,7 @@ export default function AthleteHomeScreen({ navigation }) {
   const openWorkout = (workoutId) => navigation.navigate('CalendarTab', { screen: 'WorkoutDetail', params: { workoutId }, initial: false });
   const openLink = (link) => {
     if (!link?.screen) return;
-    const tab = { WorkoutDetail: 'CalendarTab', CheckDetail: 'ChecksTab' }[link.screen];
+    const tab = { WorkoutDetail: 'CalendarTab', CheckDetail: 'ChecksTab', BodyHome: 'BodyTab' }[link.screen];
     if (tab) navigation.navigate(tab, { screen: link.screen, params: link.params || {}, initial: false });
   };
 
